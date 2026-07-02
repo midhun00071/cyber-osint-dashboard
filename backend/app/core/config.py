@@ -1,8 +1,9 @@
 from functools import lru_cache
 from typing import List
 
-from pydantic import Field
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import URL, make_url
 
 
 class Settings(BaseSettings):
@@ -20,10 +21,17 @@ class Settings(BaseSettings):
     backend_host: str = Field(default="0.0.0.0", alias="BACKEND_HOST")
     backend_port: int = Field(default=8000, alias="BACKEND_PORT")
 
-    database_url: str = Field(
-        default="postgresql://alpha_data_user:change_me_locally@localhost:5432/alpha_data_db",
-        alias="DATABASE_URL",
+    database_url: SecretStr | None = Field(default=None, alias="DATABASE_URL")
+    postgres_host: str | None = Field(default=None, alias="POSTGRES_HOST")
+    postgres_port: int | None = Field(
+        default=None,
+        alias="POSTGRES_PORT",
+        ge=1,
+        le=65535,
     )
+    postgres_db: str | None = Field(default=None, alias="POSTGRES_DB")
+    postgres_user: str | None = Field(default=None, alias="POSTGRES_USER")
+    postgres_password: SecretStr | None = Field(default=None, alias="POSTGRES_PASSWORD")
 
     backend_cors_origins: str = Field(
         default="http://localhost:3000",
@@ -41,6 +49,38 @@ class Settings(BaseSettings):
         populate_by_name=True,
     )
 
+    @field_validator(
+        "app_name",
+        "app_env",
+        "log_level",
+        "backend_host",
+        "backend_cors_origins",
+        "postgres_host",
+        "postgres_db",
+        "postgres_user",
+        mode="before",
+    )
+    @classmethod
+    def strip_string_settings(cls, value: object) -> object:
+        """Trim non-secret string settings without changing passwords."""
+
+        if isinstance(value, str):
+            stripped_value = value.strip()
+            return stripped_value or None
+
+        return value
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def strip_database_url(cls, value: object) -> object:
+        """Trim the optional URL override while preserving hidden representation."""
+
+        if isinstance(value, str):
+            stripped_value = value.strip()
+            return stripped_value or None
+
+        return value
+
     @property
     def cors_origins_list(self) -> List[str]:
         """Return CORS origins as a cleaned list.
@@ -54,6 +94,71 @@ class Settings(BaseSettings):
             for origin in self.backend_cors_origins.split(",")
             if origin.strip()
         ]
+
+    @property
+    def sqlalchemy_database_url(self) -> URL:
+        """Return the database URL for SQLAlchemy without exposing secrets."""
+
+        if self.database_url is not None:
+            return self._normalized_database_url(
+                self.database_url.get_secret_value(),
+            )
+
+        missing_variables = self._missing_database_components()
+
+        if missing_variables:
+            missing_list = ", ".join(missing_variables)
+            raise ValueError(f"Missing database configuration: {missing_list}")
+
+        assert self.postgres_host is not None
+        assert self.postgres_port is not None
+        assert self.postgres_db is not None
+        assert self.postgres_user is not None
+        assert self.postgres_password is not None
+
+        return URL.create(
+            drivername="postgresql+psycopg",
+            username=self.postgres_user,
+            password=self.postgres_password.get_secret_value(),
+            host=self.postgres_host,
+            port=self.postgres_port,
+            database=self.postgres_db,
+        )
+
+    def _missing_database_components(self) -> list[str]:
+        missing_variables: list[str] = []
+
+        if not self.postgres_host:
+            missing_variables.append("POSTGRES_HOST")
+
+        if self.postgres_port is None:
+            missing_variables.append("POSTGRES_PORT")
+
+        if not self.postgres_db:
+            missing_variables.append("POSTGRES_DB")
+
+        if not self.postgres_user:
+            missing_variables.append("POSTGRES_USER")
+
+        if (
+            self.postgres_password is None
+            or self.postgres_password.get_secret_value() == ""
+        ):
+            missing_variables.append("POSTGRES_PASSWORD")
+
+        return missing_variables
+
+    @staticmethod
+    def _normalized_database_url(database_url: str) -> URL:
+        parsed_url = make_url(database_url)
+
+        if parsed_url.drivername == "postgresql":
+            return parsed_url.set(drivername="postgresql+psycopg")
+
+        if parsed_url.drivername == "postgresql+psycopg":
+            return parsed_url
+
+        raise ValueError("Unsupported database scheme. Use postgresql+psycopg.")
 
 
 @lru_cache
