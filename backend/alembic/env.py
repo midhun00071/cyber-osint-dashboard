@@ -29,19 +29,11 @@ target_metadata = Base.metadata
 # Base.metadata before Alembic autogeneration runs.
 
 
-def _database_url_for_offline_mode() -> str:
-    """Render the configured URL only when Alembic offline mode requires it."""
-
-    return get_settings().sqlalchemy_database_url.render_as_string(
-        hide_password=False,
-    ).replace("%", "%%")
-
-
 def run_migrations_offline() -> None:
     """Run migrations without creating an engine or database connection."""
 
     context.configure(
-        url=_database_url_for_offline_mode(),
+        url=get_settings().sqlalchemy_database_url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -60,17 +52,18 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
 
-    with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=target_metadata,
-            compare_type=True,
-        )
+    try:
+        with connectable.connect() as connection:
+            context.configure(
+                connection=connection,
+                target_metadata=target_metadata,
+                compare_type=True,
+            )
 
-        with context.begin_transaction():
-            context.run_migrations()
-
-    connectable.dispose()
+            with context.begin_transaction():
+                context.run_migrations()
+    finally:
+        connectable.dispose()
 
 
 if config is not None:

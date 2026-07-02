@@ -1,5 +1,6 @@
 import importlib.util
 from pathlib import Path
+from unittest.mock import MagicMock
 
 from alembic.config import Config
 from alembic.script import ScriptDirectory
@@ -59,7 +60,10 @@ def test_alembic_target_metadata_uses_application_base_metadata():
     assert module.target_metadata is Base.metadata
 
 
-def test_offline_database_url_rendering_escapes_percent_without_logging(monkeypatch):
+def test_offline_database_url_preserves_percent_password_without_logging(
+    monkeypatch,
+    capsys,
+):
     module = load_alembic_env_module()
     url = URL.create(
         "postgresql+psycopg",
@@ -74,10 +78,19 @@ def test_offline_database_url_rendering_escapes_percent_without_logging(monkeypa
         sqlalchemy_database_url = url
 
     monkeypatch.setattr(module, "get_settings", lambda: FakeSettings())
+    configure = MagicMock()
+    monkeypatch.setattr(module.context, "configure", configure)
+    monkeypatch.setattr(module.context, "begin_transaction", MagicMock())
+    monkeypatch.setattr(module.context, "run_migrations", MagicMock())
 
-    rendered_url = module._database_url_for_offline_mode()
+    module.run_migrations_offline()
 
-    assert "safe%%25password" in rendered_url
+    configured_url = configure.call_args.kwargs["url"]
+    assert isinstance(configured_url, URL)
+    assert configured_url.password == "safe%password"
+    captured = capsys.readouterr()
+    assert "safe%password" not in captured.out
+    assert "safe%password" not in captured.err
 
 
 def test_no_migration_revisions_exist():
