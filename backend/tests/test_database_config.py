@@ -39,7 +39,28 @@ def test_component_database_url_preserves_reserved_password_characters() -> None
         POSTGRES_PASSWORD=password,
     )
 
+    assert settings.sqlalchemy_database_url.drivername == "postgresql+psycopg"
     assert settings.sqlalchemy_database_url.password == password
+
+
+def test_component_password_is_masked_in_normal_logging(caplog) -> None:
+    password = "p@ss:/%#?synthetic-only"
+    settings = make_settings(
+        POSTGRES_HOST="localhost",
+        POSTGRES_PORT=5432,
+        POSTGRES_DB="cyber_osint",
+        POSTGRES_USER="cyber_osint_app",
+        POSTGRES_PASSWORD=password,
+    )
+    logger = logging.getLogger("tests.database_config")
+
+    with caplog.at_level(logging.INFO, logger=logger.name):
+        logger.info("Loaded settings: %s", settings)
+
+    logged_output = "\n".join(record.getMessage() for record in caplog.records)
+
+    assert password not in logged_output
+    assert "**********" in logged_output
 
 
 def test_database_url_override_takes_precedence() -> None:
