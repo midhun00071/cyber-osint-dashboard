@@ -21,11 +21,14 @@ from sqlalchemy.schema import CreateIndex, CreateTable
 from app.db.base import Base
 
 
-P1_11A_TABLES = {"intelligence_sources", "intelligence_items"}
-FUTURE_TABLES = {
+IMPLEMENTED_TABLES = {
     "intelligence_item_identifiers",
-    "vulnerabilities",
+    "intelligence_items",
+    "intelligence_sources",
     "source_records",
+    "vulnerabilities",
+}
+FUTURE_TABLES = {
     "tags",
     "intelligence_item_tags",
     "ingestion_runs",
@@ -75,7 +78,7 @@ def unique_column_names(table):
     return names
 
 
-def test_importing_models_registers_only_p1_11a_tables_without_engine(monkeypatch):
+def test_importing_models_registers_only_implemented_tables_without_engine(monkeypatch):
     import app.db.session as db_session
 
     get_engine = monkeypatch.setattr(
@@ -86,9 +89,15 @@ def test_importing_models_registers_only_p1_11a_tables_without_engine(monkeypatc
     import app.models
 
     assert get_engine is None
-    assert P1_11A_TABLES <= set(Base.metadata.tables)
+    assert IMPLEMENTED_TABLES <= set(Base.metadata.tables)
     assert FUTURE_TABLES.isdisjoint(Base.metadata.tables)
-    assert set(app.models.__all__) == {"IntelligenceItem", "IntelligenceSource"}
+    assert set(app.models.__all__) == {
+        "IntelligenceItem",
+        "IntelligenceItemIdentifier",
+        "IntelligenceSource",
+        "SourceRecord",
+        "Vulnerability",
+    }
 
 
 def test_mapper_configuration_succeeds_without_database_connection(models, monkeypatch):

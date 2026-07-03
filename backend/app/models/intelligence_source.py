@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, CheckConstraint, DateTime, String
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.models.common import BigIntPrimaryKeyMixin, PublicIdMixin, TimestampMixin
+
+
+if TYPE_CHECKING:
+    from app.models.intelligence_item_identifier import IntelligenceItemIdentifier
+    from app.models.source_record import SourceRecord
 
 
 SOURCE_TYPE_VALUES = ("api", "rss", "csv", "json")
@@ -45,3 +51,14 @@ class IntelligenceSource(
         nullable=True,
     )
     checkpoint_value: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    identifiers: Mapped[list[IntelligenceItemIdentifier]] = relationship(
+        "IntelligenceItemIdentifier",
+        back_populates="source",
+        passive_deletes=True,
+    )
+    source_records: Mapped[list[SourceRecord]] = relationship(
+        "SourceRecord",
+        back_populates="source",
+        passive_deletes=True,
+    )

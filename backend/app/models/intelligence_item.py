@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     CheckConstraint,
@@ -24,6 +25,12 @@ from app.models.common import (
     TimestampMixin,
     utc_now,
 )
+
+
+if TYPE_CHECKING:
+    from app.models.intelligence_item_identifier import IntelligenceItemIdentifier
+    from app.models.source_record import SourceRecord
+    from app.models.vulnerability import Vulnerability
 
 
 ITEM_TYPE_VALUES = (
@@ -203,4 +210,22 @@ class IntelligenceItem(
         "IntelligenceItem",
         foreign_keys=lambda: [IntelligenceItem.merged_into_item_id],
         remote_side=lambda: [IntelligenceItem.id],
+    )
+    identifiers: Mapped[list[IntelligenceItemIdentifier]] = relationship(
+        "IntelligenceItemIdentifier",
+        back_populates="intelligence_item",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    source_records: Mapped[list[SourceRecord]] = relationship(
+        "SourceRecord",
+        back_populates="intelligence_item",
+        passive_deletes=True,
+    )
+    vulnerability: Mapped[Vulnerability | None] = relationship(
+        "Vulnerability",
+        back_populates="intelligence_item",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        uselist=False,
     )
