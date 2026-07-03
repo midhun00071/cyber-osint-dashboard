@@ -22,6 +22,9 @@ from app.db.base import Base
 
 
 IMPLEMENTED_TABLES = {
+    "ingestion_errors",
+    "ingestion_run_records",
+    "ingestion_runs",
     "intelligence_item_identifiers",
     "intelligence_item_tags",
     "intelligence_items",
@@ -29,11 +32,6 @@ IMPLEMENTED_TABLES = {
     "source_records",
     "tags",
     "vulnerabilities",
-}
-FUTURE_TABLES = {
-    "ingestion_runs",
-    "ingestion_run_records",
-    "ingestion_errors",
 }
 
 
@@ -89,9 +87,11 @@ def test_importing_models_registers_only_implemented_tables_without_engine(monke
     import app.models
 
     assert get_engine is None
-    assert IMPLEMENTED_TABLES <= set(Base.metadata.tables)
-    assert FUTURE_TABLES.isdisjoint(Base.metadata.tables)
+    assert IMPLEMENTED_TABLES == set(Base.metadata.tables)
     assert set(app.models.__all__) == {
+        "IngestionError",
+        "IngestionRun",
+        "IngestionRunRecord",
         "IntelligenceItem",
         "IntelligenceItemIdentifier",
         "IntelligenceItemTag",
@@ -386,4 +386,4 @@ def test_postgresql_table_and_index_compilation_succeeds_without_connection(
 def test_model_layer_does_not_define_unsafe_repr_or_future_tables(models):
     assert "__repr__" not in models.IntelligenceSource.__dict__
     assert "__repr__" not in models.IntelligenceItem.__dict__
-    assert FUTURE_TABLES.isdisjoint(Base.metadata.tables)
+    assert set(Base.metadata.tables) == IMPLEMENTED_TABLES

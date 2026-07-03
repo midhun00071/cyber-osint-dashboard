@@ -13,6 +13,7 @@ from app.models.common import BigIntPrimaryKeyMixin, PublicIdMixin, TimestampMix
 
 
 if TYPE_CHECKING:
+    from app.models.ingestion_run import IngestionRun
     from app.models.intelligence_item_identifier import IntelligenceItemIdentifier
     from app.models.source_record import SourceRecord
 
@@ -59,6 +60,11 @@ class IntelligenceSource(
     )
     source_records: Mapped[list[SourceRecord]] = relationship(
         "SourceRecord",
+        back_populates="source",
+        passive_deletes=True,
+    )
+    ingestion_runs: Mapped[list[IngestionRun]] = relationship(
+        "IngestionRun",
         back_populates="source",
         passive_deletes=True,
     )

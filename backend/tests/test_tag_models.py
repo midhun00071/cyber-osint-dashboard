@@ -20,6 +20,9 @@ from app.db.base import Base
 
 
 IMPLEMENTED_TABLES = {
+    "ingestion_errors",
+    "ingestion_run_records",
+    "ingestion_runs",
     "intelligence_item_identifiers",
     "intelligence_item_tags",
     "intelligence_items",
@@ -27,11 +30,6 @@ IMPLEMENTED_TABLES = {
     "source_records",
     "tags",
     "vulnerabilities",
-}
-INGESTION_TABLES = {
-    "ingestion_runs",
-    "ingestion_run_records",
-    "ingestion_errors",
 }
 
 
@@ -103,8 +101,10 @@ def test_registration_and_mapper_configuration_are_database_free(monkeypatch):
     )
 
     assert set(Base.metadata.tables) == IMPLEMENTED_TABLES
-    assert INGESTION_TABLES.isdisjoint(Base.metadata.tables)
     assert set(app.models.__all__) == {
+        "IngestionError",
+        "IngestionRun",
+        "IngestionRunRecord",
         "IntelligenceItem",
         "IntelligenceItemIdentifier",
         "IntelligenceItemTag",
@@ -311,5 +311,5 @@ def test_all_implemented_tables_compile_and_prior_indexes_remain_intact(models):
     assert "JSONB" in vulnerability_ddl
 
 
-def test_ingestion_tables_remain_absent_and_no_unsafe_repr(models):
-    assert INGESTION_TABLES.isdisjoint(Base.metadata.tables)
+def test_no_unexpected_tables_and_no_unsafe_repr(models):
+    assert set(Base.metadata.tables) == IMPLEMENTED_TABLES

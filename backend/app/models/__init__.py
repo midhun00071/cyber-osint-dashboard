@@ -1,5 +1,8 @@
 """ORM model registration for implemented domain tables."""
 
+from app.models.ingestion_error import IngestionError
+from app.models.ingestion_run import IngestionRun
+from app.models.ingestion_run_record import IngestionRunRecord
 from app.models.intelligence_item import IntelligenceItem
 from app.models.intelligence_item_identifier import IntelligenceItemIdentifier
 from app.models.intelligence_item_tag import IntelligenceItemTag
@@ -9,6 +12,9 @@ from app.models.tag import Tag
 from app.models.vulnerability import Vulnerability
 
 __all__ = [
+    "IngestionError",
+    "IngestionRun",
+    "IngestionRunRecord",
     "IntelligenceItem",
     "IntelligenceItemIdentifier",
     "IntelligenceItemTag",

@@ -14,6 +14,8 @@ from app.models.common import BigIntPrimaryKeyMixin, TimestampMixin, utc_now
 
 
 if TYPE_CHECKING:
+    from app.models.ingestion_error import IngestionError
+    from app.models.ingestion_run_record import IngestionRunRecord
     from app.models.intelligence_item import IntelligenceItem
     from app.models.intelligence_item_identifier import IntelligenceItemIdentifier
     from app.models.intelligence_source import IntelligenceSource
@@ -118,6 +120,16 @@ class SourceRecord(BigIntPrimaryKeyMixin, TimestampMixin, Base):
     )
     identifiers: Mapped[list[IntelligenceItemIdentifier]] = relationship(
         "IntelligenceItemIdentifier",
+        back_populates="source_record",
+        passive_deletes=True,
+    )
+    ingestion_run_records: Mapped[list[IngestionRunRecord]] = relationship(
+        "IngestionRunRecord",
+        back_populates="source_record",
+        passive_deletes=True,
+    )
+    ingestion_errors: Mapped[list[IngestionError]] = relationship(
+        "IngestionError",
         back_populates="source_record",
         passive_deletes=True,
     )
