@@ -1,5 +1,7 @@
+import logging
+
 import pytest
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 
 from app.core.config import Settings, get_settings
 
@@ -102,6 +104,40 @@ def test_settings_representation_does_not_reveal_password() -> None:
 
     assert "do-not-leak-this" not in representation
     assert "SecretStr" in representation
+
+
+def test_nvd_api_key_uses_secret_str_and_masks_representation(monkeypatch) -> None:
+    secret_value = "synthetic-nvd-test-key-do-not-use"
+    monkeypatch.setenv("NVD_API_KEY", secret_value)
+    get_settings.cache_clear()
+
+    settings = Settings(_env_file=None)
+
+    assert isinstance(settings.nvd_api_key, SecretStr)
+    assert settings.nvd_api_key.get_secret_value() == secret_value
+
+    representation = repr(settings)
+
+    assert secret_value not in representation
+    assert "SecretStr" in representation
+    assert "**********" in representation
+
+
+def test_nvd_api_key_is_masked_in_normal_logging(monkeypatch, caplog) -> None:
+    secret_value = "synthetic-nvd-test-key-do-not-use"
+    monkeypatch.setenv("NVD_API_KEY", secret_value)
+    get_settings.cache_clear()
+    settings = Settings(_env_file=None)
+
+    logger = logging.getLogger("tests.database_config")
+
+    with caplog.at_level(logging.INFO, logger=logger.name):
+        logger.info("Loaded settings: %s", settings)
+
+    logged_output = "\n".join(record.getMessage() for record in caplog.records)
+
+    assert secret_value not in logged_output
+    assert "**********" in logged_output
 
 
 @pytest.mark.parametrize("port", [0, 65536])

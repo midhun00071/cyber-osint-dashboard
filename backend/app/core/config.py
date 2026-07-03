@@ -38,7 +38,7 @@ class Settings(BaseSettings):
         alias="BACKEND_CORS_ORIGINS",
     )
 
-    nvd_api_key: str | None = Field(default=None, alias="NVD_API_KEY")
+    nvd_api_key: SecretStr | None = Field(default=None, alias="NVD_API_KEY")
     fetch_interval_minutes: int = Field(default=30, alias="FETCH_INTERVAL_MINUTES")
     enable_admin_ingestion: bool = Field(default=False, alias="ENABLE_ADMIN_INGESTION")
 
