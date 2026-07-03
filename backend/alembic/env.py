@@ -16,6 +16,7 @@ if str(BACKEND_DIR) not in sys.path:
 
 from app.core.config import get_settings  # noqa: E402
 from app.db.base import Base  # noqa: E402
+import app.models  # noqa: E402, F401
 
 
 config = getattr(context, "config", None)
@@ -24,9 +25,6 @@ if config is not None and config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata
-
-# Future P1-11 model imports must be added here so tables register with
-# Base.metadata before Alembic autogeneration runs.
 
 
 def run_migrations_offline() -> None:

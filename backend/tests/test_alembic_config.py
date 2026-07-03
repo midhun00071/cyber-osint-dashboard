@@ -8,14 +8,29 @@ from alembic.script import ScriptDirectory
 from sqlalchemy import pool
 from sqlalchemy.engine import URL
 
-from app.db.base import Base
 from app.db import session as db_session
+from app.db.base import Base
+
+
+APPROVED_TABLES = {
+    "ingestion_errors",
+    "ingestion_run_records",
+    "ingestion_runs",
+    "intelligence_item_identifiers",
+    "intelligence_item_tags",
+    "intelligence_items",
+    "intelligence_sources",
+    "source_records",
+    "tags",
+    "vulnerabilities",
+}
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 ALEMBIC_INI = BACKEND_DIR / "alembic.ini"
 ALEMBIC_DIR = BACKEND_DIR / "alembic"
 VERSIONS_DIR = ALEMBIC_DIR / "versions"
+SCRIPT_TEMPLATE = ALEMBIC_DIR / "script.py.mako"
 
 
 def load_alembic_env_module():
@@ -150,6 +165,26 @@ def test_versions_directory_exists():
     assert VERSIONS_DIR.is_dir()
 
 
+def test_revision_template_preserves_generated_content_placeholders():
+    content = SCRIPT_TEMPLATE.read_text(encoding="utf-8")
+    imports_placeholder = '${imports if imports else ""}'
+    upgrades_placeholder = '${upgrades if upgrades else "pass"}'
+    downgrades_placeholder = '${downgrades if downgrades else "pass"}'
+
+    sqlalchemy_import_index = content.index("import sqlalchemy as sa")
+    imports_placeholder_index = content.index(imports_placeholder)
+    upgrade_function_index = content.index("def upgrade() -> None:")
+    upgrades_placeholder_index = content.index(upgrades_placeholder)
+    downgrade_function_index = content.index("def downgrade() -> None:")
+    downgrades_placeholder_index = content.index(downgrades_placeholder)
+
+    assert sqlalchemy_import_index < imports_placeholder_index
+    assert imports_placeholder_index < content.index("revision: str =")
+    assert upgrade_function_index < upgrades_placeholder_index
+    assert upgrades_placeholder_index < downgrade_function_index
+    assert downgrade_function_index < downgrades_placeholder_index
+
+
 def test_alembic_ini_does_not_store_database_url_or_credentials():
     content = ALEMBIC_INI.read_text(encoding="utf-8")
 
@@ -164,6 +199,7 @@ def test_alembic_target_metadata_uses_application_base_metadata():
     module = load_alembic_env_module()
 
     assert module.target_metadata is Base.metadata
+    assert set(module.target_metadata.tables) == APPROVED_TABLES
 
 
 def test_offline_database_url_preserves_percent_password_without_logging(
@@ -267,8 +303,34 @@ def test_online_migrations_dispose_engine_when_connection_entry_fails(monkeypatc
     assert db_session.get_engine.call_count == 0
 
 
-def test_no_migration_revisions_exist():
+def test_single_initial_migration_revision_exists():
     config = Config(str(ALEMBIC_INI))
     script_directory = ScriptDirectory.from_config(config)
+    revisions = list(script_directory.walk_revisions())
 
-    assert list(script_directory.walk_revisions()) == []
+    assert len(revisions) == 1
+    revision = revisions[0]
+    assert revision.down_revision is None
+    assert len(script_directory.get_heads()) == 1
+    assert revision.is_branch_point is False
+    assert revision.is_merge_point is False
+    assert Path(revision.path).parent.resolve() == VERSIONS_DIR
+
+
+def test_gitkeep_is_not_required_after_initial_revision_exists():
+    assert not (VERSIONS_DIR / ".gitkeep").exists()
+
+
+def test_initial_revision_file_does_not_store_database_url_or_credentials():
+    config = Config(str(ALEMBIC_INI))
+    script_directory = ScriptDirectory.from_config(config)
+    revision = next(iter(script_directory.walk_revisions()))
+    content = Path(revision.path).read_text(encoding="utf-8").lower()
+
+    assert "postgresql://" not in content
+    assert "postgresql+psycopg://" not in content
+    assert "database_url" not in content
+    assert "password" not in content
+    assert "api_key" not in content
+    assert "authorization" not in content
+    assert "cookie" not in content
