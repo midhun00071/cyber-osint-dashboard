@@ -29,6 +29,7 @@ from app.models.common import (
 
 if TYPE_CHECKING:
     from app.models.intelligence_item_identifier import IntelligenceItemIdentifier
+    from app.models.intelligence_item_tag import IntelligenceItemTag
     from app.models.source_record import SourceRecord
     from app.models.vulnerability import Vulnerability
 
@@ -228,4 +229,10 @@ class IntelligenceItem(
         cascade="all, delete-orphan",
         passive_deletes=True,
         uselist=False,
+    )
+    tag_assignments: Mapped[list[IntelligenceItemTag]] = relationship(
+        "IntelligenceItemTag",
+        back_populates="intelligence_item",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )

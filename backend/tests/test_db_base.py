@@ -20,21 +20,25 @@ def test_naming_convention_includes_required_entries():
     assert set(Base.metadata.naming_convention) == {"pk", "fk", "uq", "ck", "ix"}
 
 
-def test_base_metadata_has_p1_11b_tables_after_model_registration():
+def test_base_metadata_has_p1_11c_tables_after_model_registration():
     assert set(Base.metadata.tables) == {
         "intelligence_item_identifiers",
+        "intelligence_item_tags",
         "intelligence_items",
         "intelligence_sources",
         "source_records",
+        "tags",
         "vulnerabilities",
     }
 
 
-def test_p1_11b_domain_models_are_registered():
+def test_p1_11c_domain_models_are_registered():
     assert {mapper.class_ for mapper in Base.registry.mappers} >= {
         app.models.IntelligenceItemIdentifier,
+        app.models.IntelligenceItemTag,
         app.models.IntelligenceSource,
         app.models.IntelligenceItem,
         app.models.SourceRecord,
+        app.models.Tag,
         app.models.Vulnerability,
     }

@@ -23,14 +23,14 @@ from app.db.base import Base
 
 IMPLEMENTED_TABLES = {
     "intelligence_item_identifiers",
+    "intelligence_item_tags",
     "intelligence_items",
     "intelligence_sources",
     "source_records",
+    "tags",
     "vulnerabilities",
 }
 FUTURE_TABLES = {
-    "tags",
-    "intelligence_item_tags",
     "ingestion_runs",
     "ingestion_run_records",
     "ingestion_errors",
@@ -94,8 +94,10 @@ def test_importing_models_registers_only_implemented_tables_without_engine(monke
     assert set(app.models.__all__) == {
         "IntelligenceItem",
         "IntelligenceItemIdentifier",
+        "IntelligenceItemTag",
         "IntelligenceSource",
         "SourceRecord",
+        "Tag",
         "Vulnerability",
     }
 
