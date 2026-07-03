@@ -1,4 +1,5 @@
 from app.db.base import Base, NAMING_CONVENTION
+import app.models
 
 
 APPROVED_NAMING_CONVENTION = {
@@ -19,9 +20,15 @@ def test_naming_convention_includes_required_entries():
     assert set(Base.metadata.naming_convention) == {"pk", "fk", "uq", "ck", "ix"}
 
 
-def test_base_metadata_has_no_tables_during_p1_10():
-    assert Base.metadata.tables == {}
+def test_base_metadata_has_p1_11a_tables_after_model_registration():
+    assert set(Base.metadata.tables) == {
+        "intelligence_sources",
+        "intelligence_items",
+    }
 
 
-def test_no_domain_models_are_registered_during_p1_10():
-    assert list(Base.registry.mappers) == []
+def test_p1_11a_domain_models_are_registered():
+    assert {mapper.class_ for mapper in Base.registry.mappers} >= {
+        app.models.IntelligenceSource,
+        app.models.IntelligenceItem,
+    }
