@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="12" fill="#111827"/>
+  <rect
+    x="8"
+    y="8"
+    width="48"
+    height="48"
+    rx="9"
+    fill="#172033"
+    stroke="#3b82f6"
+    stroke-width="2"
+  />
+  <text
+    x="32"
+    y="39"
+    text-anchor="middle"
+    font-family="Arial, sans-serif"
+    font-size="20"
+    font-weight="700"
+    fill="#adc6ff"
+  >AD</text>
+</svg>
