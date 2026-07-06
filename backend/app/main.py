@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.routes.health import router as health_router
+from app.api.v1.routes.version import router as version_router
 from app.core.config import get_settings
 from app.core.logging_config import configure_logging
 
@@ -33,7 +34,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(
     title=settings.app_name,
     description="Backend API for the Alpha Data Cyber OSINT Dashboard.",
-    version="0.1.0",
+    version=settings.app_version,
     debug=settings.debug,
     lifespan=lifespan,
 )
@@ -47,6 +48,7 @@ app.add_middleware(
 )
 
 app.include_router(health_router, prefix="/api")
+app.include_router(version_router, prefix="/api")
 
 
 @app.get("/")

@@ -14,6 +14,12 @@ class Settings(BaseSettings):
     """
 
     app_name: str = Field(default="Cyber OSINT Dashboard", alias="APP_NAME")
+    app_version: str = Field(
+        default="0.1.0",
+        alias="APP_VERSION",
+        min_length=1,
+        max_length=64,
+    )
     app_env: str = Field(default="development", alias="APP_ENV")
     debug: bool = Field(default=False, alias="DEBUG")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
@@ -51,6 +57,7 @@ class Settings(BaseSettings):
 
     @field_validator(
         "app_name",
+        "app_version",
         "app_env",
         "log_level",
         "backend_host",

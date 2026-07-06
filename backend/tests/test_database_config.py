@@ -170,15 +170,40 @@ def test_postgres_port_outside_valid_range_is_rejected(port: int) -> None:
 def test_existing_non_database_settings_still_behave_correctly() -> None:
     settings = make_settings(
         APP_NAME="  Custom Dashboard  ",
+        APP_VERSION="  1.2.3  ",
         APP_ENV="  test  ",
         DEBUG=True,
         BACKEND_CORS_ORIGINS=" http://localhost:3000, http://127.0.0.1:3000 ",
     )
 
     assert settings.app_name == "Custom Dashboard"
+    assert settings.app_version == "1.2.3"
     assert settings.app_env == "test"
     assert settings.debug is True
     assert settings.cors_origins_list == [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     ]
+
+
+def test_default_app_version_is_safe_public_value(monkeypatch) -> None:
+    monkeypatch.delenv("APP_VERSION", raising=False)
+    get_settings.cache_clear()
+
+    settings = Settings(_env_file=None)
+
+    assert settings.app_version == "0.1.0"
+
+
+def test_app_version_environment_override_is_supported(monkeypatch) -> None:
+    monkeypatch.setenv("APP_VERSION", "2.3.4")
+    get_settings.cache_clear()
+
+    settings = Settings(_env_file=None)
+
+    assert settings.app_version == "2.3.4"
+
+
+def test_app_version_longer_than_64_characters_is_rejected() -> None:
+    with pytest.raises(ValidationError):
+        make_settings(APP_VERSION="v" * 65)

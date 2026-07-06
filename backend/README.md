@@ -43,6 +43,14 @@ Initial dependencies are listed in requirements.txt.
 
 Phase 1 setup only. Application logic will be added in a later phase.
 
+## Utility API Endpoints
+
+- `GET /api/health` returns safe service health metadata for deployment and
+  monitoring checks.
+- `GET /api/version` returns safe public application metadata:
+  `{"service":"Cyber OSINT Dashboard","version":"0.1.0"}`. The version comes
+  from `APP_VERSION` and defaults to `0.1.0`.
+
 ## Synthetic Development Seed Data
 
 P1-12 adds an explicitly invoked synthetic dataset for local development and
