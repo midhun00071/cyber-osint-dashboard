@@ -43,20 +43,22 @@ The application must not provide exploit instructions, weaponized proof-of-conce
 
 ## Current Phase
 
-Phase 1: Project setup and repository structure.
+Phase 1 project setup and repository structure are complete. The project is now
+in the MVP ingestion and backend foundation stage.
 
 Current focus:
 
-- Folder structure
-- Environment variable examples
-- Docker setup
-- README skeletons
-- Dependency lists
-- Git hygiene
+- Manual, bounded NVD CVE ingestion
+- Idempotent vulnerability persistence and source provenance
+- Sanitized ingestion runs, per-record outcomes, and error auditing
+- Backend API and dashboard integration work in later stages
 
 ## Setup Status
 
-This project is still in setup phase. Backend and frontend application logic will be added in later phases.
+The local development environment, backend foundation, database schema, and
+initial frontend shell are implemented. NVD ingestion remains manual-only: it is
+not scheduled and is not connected to FastAPI startup, API routes, or the
+frontend dashboard.
 
 ## Security Principles
 
@@ -102,6 +104,20 @@ request to the public NVD API:
 This command runs only when invoked manually. It uses `NVD_API_KEY` from local
 settings when available, prints summary counts and safe CVE identifiers only,
 and does not store data or start scheduled ingestion.
+
+To manually fetch and store a bounded set of public NVD CVEs, run this separate
+network- and database-active command from `backend`:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.ingestion.nvd_cli `
+    --window-minutes 60 `
+    --results-per-page 25 `
+    --max-records 25
+```
+
+It runs only when explicitly invoked, stores bounded normalized public data and
+sanitized audit records, and is not connected to application startup or a
+scheduler.
 
 ## Documentation
 
