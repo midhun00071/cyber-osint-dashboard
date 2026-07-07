@@ -8,6 +8,13 @@ Domain API version: v1<br>
 Scope: Design documentation only; no routes or Pydantic schemas implemented<br>
 Related design: `docs/database-schema-design.md`
 
+Implementation note as of July 7, 2026: the first stored-intelligence read API
+now exists at `GET /api/v1/intelligence/items` and
+`GET /api/v1/intelligence/items/{public_id}`. This document remains the broader
+design target; the implemented MVP currently exposes a smaller safe subset of
+the full planned contract and does not return raw source payloads or trigger
+ingestion.
+
 ## 1. Executive Recommendation
 
 The approved API contract uses `/api/v1` for domain resources. The existing `GET /api/health` endpoint remains unversioned as the stable operational health check, and future safe version metadata is deferred to `GET /api/version` under P1-13.

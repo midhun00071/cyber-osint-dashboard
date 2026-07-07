@@ -51,7 +51,8 @@ Current focus:
 - Manual, bounded NVD CVE ingestion
 - Idempotent vulnerability persistence and source provenance
 - Sanitized ingestion runs, per-record outcomes, and error auditing
-- Backend API and dashboard integration work in later stages
+- Read-only backend intelligence API endpoints for stored CVE records
+- Dashboard integration work in later stages
 
 ## Setup Status
 
@@ -118,6 +119,20 @@ network- and database-active command from `backend`:
 It runs only when explicitly invoked, stores bounded normalized public data and
 sanitized audit records, and is not connected to application startup or a
 scheduler.
+
+### Read-only intelligence API
+
+The backend now exposes stored intelligence items through manual read-only API
+endpoints:
+
+- `GET /api/v1/intelligence/items`
+- `GET /api/v1/intelligence/items/{item_public_id}`
+
+The list endpoint supports bounded `limit` and `offset` pagination plus these
+safe filters: `q`, `severity`, `source_slug`, `item_type`, and `cve_id`.
+Responses return normalized dashboard-ready fields only. Raw source payloads,
+request headers, secrets, and ingestion audit internals are intentionally not
+returned, and these endpoints never trigger ingestion or external network calls.
 
 ## Documentation
 
