@@ -70,7 +70,23 @@ This project is still in setup phase. Backend and frontend application logic wil
 
 ## Running the Project
 
-Docker and local run instructions will be added after the backend and frontend skeleton applications are implemented.
+Run these commands from the repository root:
+
+```powershell
+.\run.cmd install
+.\run.cmd test
+.\run.cmd docker
+.\run.cmd dev
+```
+
+`install` prepares the backend and frontend dependencies, while `test` runs the
+backend tests plus the frontend type check and production build. `docker` builds,
+starts, and verifies the complete Docker Compose application.
+
+For day-to-day development, `dev` starts only PostgreSQL in Docker, then runs the
+FastAPI backend and Next.js frontend locally with reload support. Press Ctrl+C to
+stop the local backend and frontend processes. The database container remains
+running so it can be reused; stop it manually with Docker Compose when needed.
 
 ## Documentation
 
