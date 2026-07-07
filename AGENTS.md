@@ -115,6 +115,15 @@
 ## 10. Codex / Agent Work Style
 
 - Before large changes, summarize the goal, current state, files to inspect, implementation plan, and out-of-scope items.
+- Break large implementation work into clear sub-tasks that are large enough to make efficient use of Codex, but not so large that unrelated layers are mixed together.
+- A good Codex task should usually complete one meaningful project unit, such as:
+  - one backend service plus tests
+  - one API endpoint group plus schemas/tests
+  - one frontend page/component group plus validation
+  - one ingestion source layer plus tests/docs
+- Avoid tiny prompts for every small line change unless debugging or hardening requires it.
+- Avoid overly broad prompts that combine unrelated work such as ingestion, frontend UI, scheduler, authentication, and reporting in one task.
+- Prefer prompts that ask Codex to implement, test, fix obvious failures, and summarize.
 - For complex tasks, use a professional Codex prompt that includes:
   - current state
   - goal
@@ -125,9 +134,22 @@
   - tests to add/run
   - validation commands
   - final summary requirements
-- After Codex implementation, review changed files before approving a commit.
-- Use review zips when needed so changed files can be inspected before committing.
+- After Codex finishes, do not rely only on Codex’s summary.
+- Always upload changed files or a review zip when the task involves meaningful code, tests, database logic, API behavior, security boundaries, or documentation updates.
+- Review zips should include only changed project files and should exclude:
+  - `.env` files
+  - secrets
+  - `.venv`
+  - `node_modules`
+  - `.next`
+  - `__pycache__`
+  - `.pytest_cache`
+  - old review folders/zips
+  - local-only artifacts
+- Changed files should be reviewed before approving staging or commit.
+- Do not approve a commit based only on Codex output, test summaries, or similarity to expected work.
 - If validation fails, fix clear implementation/test failures and rerun the affected tests.
+- If review finds issues, create one focused hardening/fix prompt, rerun validation, and upload the updated files again.
 - Stop for human review if a real blocker appears, especially schema changes, architecture changes, failing security assumptions, or unclear task mapping.
 
 ## 11. Documentation and Reporting
