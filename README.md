@@ -88,6 +88,21 @@ FastAPI backend and Next.js frontend locally with reload support. Press Ctrl+C t
 stop the local backend and frontend processes. The database container remains
 running so it can be reused; stop it manually with Docker Compose when needed.
 
+### Manual NVD smoke test
+
+From the `backend` directory, a developer can make one small, network-active
+request to the public NVD API:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.ingestion.collectors.nvd_smoke_test `
+    --window-minutes 5 `
+    --results-per-page 3
+```
+
+This command runs only when invoked manually. It uses `NVD_API_KEY` from local
+settings when available, prints summary counts and safe CVE identifiers only,
+and does not store data or start scheduled ingestion.
+
 ## Documentation
 
 See the docs/ folder for:
