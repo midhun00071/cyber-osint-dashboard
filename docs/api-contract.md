@@ -22,6 +22,11 @@ vulnerability extension, while `epss_score_date` comes from the non-primary
 `first-epss` source record. Primary source display fields continue to use the
 NVD source record.
 
+Implementation note as of July 8, 2026: P2-09 adds the implemented article
+list endpoint at `GET /api/v1/articles`. It returns active article-like
+intelligence items only and does not expose raw payloads, hashes, source
+external IDs, ingestion audit fields, or internal database IDs.
+
 ## 1. Executive Recommendation
 
 The approved API contract uses `/api/v1` for domain resources. The existing `GET /api/health` endpoint remains unversioned as the stable operational health check, and future safe version metadata is deferred to `GET /api/version` under P1-13.
@@ -108,6 +113,79 @@ Deferred protected endpoints:
 | GET | `/api/v1/tags` | Tag discovery for filters. | Public read-only MVP. | `tag_type`, `q`, `page`, `page_size`. | `PaginatedResponse[TagSummary]` | `400`, `422`, `429`, `500`, `503` | `q` searches tag slug and display name only. |
 
 The MVP public API is read-only.
+
+Implemented P2-09 article list endpoint:
+
+| Method | Path | Purpose | Parameters | Success model | Security considerations |
+|---|---|---|---|---|---|
+| GET | `/api/v1/articles` | Paginated active cybersecurity articles and advisories. | `limit`, `offset`, `q`. | Offset envelope with article rows. | No raw payloads, hashes, identifiers, ingestion side effects, or internal IDs. |
+
+`GET /api/v1/articles` includes these active `item_type` values:
+
+- `security_advisory`
+- `cyber_news`
+- `threat_report`
+- `uae_official_alert`
+- `other_defensive_intel`
+
+It excludes `vulnerability` and excludes inactive `merged`, `superseded`, and
+`archived` records during P2-09. Pagination is offset-based with `limit`
+default `25`, minimum `1`, maximum `100`, and `offset` default `0`, minimum
+`0`. The response envelope is:
+
+```json
+{
+  "items": [],
+  "total": 0,
+  "limit": 25,
+  "offset": 0
+}
+```
+
+Article row fields are:
+
+- `public_id`
+- `title`
+- `summary`
+- `category`
+- `source_slug`
+- `source_name`
+- `source_url`
+- `published_at`
+- `modified_at`
+- `geographic_scope`
+- `uae_relevance_status`
+- `uae_relevance_confidence`
+- `last_seen_at`
+
+The optional `q` parameter trims surrounding whitespace, supports 1 to 120
+characters, and performs case-insensitive substring search over only
+`canonical_title` and `summary`. When `q` is supplied, the trimmed value must
+contain at least one non-whitespace character; whitespace-only searches return
+`422`. SQL wildcard characters such as `%` and `_` are escaped and treated as
+literal text. Raw payloads, URLs, source external IDs, hashes, identifiers,
+errors, headers, and configuration are not searched.
+
+Ordering is deterministic and newest-first:
+
+```text
+source_published_at DESC NULLS LAST
+last_seen_at DESC
+internal database ID DESC
+```
+
+The internal database ID is only an unexposed tie-breaker. Source display uses
+the primary source record when present. If malformed legacy data has no primary
+source record, the implementation uses a deterministic fallback based on safe
+stable source/source-record fields. `published_at` and `modified_at` prefer
+primary source-record dates and fall back to item-level dates. UAE/global
+display uses the normalized `geographic_scope`, `uae_relevance_status`, and
+`uae_relevance_confidence` fields without inventing a combined tag string.
+
+The endpoint is read-only and never calls ingestion collectors, persistence
+services, schedulers, startup ingestion, API-triggered ingestion, or external
+network requests. P2-11 source/category/date/tag/UAE filtering and public sort
+parameters remain pending.
 
 ## 7. Intelligence-Item Query Parameters
 
