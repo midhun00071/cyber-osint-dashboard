@@ -54,6 +54,26 @@ Access method:
 
 - Approved RSS feed or public API
 
+### CERT-EU Security Advisories
+
+Purpose:
+
+- Public defensive security advisories
+- Advisory titles, source links, summaries, and source timestamps
+- Additional non-CVE security-advisory intelligence items
+
+Access method:
+
+- Approved RSS feed
+- URL: `https://cert.europa.eu/publications/security-advisories-rss`
+
+Implementation status:
+
+- Implemented as a manual-only bounded backend ingestion command.
+- Locked to the approved HTTPS host and feed URL.
+- No scheduler, startup hook, API route trigger, frontend integration, or
+  article-body fetcher is included.
+
 ## UAE-Relevant Sources
 
 UAE-focused sources should only be automated if an approved feed, API, or authorized access method exists.
@@ -68,4 +88,7 @@ UAE-focused sources should only be automated if an approved feed, API, or author
 
 ## Current Status
 
-Phase 1 setup only. Final source approval will happen before live ingestion is implemented.
+NVD CVE ingestion, FIRST EPSS enrichment, and CERT-EU Security Advisories RSS
+ingestion are implemented as manual-only backend workflows with sanitized audit
+records. Other candidate sources still require explicit approval before live
+ingestion is implemented.

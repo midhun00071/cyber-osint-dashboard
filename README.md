@@ -50,6 +50,7 @@ Current focus:
 
 - Manual, bounded NVD CVE ingestion
 - Manual, bounded FIRST EPSS enrichment for existing CVEs
+- Manual, bounded CERT-EU Security Advisories RSS ingestion
 - Idempotent vulnerability persistence and source provenance
 - Sanitized ingestion runs, per-record outcomes, and error auditing
 - Read-only backend intelligence API endpoints for stored CVE records
@@ -58,9 +59,9 @@ Current focus:
 ## Setup Status
 
 The local development environment, backend foundation, database schema, and
-initial frontend shell are implemented. NVD ingestion and FIRST EPSS enrichment
-remain manual-only: they are not scheduled and are not connected to FastAPI
-startup, API routes, or the frontend dashboard.
+initial frontend shell are implemented. NVD ingestion, FIRST EPSS enrichment,
+and CERT-EU RSS ingestion remain manual-only: they are not scheduled and are
+not connected to FastAPI startup, API routes, or the frontend dashboard.
 
 ## Security Principles
 
@@ -136,6 +137,22 @@ This command runs only when explicitly invoked. It matches EPSS records only to
 existing global CVE identifiers, stores latest-value score metadata with
 non-primary FIRST EPSS provenance, records sanitized audit outcomes, and never
 creates new CVE intelligence items from EPSS data.
+
+### Manual CERT-EU RSS ingestion
+
+From the `backend` directory, a developer can fetch and store a bounded set of
+approved public CERT-EU Security Advisories feed entries:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.ingestion.rss_cli `
+    --max-records 25
+```
+
+This command runs only when explicitly invoked. It is locked to the approved
+`https://cert.europa.eu/publications/security-advisories-rss` feed, stores
+normalized advisory metadata as `security_advisory` intelligence items, records
+sanitized audit outcomes, and does not fetch article bodies or arbitrary RSS
+sources.
 
 ### Read-only intelligence API
 
