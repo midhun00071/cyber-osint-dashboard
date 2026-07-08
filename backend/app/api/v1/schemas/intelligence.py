@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -23,6 +23,9 @@ class IntelligenceItemSummary(BaseModel):
     cvss_score: float | None
     cvss_version: str | None
     cvss_vector: str | None
+    epss_score: float | None
+    epss_percentile: float | None
+    epss_score_date: date | None
     affected_summary: str | None
     source_url: str | None
     source_published_at: datetime | None

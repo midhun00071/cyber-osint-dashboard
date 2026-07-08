@@ -14,6 +14,7 @@ from app.api.v1.schemas.intelligence import (
     IntelligenceItemListResponse,
     IntelligenceItemSummary,
 )
+from app.ingestion.services.epss_enrichment_service import EPSS_SOURCE_SLUG
 from app.models import IntelligenceItem, IntelligenceItemIdentifier, SourceRecord
 
 
@@ -206,9 +207,22 @@ class IntelligenceQueryService:
             return primary
         return item.source_records[0] if item.source_records else None
 
+    @staticmethod
+    def _epss_source_record(item: IntelligenceItem) -> SourceRecord | None:
+        return next(
+            (
+                source_record
+                for source_record in item.source_records
+                if source_record.source is not None
+                and source_record.source.slug == EPSS_SOURCE_SLUG
+            ),
+            None,
+        )
+
     def _serialize_item(self, item: IntelligenceItem) -> IntelligenceItemSummary:
         identifier = self._primary_identifier(item)
         source_record = self._primary_source_record(item)
+        epss_source_record = self._epss_source_record(item)
         vulnerability = item.vulnerability
 
         return IntelligenceItemSummary(
@@ -224,6 +238,16 @@ class IntelligenceQueryService:
             cvss_score=self._decimal_to_float(vulnerability.cvss_score if vulnerability else None),
             cvss_version=vulnerability.cvss_version if vulnerability else None,
             cvss_vector=vulnerability.cvss_vector if vulnerability else None,
+            epss_score=self._decimal_to_float(vulnerability.epss_score if vulnerability else None),
+            epss_percentile=self._decimal_to_float(
+                vulnerability.epss_percentile if vulnerability else None
+            ),
+            epss_score_date=(
+                epss_source_record.source_modified_at.date()
+                if epss_source_record is not None
+                and epss_source_record.source_modified_at is not None
+                else None
+            ),
             affected_summary=vulnerability.affected_summary if vulnerability else None,
             source_url=source_record.source_url if source_record else item.canonical_url,
             source_published_at=(

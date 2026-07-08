@@ -49,6 +49,7 @@ in the MVP ingestion and backend foundation stage.
 Current focus:
 
 - Manual, bounded NVD CVE ingestion
+- Manual, bounded FIRST EPSS enrichment for existing CVEs
 - Idempotent vulnerability persistence and source provenance
 - Sanitized ingestion runs, per-record outcomes, and error auditing
 - Read-only backend intelligence API endpoints for stored CVE records
@@ -57,9 +58,9 @@ Current focus:
 ## Setup Status
 
 The local development environment, backend foundation, database schema, and
-initial frontend shell are implemented. NVD ingestion remains manual-only: it is
-not scheduled and is not connected to FastAPI startup, API routes, or the
-frontend dashboard.
+initial frontend shell are implemented. NVD ingestion and FIRST EPSS enrichment
+remain manual-only: they are not scheduled and are not connected to FastAPI
+startup, API routes, or the frontend dashboard.
 
 ## Security Principles
 
@@ -120,6 +121,22 @@ It runs only when explicitly invoked, stores bounded normalized public data and
 sanitized audit records, and is not connected to application startup or a
 scheduler.
 
+### Manual FIRST EPSS enrichment
+
+From the `backend` directory, a developer can enrich existing stored CVEs with
+latest public FIRST EPSS probability and percentile values:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.ingestion.epss_cli `
+    --max-cves 25 `
+    --batch-size 25
+```
+
+This command runs only when explicitly invoked. It matches EPSS records only to
+existing global CVE identifiers, stores latest-value score metadata with
+non-primary FIRST EPSS provenance, records sanitized audit outcomes, and never
+creates new CVE intelligence items from EPSS data.
+
 ### Read-only intelligence API
 
 The backend now exposes stored intelligence items through manual read-only API
@@ -130,9 +147,11 @@ endpoints:
 
 The list endpoint supports bounded `limit` and `offset` pagination plus these
 safe filters: `q`, `severity`, `source_slug`, `item_type`, and `cve_id`.
-Responses return normalized dashboard-ready fields only. Raw source payloads,
-request headers, secrets, and ingestion audit internals are intentionally not
-returned, and these endpoints never trigger ingestion or external network calls.
+Responses return normalized dashboard-ready fields only, including safe EPSS
+score, percentile, and score-date fields when enrichment exists. Raw source
+payloads, request headers, secrets, and ingestion audit internals are
+intentionally not returned, and these endpoints never trigger ingestion or
+external network calls.
 
 ## Documentation
 

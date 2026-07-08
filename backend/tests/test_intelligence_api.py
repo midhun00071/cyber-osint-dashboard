@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from datetime import date as date_type
 from decimal import Decimal
 from uuid import UUID, uuid4
 
@@ -84,6 +85,9 @@ def make_vulnerability_item(
     last_seen_at: datetime | None = None,
     first_seen_at: datetime | None = None,
     raw_payload_marker: str | None = None,
+    epss_score: Decimal | None = None,
+    epss_percentile: Decimal | None = None,
+    epss_score_date: date_type | None = None,
 ) -> IntelligenceItem:
     item_public_id = public_id or uuid4()
     item_last_seen_at = last_seen_at or NOW
@@ -130,8 +134,8 @@ def make_vulnerability_item(
         cvss_score=Decimal("8.8"),
         cvss_vector="CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
         cvss_version="3.1",
-        epss_score=None,
-        epss_percentile=None,
+        epss_score=epss_score,
+        epss_percentile=epss_percentile,
         kev_status="unknown",
         kev_last_checked_at=None,
         kev_date_added=None,
@@ -179,6 +183,49 @@ def make_vulnerability_item(
     item.source_records = [source_record]
     source.source_records = [source_record]
     source.identifiers = []
+    if epss_score_date is not None:
+        epss_source = IntelligenceSource(
+            public_id=uuid4(),
+            name="FIRST EPSS",
+            slug="first-epss",
+            source_type="api",
+            base_url="https://api.first.org/data/v1/epss",
+            is_enabled=True,
+            rate_limit_notes=None,
+            last_successful_fetch_at=NOW,
+            checkpoint_value=None,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+        epss_record = SourceRecord(
+            source=epss_source,
+            intelligence_item=item,
+            source_external_id=cve_id,
+            source_url="https://api.first.org/data/v1/epss",
+            canonical_url_hash=None,
+            content_hash="e" * 64,
+            is_primary_reference=False,
+            raw_payload={
+                "cve": cve_id,
+                "epss": str(epss_score),
+                "percentile": str(epss_percentile),
+                "date": epss_score_date.isoformat(),
+            },
+            payload_collected_at=NOW,
+            first_seen_at=item_first_seen_at,
+            last_seen_at=item_last_seen_at,
+            source_published_at=None,
+            source_modified_at=datetime.combine(epss_score_date, datetime.min.time(), tzinfo=UTC),
+            processing_status="processed",
+            last_processed_at=NOW,
+            safe_error_summary=None,
+            upstream_status="present",
+            created_at=NOW,
+            updated_at=NOW,
+        )
+        item.source_records.append(epss_record)
+        epss_source.source_records = [epss_record]
+        epss_source.identifiers = []
     return item
 
 
@@ -290,6 +337,9 @@ def test_list_endpoint_returns_stored_vulnerability_record_without_raw_payloads(
     assert returned["source_name"] == "National Vulnerability Database"
     assert returned["severity"] == "high"
     assert returned["cvss_score"] == 8.8
+    assert returned["epss_score"] is None
+    assert returned["epss_percentile"] is None
+    assert returned["epss_score_date"] is None
     assert "raw_payload" not in returned
     assert "affected_products_json" not in returned
     assert "super-secret-marker" not in response.text
@@ -445,7 +495,13 @@ def test_default_sort_is_newest_first_with_stable_results(client) -> None:
 
 
 def test_detail_endpoint_returns_one_safe_item(client) -> None:
-    item = make_vulnerability_item(cve_id="CVE-2026-07000")
+    item = make_vulnerability_item(
+        cve_id="CVE-2026-07000",
+        epss_score=Decimal("0.123456"),
+        epss_percentile=Decimal("0.654321"),
+        epss_score_date=date_type(2026, 7, 8),
+        raw_payload_marker="nvd-secret-marker",
+    )
 
     response = client(FakeSession([item])).get(
         f"/api/v1/intelligence/items/{item.public_id}"
@@ -455,7 +511,35 @@ def test_detail_endpoint_returns_one_safe_item(client) -> None:
     data = response.json()
     assert data["public_id"] == str(item.public_id)
     assert data["cve_id"] == "CVE-2026-07000"
+    assert data["epss_score"] == 0.123456
+    assert data["epss_percentile"] == 0.654321
+    assert data["epss_score_date"] == "2026-07-08"
+    assert data["source_slug"] == "nvd"
+    assert data["source_name"] == "National Vulnerability Database"
     assert "raw_payload" not in data
+    assert "source_record" not in data
+    assert "nvd-secret-marker" not in response.text
+
+
+def test_list_endpoint_returns_epss_fields_without_replacing_primary_source(client) -> None:
+    item = make_vulnerability_item(
+        cve_id="CVE-2026-08000",
+        epss_score=Decimal("0.500000"),
+        epss_percentile=Decimal("0.900000"),
+        epss_score_date=date_type(2026, 7, 9),
+    )
+
+    response = client(FakeSession([item])).get("/api/v1/intelligence/items")
+
+    assert response.status_code == 200
+    returned = response.json()["items"][0]
+    assert returned["epss_score"] == 0.5
+    assert returned["epss_percentile"] == 0.9
+    assert returned["epss_score_date"] == "2026-07-09"
+    assert returned["source_slug"] == "nvd"
+    assert returned["source_name"] == "National Vulnerability Database"
+    assert "FIRST EPSS" not in returned["source_name"]
+    assert "raw_payload" not in returned
 
 
 def test_detail_endpoint_returns_safe_404(client) -> None:

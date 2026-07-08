@@ -15,6 +15,13 @@ design target; the implemented MVP currently exposes a smaller safe subset of
 the full planned contract and does not return raw source payloads or trigger
 ingestion.
 
+Implementation note as of July 8, 2026: the implemented read API also returns
+safe latest EPSS fields when manual FIRST EPSS enrichment has populated the
+stored vulnerability. `epss_score` and `epss_percentile` come from the
+vulnerability extension, while `epss_score_date` comes from the non-primary
+`first-epss` source record. Primary source display fields continue to use the
+NVD source record.
+
 ## 1. Executive Recommendation
 
 The approved API contract uses `/api/v1` for domain resources. The existing `GET /api/health` endpoint remains unversioned as the stable operational health check, and future safe version metadata is deferred to `GET /api/version` under P1-13.
@@ -454,6 +461,8 @@ Example:
         "severity": "critical",
         "cvss_score": 9.8,
         "epss_score": 0.812345,
+        "epss_percentile": 0.9821,
+        "epss_score_date": "2026-07-08",
         "kev_status": "listed"
       }
     }
@@ -684,6 +693,7 @@ Vulnerability fields:
 - CVSS version
 - EPSS score
 - EPSS percentile
+- EPSS score date
 - KEV status
 - KEV last checked timestamp
 - KEV date added
@@ -706,6 +716,15 @@ Do not convert unknown KEV status to false.
 - `true` means campaign use is confirmed.
 - `false` means campaign use was checked and confirmed absent.
 - `null` means the value is unknown or has not been checked.
+
+Implemented EPSS response behavior:
+
+- `epss_score` is `null` until manual FIRST EPSS enrichment succeeds for the CVE.
+- `epss_percentile` is `null` until manual FIRST EPSS enrichment succeeds for the CVE.
+- `epss_score_date` is `null` when no FIRST EPSS source record is linked.
+- EPSS source-record IDs, raw score payloads, and audit internals are not exposed.
+- EPSS provenance does not replace the primary NVD `source_slug`, `source_name`,
+  or `source_url` fields in the current flat MVP response.
 
 ## 14. Source and Provenance Exposure
 
