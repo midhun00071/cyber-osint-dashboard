@@ -3,23 +3,25 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
 
+from app.api.v1.query_validation import ARTICLE_ITEM_TYPE_VALUES
 from app.api.v1.schemas.articles import ArticleListResponse, ArticleSummary
-from app.models import IntelligenceItem, SourceRecord
-
-
-ARTICLE_ITEM_TYPES = (
-    "security_advisory",
-    "cyber_news",
-    "threat_report",
-    "uae_official_alert",
-    "other_defensive_intel",
+from app.models import (
+    IntelligenceItem,
+    IntelligenceItemTag,
+    IntelligenceSource,
+    SourceRecord,
+    Tag,
 )
+
+
+ARTICLE_ITEM_TYPES = ARTICLE_ITEM_TYPE_VALUES
 ACTIVE_STATUS = "active"
 SEARCH_ESCAPE = "\\"
 
@@ -33,6 +35,13 @@ class ArticleQueryFilters:
     """Allow-listed article list query filters."""
 
     q: str | None = None
+    category: str | None = None
+    source_slug: str | None = None
+    tag_slug: str | None = None
+    published_from: datetime | None = None
+    published_to_exclusive: datetime | None = None
+    geographic_scope: str | None = None
+    uae_relevance_status: str | None = None
     limit: int = 25
     offset: int = 0
 
@@ -93,6 +102,40 @@ class ArticleQueryService:
             .where(IntelligenceItem.status == ACTIVE_STATUS)
             .where(IntelligenceItem.item_type.in_(ARTICLE_ITEM_TYPES))
         )
+        if filters.category is not None:
+            statement = statement.where(IntelligenceItem.item_type == filters.category)
+        if filters.source_slug is not None:
+            statement = statement.where(
+                select(SourceRecord.id)
+                .join(IntelligenceSource, SourceRecord.source_id == IntelligenceSource.id)
+                .where(SourceRecord.intelligence_item_id == IntelligenceItem.id)
+                .where(IntelligenceSource.slug == filters.source_slug)
+                .exists()
+            )
+        if filters.tag_slug is not None:
+            statement = statement.where(
+                select(IntelligenceItemTag.intelligence_item_id)
+                .join(Tag, IntelligenceItemTag.tag_id == Tag.id)
+                .where(IntelligenceItemTag.intelligence_item_id == IntelligenceItem.id)
+                .where(Tag.slug == filters.tag_slug)
+                .exists()
+            )
+        if filters.published_from is not None:
+            statement = statement.where(
+                IntelligenceItem.source_published_at >= filters.published_from
+            )
+        if filters.published_to_exclusive is not None:
+            statement = statement.where(
+                IntelligenceItem.source_published_at < filters.published_to_exclusive
+            )
+        if filters.geographic_scope is not None:
+            statement = statement.where(
+                IntelligenceItem.geographic_scope == filters.geographic_scope
+            )
+        if filters.uae_relevance_status is not None:
+            statement = statement.where(
+                IntelligenceItem.uae_relevance_status == filters.uae_relevance_status
+            )
         query = filters.normalized_query
         if query is not None:
             pattern = f"%{self._escape_like(query)}%"

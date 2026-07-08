@@ -27,6 +27,11 @@ list endpoint at `GET /api/v1/articles`. It returns active article-like
 intelligence items only and does not expose raw payloads, hashes, source
 external IDs, ingestion audit fields, or internal database IDs.
 
+Implementation note as of July 8, 2026: P2-11 adds strict validation for
+implemented article and intelligence list filters. Invalid individual query
+values return `422`; invalid combinations of otherwise valid filters return
+`400` with sanitized messages.
+
 ## 1. Executive Recommendation
 
 The approved API contract uses `/api/v1` for domain resources. The existing `GET /api/health` endpoint remains unversioned as the stable operational health check, and future safe version metadata is deferred to `GET /api/version` under P1-13.
@@ -114,11 +119,11 @@ Deferred protected endpoints:
 
 The MVP public API is read-only.
 
-Implemented P2-09 article list endpoint:
+Implemented P2-09/P2-11 article list endpoint:
 
 | Method | Path | Purpose | Parameters | Success model | Security considerations |
 |---|---|---|---|---|---|
-| GET | `/api/v1/articles` | Paginated active cybersecurity articles and advisories. | `limit`, `offset`, `q`. | Offset envelope with article rows. | No raw payloads, hashes, identifiers, ingestion side effects, or internal IDs. |
+| GET | `/api/v1/articles` | Paginated active cybersecurity articles and advisories. | `limit`, `offset`, `q`, `category`, `source_slug`, `tag_slug`, `published_from`, `published_to`, `geographic_scope`, `uae_relevance_status`. | Offset envelope with article rows. | No raw payloads, hashes, identifiers, ingestion side effects, or internal IDs. |
 
 `GET /api/v1/articles` includes these active `item_type` values:
 
@@ -129,7 +134,7 @@ Implemented P2-09 article list endpoint:
 - `other_defensive_intel`
 
 It excludes `vulnerability` and excludes inactive `merged`, `superseded`, and
-`archived` records during P2-09. Pagination is offset-based with `limit`
+`archived` records. Pagination is offset-based with `limit`
 default `25`, minimum `1`, maximum `100`, and `offset` default `0`, minimum
 `0`. The response envelope is:
 
@@ -166,6 +171,34 @@ contain at least one non-whitespace character; whitespace-only searches return
 literal text. Raw payloads, URLs, source external IDs, hashes, identifiers,
 errors, headers, and configuration are not searched.
 
+Article filters are optional single-value filters and combine with logical
+`AND`. Each supplied text filter trims surrounding whitespace, normalizes to
+lowercase where applicable, and rejects whitespace-only input with `422`.
+
+| Parameter | Rules |
+|---|---|
+| `category` | Exact `item_type` match. Allowed values are the five article types above. Maximum 40 characters. `vulnerability` is rejected. |
+| `source_slug` | Exact canonical slug match against any linked provenance source record, including non-primary records. Maximum 80 characters. Slugs allow lowercase letters, digits, and single hyphens between components only. |
+| `tag_slug` | Exact canonical tag slug match against assigned tags. Maximum 100 characters. Uses the same slug format as `source_slug`. Tag assignment metadata and IDs are not returned. |
+| `published_from` | ISO date `YYYY-MM-DD`; inclusive lower boundary on `source_published_at`, interpreted as the start of that UTC day. Null publication dates do not match when supplied. |
+| `published_to` | ISO date `YYYY-MM-DD`; inclusive upper boundary on `source_published_at`, implemented as `<` the start of the following UTC day. Maximum supported value is `9999-12-30`. Null publication dates do not match when supplied. |
+| `geographic_scope` | Exact match. Allowed values: `global`, `regional`, `uae`, `unknown`. `unknown` is not treated as `global`. |
+| `uae_relevance_status` | Exact match. Allowed values: `confirmed`, `probable`, `possible`, `not_relevant`, `unknown`. Statuses are not collapsed into a boolean. |
+
+Either publication date may be supplied alone. When both are supplied,
+`published_from` must not be later than `published_to`, and the date range must
+not exceed five calendar years. Invalid date formats return `422`; invalid
+date combinations return `400` with `Invalid article date range.`.
+Because the inclusive upper boundary is implemented as an exclusive next-day
+UTC boundary, `published_to=9999-12-31` is not supported and returns the same
+sanitized `400` date-range response instead of exposing arithmetic errors.
+
+Source filtering is applied at the SQL level against any linked provenance
+source record. The displayed `source_slug`, `source_name`, and `source_url`
+continue to use the primary source-selection policy, so the matched provenance
+source may differ from the displayed primary source. Tag filtering is also
+applied at the SQL level and does not multiply rows or inflate `total`.
+
 Ordering is deterministic and newest-first:
 
 ```text
@@ -184,8 +217,25 @@ display uses the normalized `geographic_scope`, `uae_relevance_status`, and
 
 The endpoint is read-only and never calls ingestion collectors, persistence
 services, schedulers, startup ingestion, API-triggered ingestion, or external
-network requests. P2-11 source/category/date/tag/UAE filtering and public sort
-parameters remain pending.
+network requests. Public sort parameters remain pending.
+
+Implemented `GET /api/v1/intelligence/items` validation:
+
+- `q` is optional, trims surrounding whitespace, has maximum length 120, and
+  rejects whitespace-only input with `422`.
+- `severity` is optional, normalizes to lowercase, and allows only `unknown`,
+  `none`, `low`, `medium`, `high`, or `critical`.
+- `source_slug` is optional, normalizes to lowercase, has maximum length 80,
+  and uses the canonical slug format described above.
+- `item_type` is optional, normalizes to lowercase, and allows only the
+  approved item types listed in this document. When omitted, the implemented
+  endpoint still defaults to `vulnerability`.
+- `cve_id` is optional, trims surrounding whitespace, normalizes to uppercase,
+  and must match `CVE-YYYY-NNNN...` with a four-digit year and at least four
+  sequence digits. The year and sequence digits must be ASCII digits.
+- Supplying `severity` or `cve_id` with an explicit non-vulnerability
+  `item_type` returns `400` with
+  `Vulnerability filters require item_type=vulnerability.`.
 
 ## 7. Intelligence-Item Query Parameters
 

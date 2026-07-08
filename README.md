@@ -164,14 +164,16 @@ endpoints:
 - `GET /api/v1/intelligence/items/{item_public_id}`
 
 The article list endpoint returns active article-like records with bounded
-`limit` and `offset` pagination plus title/summary search through `q`. The
-generic intelligence list endpoint supports bounded `limit` and `offset`
-pagination plus these safe filters: `q`, `severity`, `source_slug`,
-`item_type`, and `cve_id`. Responses return normalized dashboard-ready fields
-only, including safe EPSS score, percentile, and score-date fields when
-enrichment exists. Raw source payloads, request headers, secrets, and ingestion
-audit internals are intentionally not returned, and these endpoints never
-trigger ingestion or external network calls.
+`limit` and `offset` pagination, title/summary search through `q`, and safe
+filters for category, source slug, tag slug, publication date range,
+geographic scope, and UAE relevance status. The generic intelligence list
+endpoint supports bounded `limit` and `offset` pagination plus these safe
+filters: `q`, `severity`, `source_slug`, `item_type`, and `cve_id`. Responses
+return normalized dashboard-ready fields only, including safe EPSS score,
+percentile, and score-date fields when enrichment exists. Raw source payloads,
+request headers, secrets, and ingestion audit internals are intentionally not
+returned, and these endpoints never trigger ingestion or external network
+calls.
 
 ## Documentation
 

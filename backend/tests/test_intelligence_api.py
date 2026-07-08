@@ -445,6 +445,68 @@ def test_q_search_matches_title_summary_and_cve_id(client) -> None:
     ]
 
 
+def test_whitespace_only_q_returns_422(client) -> None:
+    response = client(FakeSession([make_vulnerability_item()])).get(
+        "/api/v1/intelligence/items?q=%20%20%20"
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("severity", ["severe", "%20%20"])
+def test_invalid_severity_returns_422(client, severity: str) -> None:
+    response = client(FakeSession([make_vulnerability_item()])).get(
+        f"/api/v1/intelligence/items?severity={severity}"
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "source_slug",
+    ["bad_slug", "-bad", "bad-", "bad--slug", "https://example.test/feed", "bad/slug"],
+)
+def test_invalid_source_slug_returns_422(client, source_slug: str) -> None:
+    response = client(FakeSession([make_vulnerability_item()])).get(
+        f"/api/v1/intelligence/items?source_slug={source_slug}"
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("item_type", ["article", "%20%20"])
+def test_invalid_item_type_returns_422(client, item_type: str) -> None:
+    response = client(FakeSession([make_vulnerability_item()])).get(
+        f"/api/v1/intelligence/items?item_type={item_type}"
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "cve_id",
+    [
+        "CVE-26-1234",
+        "CVE-2026-123",
+        "CVE-2026-12AB",
+        "2026-1234",
+        "%20%20",
+        "https://nvd.nist.gov/vuln/detail/CVE-2026-1234",
+        "CVE-٢٠٢٦-١٢٣٤",
+        "CVE-２０２６-１２３４",
+        "CVE-2026-１２３４",
+        "CVE-２０２６-1234",
+    ],
+)
+def test_malformed_cve_id_returns_422(client, cve_id: str) -> None:
+    response = client(FakeSession([make_vulnerability_item()])).get(
+        "/api/v1/intelligence/items",
+        params={"cve_id": cve_id},
+    )
+
+    assert response.status_code == 422
+
+
 def test_cve_id_filter_normalizes_to_uppercase(client) -> None:
     item = make_vulnerability_item(cve_id="CVE-2026-04000")
 
@@ -456,6 +518,21 @@ def test_cve_id_filter_normalizes_to_uppercase(client) -> None:
     assert [entry["cve_id"] for entry in response.json()["items"]] == [
         "CVE-2026-04000"
     ]
+
+
+@pytest.mark.parametrize("query", ["severity=high", "cve_id=CVE-2026-12345"])
+def test_vulnerability_filters_with_explicit_article_item_type_return_400(
+    client,
+    query: str,
+) -> None:
+    response = client(FakeSession([make_non_vulnerability_item()])).get(
+        f"/api/v1/intelligence/items?item_type=cyber_news&{query}"
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "Vulnerability filters require item_type=vulnerability."
+    }
 
 
 def test_item_type_filter_can_include_non_vulnerability_records(client) -> None:

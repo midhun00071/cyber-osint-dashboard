@@ -10,8 +10,18 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.db.session import get_db_session
 from app.main import app
-from app.models import IntelligenceItem, IntelligenceSource, SourceRecord
-from app.services.article_query_service import ARTICLE_ITEM_TYPES
+from app.models import (
+    IntelligenceItem,
+    IntelligenceItemTag,
+    IntelligenceSource,
+    SourceRecord,
+    Tag,
+)
+from app.services.article_query_service import (
+    ARTICLE_ITEM_TYPES,
+    ArticleQueryFilters,
+    ArticleQueryService,
+)
 
 
 NOW = datetime(2026, 7, 8, 12, 0, tzinfo=UTC)
@@ -60,8 +70,8 @@ class FakeSession:
         if self.error_on == kind:
             raise SQLAlchemyError(self.error_message)
 
-        query = _extract_query(statement)
-        matches = _filtered_articles(self.items, query)
+        filters = _extract_filters(statement)
+        matches = _filtered_articles(self.items, filters)
         if kind == "count":
             return FakeCountResult(len(matches))
 
@@ -133,6 +143,7 @@ def make_article(
     )
     item.source_records = []
     item.identifiers = []
+    item.tag_assignments = []
     if not with_source_record:
         return item
 
@@ -182,8 +193,101 @@ def _is_count_statement(statement) -> bool:
     return "count" in str(statement).lower().split("from", 1)[0]
 
 
-def _extract_query(statement) -> str | None:
-    for value in statement.compile().params.values():
+def add_linked_source(
+    item: IntelligenceItem,
+    *,
+    index: int,
+    slug: str,
+    name: str | None = None,
+    primary: bool = False,
+) -> SourceRecord:
+    source = IntelligenceSource(
+        id=index,
+        public_id=uuid4(),
+        name=name or slug.replace("-", " ").title(),
+        slug=slug,
+        source_type="rss",
+        base_url=f"https://example.test/{slug}",
+        is_enabled=True,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    record = SourceRecord(
+        id=index,
+        source=source,
+        intelligence_item=item,
+        source_external_id=f"linked-{index}",
+        source_url=f"https://example.test/{slug}/article",
+        canonical_url_hash="c" * 64,
+        content_hash="d" * 64,
+        is_primary_reference=primary,
+        raw_payload={"marker": slug},
+        payload_collected_at=NOW,
+        first_seen_at=NOW,
+        last_seen_at=NOW,
+        source_published_at=NOW,
+        source_modified_at=None,
+        processing_status="processed",
+        last_processed_at=NOW,
+        safe_error_summary=None,
+        upstream_status="present",
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    item.source_records.append(record)
+    source.source_records = [record]
+    source.identifiers = []
+    return record
+
+
+def add_tag(item: IntelligenceItem, *, index: int, slug: str) -> IntelligenceItemTag:
+    tag = Tag(
+        id=index,
+        slug=slug,
+        display_name=slug.replace("-", " ").title(),
+        tag_type="theme",
+        created_at=NOW,
+    )
+    assignment = IntelligenceItemTag(
+        intelligence_item=item,
+        tag=tag,
+        assigned_by="system",
+        confidence=Decimal("0.900"),
+        created_at=NOW,
+    )
+    item.tag_assignments.append(assignment)
+    tag.item_assignments = [assignment]
+    return assignment
+
+
+def _extract_filters(statement) -> dict[str, object]:
+    sql = str(statement)
+    params = statement.compile().params
+    filters: dict[str, object] = {}
+    if isinstance(params.get("item_type_2"), str):
+        filters["category"] = params["item_type_2"]
+    for index in range(1, 5):
+        key = f"slug_{index}"
+        if key not in params:
+            continue
+        if f"intelligence_sources.slug = :{key}" in sql:
+            filters["source_slug"] = params[key]
+        if f"tags.slug = :{key}" in sql:
+            filters["tag_slug"] = params[key]
+    if "source_published_at_1" in params:
+        filters["published_from"] = params["source_published_at_1"]
+    if "source_published_at_2" in params:
+        filters["published_to_exclusive"] = params["source_published_at_2"]
+    if "geographic_scope_1" in params:
+        filters["geographic_scope"] = params["geographic_scope_1"]
+    if "uae_relevance_status_1" in params:
+        filters["uae_relevance_status"] = params["uae_relevance_status_1"]
+    filters["query"] = _extract_query(params)
+    return filters
+
+
+def _extract_query(params: dict[str, object]) -> str | None:
+    for value in params.values():
         if isinstance(value, str) and value.startswith("%") and value.endswith("%"):
             return _unescape_like(value[1:-1])
     return None
@@ -214,15 +318,64 @@ def _offset(statement) -> int:
 
 def _filtered_articles(
     items: list[IntelligenceItem],
-    query: str | None,
+    filters: dict[str, object],
 ) -> list[IntelligenceItem]:
     matches = [
         item
         for item in items
         if item.status == "active" and item.item_type in ARTICLE_ITEM_TYPES
     ]
+    if filters.get("category") is not None:
+        matches = [item for item in matches if item.item_type == filters["category"]]
+    if filters.get("source_slug") is not None:
+        matches = [
+            item
+            for item in matches
+            if any(
+                source_record.source is not None
+                and source_record.source.slug == filters["source_slug"]
+                for source_record in item.source_records
+            )
+        ]
+    if filters.get("tag_slug") is not None:
+        matches = [
+            item
+            for item in matches
+            if any(
+                assignment.tag is not None
+                and assignment.tag.slug == filters["tag_slug"]
+                for assignment in item.tag_assignments
+            )
+        ]
+    if filters.get("published_from") is not None:
+        matches = [
+            item
+            for item in matches
+            if item.source_published_at is not None
+            and item.source_published_at >= filters["published_from"]
+        ]
+    if filters.get("published_to_exclusive") is not None:
+        matches = [
+            item
+            for item in matches
+            if item.source_published_at is not None
+            and item.source_published_at < filters["published_to_exclusive"]
+        ]
+    if filters.get("geographic_scope") is not None:
+        matches = [
+            item
+            for item in matches
+            if item.geographic_scope == filters["geographic_scope"]
+        ]
+    if filters.get("uae_relevance_status") is not None:
+        matches = [
+            item
+            for item in matches
+            if item.uae_relevance_status == filters["uae_relevance_status"]
+        ]
+    query = filters.get("query")
     if query is not None:
-        lowered = query.lower()
+        lowered = str(query).lower()
         matches = [
             item
             for item in matches
@@ -432,6 +585,384 @@ def test_search_does_not_inspect_raw_payload_source_url_or_external_id(client) -
         response = client(FakeSession([raw_only])).get(f"/api/v1/articles?q={query}")
         assert response.status_code == 200
         assert response.json()["items"] == []
+
+
+@pytest.mark.parametrize("category", ARTICLE_ITEM_TYPES)
+def test_category_filter_accepts_approved_article_categories(client, category: str) -> None:
+    matching = make_article(index=1, item_type=category, title=category)
+    other_type = "cyber_news" if category != "cyber_news" else "security_advisory"
+    other = make_article(index=2, item_type=other_type, title="Other")
+
+    response = client(FakeSession([matching, other])).get(
+        f"/api/v1/articles?category={category}"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert response.json()["items"][0]["category"] == category
+
+
+@pytest.mark.parametrize("category", ["vulnerability", "made_up", "%20%20"])
+def test_invalid_category_filter_returns_422(client, category: str) -> None:
+    response = client(FakeSession([make_article()])).get(
+        f"/api/v1/articles?category={category}"
+    )
+
+    assert response.status_code == 422
+
+
+def test_category_filter_combines_with_search(client) -> None:
+    matching = make_article(
+        index=1,
+        item_type="security_advisory",
+        title="Exchange advisory",
+    )
+    wrong_category = make_article(index=2, item_type="cyber_news", title="Exchange news")
+    wrong_search = make_article(index=3, item_type="security_advisory", title="Other")
+
+    response = client(FakeSession([matching, wrong_category, wrong_search])).get(
+        "/api/v1/articles?category=security_advisory&q=exchange"
+    )
+
+    assert response.status_code == 200
+    assert [entry["title"] for entry in response.json()["items"]] == [
+        "Exchange advisory"
+    ]
+
+
+def test_source_slug_filter_matches_any_linked_source_and_displays_primary(client) -> None:
+    item = make_article(index=1, title="Cross-source advisory")
+    add_linked_source(item, index=20, slug="vendor-feed")
+    unrelated = make_article(index=2, title="Unrelated")
+
+    response = client(FakeSession([item, unrelated])).get(
+        "/api/v1/articles?source_slug=VENDOR-FEED"
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 1
+    assert data["items"][0]["title"] == "Cross-source advisory"
+    assert data["items"][0]["source_slug"] == "cert-eu-security-advisories"
+
+
+def test_unrelated_source_slug_does_not_match(client) -> None:
+    item = make_article(index=1, title="Primary only")
+
+    response = client(FakeSession([item])).get(
+        "/api/v1/articles?source_slug=vendor-feed"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 0
+
+
+@pytest.mark.parametrize(
+    "source_slug",
+    ["bad_slug", "-bad", "bad-", "bad--slug", "https://example.test/feed", "bad/slug"],
+)
+def test_invalid_source_slug_filter_returns_422(client, source_slug: str) -> None:
+    response = client(FakeSession([make_article()])).get(
+        f"/api/v1/articles?source_slug={source_slug}"
+    )
+
+    assert response.status_code == 422
+
+
+def test_source_filter_preserves_total_and_pagination(client) -> None:
+    older = make_article(
+        index=1,
+        title="Older vendor",
+        item_published_at=datetime(2026, 7, 1, tzinfo=UTC),
+        source_slug="vendor-feed",
+        source_name="Vendor Feed",
+    )
+    newer = make_article(
+        index=2,
+        title="Newer vendor",
+        item_published_at=datetime(2026, 7, 2, tzinfo=UTC),
+        source_slug="vendor-feed",
+        source_name="Vendor Feed",
+    )
+    other = make_article(index=3, title="Other source")
+
+    response = client(FakeSession([older, newer, other])).get(
+        "/api/v1/articles?source_slug=vendor-feed&limit=1&offset=1"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 2
+    assert [entry["title"] for entry in response.json()["items"]] == ["Older vendor"]
+
+
+def test_tag_slug_filter_matches_exact_assignment_without_exposing_metadata(client) -> None:
+    matching = make_article(index=1, title="Tagged advisory")
+    add_tag(matching, index=1, slug="exchange-server")
+    add_tag(matching, index=2, slug="patch-management")
+    unrelated = make_article(index=2, title="Other tag")
+    add_tag(unrelated, index=3, slug="vpn")
+
+    response = client(FakeSession([matching, unrelated])).get(
+        "/api/v1/articles?tag_slug=EXCHANGE-SERVER"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert [entry["title"] for entry in response.json()["items"]] == ["Tagged advisory"]
+    assert "tag_assignments" not in response.text
+    assert "assigned_by" not in response.text
+
+
+def test_tag_filter_does_not_duplicate_articles_with_multiple_assignments(client) -> None:
+    item = make_article(index=1, title="Multi-tag")
+    add_tag(item, index=1, slug="exchange-server")
+    add_tag(item, index=2, slug="exchange-server")
+
+    response = client(FakeSession([item])).get(
+        "/api/v1/articles?tag_slug=exchange-server"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert len(response.json()["items"]) == 1
+
+
+@pytest.mark.parametrize("tag_slug", ["bad_slug", "-bad", "bad-", "bad--slug"])
+def test_invalid_tag_slug_filter_returns_422(client, tag_slug: str) -> None:
+    response = client(FakeSession([make_article()])).get(
+        f"/api/v1/articles?tag_slug={tag_slug}"
+    )
+
+    assert response.status_code == 422
+
+
+def test_publication_date_filters_are_inclusive_and_exclude_null_dates(client) -> None:
+    before = make_article(
+        index=1,
+        title="Before",
+        item_published_at=datetime(2026, 7, 7, 23, 59, tzinfo=UTC),
+    )
+    boundary_start = make_article(
+        index=2,
+        title="Boundary start",
+        item_published_at=datetime(2026, 7, 8, 0, 0, tzinfo=UTC),
+    )
+    boundary_end = make_article(
+        index=3,
+        title="Boundary end",
+        item_published_at=datetime(2026, 7, 9, 23, 59, tzinfo=UTC),
+    )
+    after = make_article(
+        index=4,
+        title="After",
+        item_published_at=datetime(2026, 7, 10, 0, 0, tzinfo=UTC),
+    )
+    no_date = make_article(index=5, title="No date", item_published_at=None)
+
+    response = client(FakeSession([before, boundary_start, boundary_end, after, no_date])).get(
+        "/api/v1/articles?published_from=2026-07-08&published_to=2026-07-09"
+    )
+
+    assert response.status_code == 200
+    assert {entry["title"] for entry in response.json()["items"]} == {
+        "Boundary start",
+        "Boundary end",
+    }
+
+
+def test_single_ended_and_equal_publication_date_ranges_work(client) -> None:
+    day = make_article(
+        index=1,
+        title="On day",
+        item_published_at=datetime(2026, 7, 8, 12, tzinfo=UTC),
+    )
+    later = make_article(
+        index=2,
+        title="Later",
+        item_published_at=datetime(2026, 7, 9, 12, tzinfo=UTC),
+    )
+
+    from_response = client(FakeSession([day, later])).get(
+        "/api/v1/articles?published_from=2026-07-09"
+    )
+    equal_response = client(FakeSession([day, later])).get(
+        "/api/v1/articles?published_from=2026-07-08&published_to=2026-07-08"
+    )
+
+    assert [entry["title"] for entry in from_response.json()["items"]] == ["Later"]
+    assert [entry["title"] for entry in equal_response.json()["items"]] == ["On day"]
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "published_from=2026-07-10&published_to=2026-07-09",
+        "published_from=2026-01-01&published_to=2031-01-02",
+        "published_from=2024-02-29&published_to=2029-03-01",
+        "published_to=9999-12-31",
+        "published_from=9999-12-31&published_to=9999-12-31",
+        "published_from=9994-12-29&published_to=9999-12-30",
+    ],
+)
+def test_invalid_publication_date_combinations_return_400(client, query: str) -> None:
+    response = client(FakeSession([make_article()])).get(f"/api/v1/articles?{query}")
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Invalid article date range."}
+    assert "OverflowError" not in response.text
+    assert "ValueError" not in response.text
+
+
+def test_exactly_five_calendar_years_and_leap_day_range_are_accepted(client) -> None:
+    response = client(FakeSession([make_article()])).get(
+        "/api/v1/articles?published_from=2024-02-29&published_to=2029-02-28"
+    )
+
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "published_from=9995-01-01&published_to=9999-01-01",
+        "published_from=9994-12-30&published_to=9999-12-30",
+    ],
+)
+def test_high_year_publication_date_ranges_do_not_overflow(client, query: str) -> None:
+    response = client(FakeSession([make_article()])).get(f"/api/v1/articles?{query}")
+
+    assert response.status_code == 200
+    assert "OverflowError" not in response.text
+    assert "ValueError" not in response.text
+
+
+def test_invalid_publication_date_text_returns_422(client) -> None:
+    response = client(FakeSession([make_article()])).get(
+        "/api/v1/articles?published_from=not-a-date"
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("scope", ["global", "regional", "uae", "unknown"])
+def test_geographic_scope_filter_accepts_approved_values(client, scope: str) -> None:
+    matching = make_article(index=1, title=scope, geographic_scope=scope)
+    other_scope = "global" if scope != "global" else "regional"
+    other = make_article(index=2, title="Other", geographic_scope=other_scope)
+
+    response = client(FakeSession([matching, other])).get(
+        f"/api/v1/articles?geographic_scope={scope.upper()}"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert response.json()["items"][0]["geographic_scope"] == scope
+
+
+@pytest.mark.parametrize(
+    "status_value",
+    ["confirmed", "probable", "possible", "not_relevant", "unknown"],
+)
+def test_uae_relevance_status_filter_accepts_approved_values(
+    client,
+    status_value: str,
+) -> None:
+    matching = make_article(index=1, title=status_value, uae_relevance_status=status_value)
+    other_status = "unknown" if status_value != "unknown" else "confirmed"
+    other = make_article(index=2, title="Other", uae_relevance_status=other_status)
+
+    response = client(FakeSession([matching, other])).get(
+        f"/api/v1/articles?uae_relevance_status={status_value.upper()}"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert response.json()["items"][0]["uae_relevance_status"] == status_value
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "geographic_scope=local",
+        "geographic_scope=%20%20",
+        "uae_relevance_status=yes",
+        "uae_relevance_status=%20%20",
+    ],
+)
+def test_invalid_geographic_and_uae_filters_return_422(client, query: str) -> None:
+    response = client(FakeSession([make_article()])).get(f"/api/v1/articles?{query}")
+
+    assert response.status_code == 422
+
+
+def test_unknown_geographic_scope_is_distinct_from_global(client) -> None:
+    unknown = make_article(index=1, title="Unknown", geographic_scope="unknown")
+    global_item = make_article(index=2, title="Global", geographic_scope="global")
+
+    response = client(FakeSession([unknown, global_item])).get(
+        "/api/v1/articles?geographic_scope=unknown"
+    )
+
+    assert response.status_code == 200
+    assert [entry["title"] for entry in response.json()["items"]] == ["Unknown"]
+
+
+def test_all_article_filters_combine_with_and_semantics(client) -> None:
+    matching = make_article(
+        index=1,
+        item_type="security_advisory",
+        title="Exchange advisory",
+        summary="Patch required for regional operators.",
+        item_published_at=datetime(2026, 7, 8, 9, tzinfo=UTC),
+        source_slug="primary-feed",
+        source_name="Primary Feed",
+        geographic_scope="uae",
+        uae_relevance_status="confirmed",
+    )
+    add_linked_source(matching, index=20, slug="vendor-feed")
+    add_tag(matching, index=1, slug="exchange-server")
+    wrong_tag = make_article(
+        index=2,
+        item_type="security_advisory",
+        title="Exchange advisory",
+        item_published_at=datetime(2026, 7, 8, 10, tzinfo=UTC),
+        geographic_scope="uae",
+        uae_relevance_status="confirmed",
+    )
+    add_linked_source(wrong_tag, index=21, slug="vendor-feed")
+    add_tag(wrong_tag, index=2, slug="vpn")
+
+    response = client(FakeSession([matching, wrong_tag])).get(
+        "/api/v1/articles"
+        "?q=exchange"
+        "&category=security_advisory"
+        "&source_slug=vendor-feed"
+        "&tag_slug=exchange-server"
+        "&published_from=2026-07-08"
+        "&published_to=2026-07-08"
+        "&geographic_scope=uae"
+        "&uae_relevance_status=confirmed"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert [entry["title"] for entry in response.json()["items"]] == [
+        "Exchange advisory"
+    ]
+
+
+def test_source_and_tag_filters_are_database_level_exists_predicates() -> None:
+    statement = ArticleQueryService(FakeSession())._filtered_statement(
+        ArticleQueryFilters(source_slug="vendor-feed", tag_slug="exchange-server")
+    )
+    sql = str(statement)
+
+    assert "EXISTS" in sql
+    assert "source_records" in sql
+    assert "intelligence_sources" in sql
+    assert "intelligence_item_tags" in sql
+    assert "tags" in sql
+    assert " JOIN " not in sql.split("WHERE", 1)[0]
 
 
 def test_sorting_is_newest_first_nulls_last_and_stable(client) -> None:
