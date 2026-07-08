@@ -12,6 +12,7 @@ from app.ingestion.normalizers.rss import (
     deduplicate_rss_entries,
     normalize_rss_entry,
     normalize_rss_feed,
+    normalized_title_sha256,
 )
 
 
@@ -60,6 +61,9 @@ def test_normalizes_rss_item_into_safe_allowlisted_fields() -> None:
     assert record.source_published_at == datetime(2026, 7, 8, 8, 30, tzinfo=UTC)
     assert record.source_modified_at is None
     assert record.canonical_url_hash
+    assert record.normalized_title_hash == normalized_title_sha256(
+        "CERT-EU Security Advisory"
+    )
     assert record.content_hash
     assert record.raw_payload == {
         "categories": ["Advisory"],
@@ -131,7 +135,39 @@ def test_hashes_are_deterministic() -> None:
     second = normalize_rss_feed(rss_item())[0]
 
     assert first.canonical_url_hash == second.canonical_url_hash
+    assert first.normalized_title_hash == second.normalized_title_hash
     assert first.content_hash == second.content_hash
+
+
+def test_title_hash_is_case_and_whitespace_insensitive() -> None:
+    assert normalized_title_sha256(" Advisory   Title ") == normalized_title_sha256(
+        "advisory title"
+    )
+
+
+def test_title_hash_uses_unicode_nfkc_normalization() -> None:
+    assert normalized_title_sha256("ACME \u2163 advisory") == normalized_title_sha256(
+        "acme IV advisory"
+    )
+
+
+def test_different_titles_have_different_hashes() -> None:
+    assert normalized_title_sha256("Advisory one") != normalized_title_sha256(
+        "Advisory two"
+    )
+
+
+def test_empty_title_hash_input_is_rejected() -> None:
+    with pytest.raises(RssNormalizationError):
+        normalized_title_sha256(" \n\t ")
+
+
+def test_title_hash_is_lowercase_sha256_hex() -> None:
+    digest = normalized_title_sha256("Advisory")
+
+    assert len(digest) == 64
+    assert digest == digest.lower()
+    assert set(digest) <= set("0123456789abcdef")
 
 
 def test_text_fields_are_bounded() -> None:

@@ -12,6 +12,11 @@ from sqlalchemy.orm import Session
 
 from app.ingestion.collectors.rss_client import CERT_EU_FEED_URL
 from app.ingestion.normalizers.rss import NormalizedRssEntry
+from app.ingestion.services.article_identity_service import (
+    ARTICLE_IDENTITY_CONFLICT_MESSAGE,
+    ArticleIdentityConflictError,
+    ArticleIdentityService,
+)
 from app.models import IntelligenceItem, IntelligenceSource, SourceRecord
 from app.models.common import utc_now
 
@@ -80,6 +85,7 @@ class RssIngestionService:
             source, source_failure = self._get_or_create_source()
             if source_failure is not None:
                 return self._result(normalized.source_external_id, "failed", source_failure)
+            identity_service = ArticleIdentityService(self._session)
 
             by_external_id = self._find_by_external_id(source, normalized.source_external_id)
             by_url_hash = self._find_by_url_hash(source, normalized.canonical_url_hash)
@@ -98,25 +104,75 @@ class RssIngestionService:
 
             source_record = by_external_id or by_url_hash
             if source_record is None:
-                source_record = self._create_records(source, normalized, observation_time)
+                identity_resolution = identity_service.resolve_new_article(
+                    canonical_url_hash=normalized.canonical_url_hash,
+                    normalized_title_hash=normalized.normalized_title_hash,
+                )
+                if identity_resolution.failed:
+                    return self._result(
+                        normalized.source_external_id,
+                        "failed",
+                        identity_resolution.failure_message,
+                    )
+                source_record = self._create_records(
+                    source,
+                    normalized,
+                    observation_time,
+                    existing_item=identity_resolution.item,
+                    identity_service=identity_service,
+                )
                 self._session.flush()
+                message = (
+                    "A new source record was linked to an existing advisory."
+                    if identity_resolution.item is not None
+                    else None
+                )
                 return self._result(
                     normalized.source_external_id,
                     "created",
+                    message,
                     source_record=source_record,
                     intelligence_item_id=getattr(source_record.intelligence_item, "id", None),
                 )
 
             item = source_record.intelligence_item
-            if item is None or item.item_type != "security_advisory":
+            identity_failure = identity_service.validate_source_record_identity(
+                item,
+                canonical_url_hash=normalized.canonical_url_hash,
+                normalized_title_hash=normalized.normalized_title_hash,
+            )
+            if identity_failure is not None:
                 return self._result(
                     normalized.source_external_id,
                     "failed",
-                    "The existing RSS source record is not linked to a security advisory.",
+                    identity_failure,
+                    source_record=source_record,
+                    intelligence_item_id=getattr(item, "id", None),
+                )
+            if item is None:
+                return self._result(
+                    normalized.source_external_id,
+                    "failed",
+                    ARTICLE_IDENTITY_CONFLICT_MESSAGE,
+                    source_record=source_record,
+                )
+
+            try:
+                identity_plan = identity_service.prepare_identifier_update(
+                    item,
+                    canonical_url_hash=normalized.canonical_url_hash,
+                    normalized_title_hash=normalized.normalized_title_hash,
+                )
+            except ArticleIdentityConflictError as exc:
+                return self._result(
+                    normalized.source_external_id,
+                    "failed",
+                    str(exc),
                     source_record=source_record,
                     intelligence_item_id=getattr(item, "id", None),
                 )
 
+            identity_service.apply_identifier_update(identity_plan)
             source_record.last_seen_at = observation_time
             source_record.payload_collected_at = observation_time
             source_record.last_processed_at = observation_time
@@ -141,6 +197,12 @@ class RssIngestionService:
                 "updated",
                 source_record=source_record,
                 intelligence_item_id=getattr(item, "id", None),
+            )
+        except ArticleIdentityConflictError as exc:
+            return self._result(
+                normalized.source_external_id,
+                "failed",
+                str(exc),
             )
         except SQLAlchemyError as exc:
             raise RssPersistenceError(
@@ -201,24 +263,38 @@ class RssIngestionService:
         source: IntelligenceSource,
         normalized: NormalizedRssEntry,
         observed_at: datetime,
+        *,
+        existing_item: IntelligenceItem | None,
+        identity_service: ArticleIdentityService,
     ) -> SourceRecord:
-        item = IntelligenceItem(
-            item_type="security_advisory",
-            canonical_title=normalized.canonical_title,
-            summary=normalized.summary,
-            canonical_url=normalized.canonical_url,
-            source_published_at=normalized.source_published_at,
-            source_modified_at=normalized.source_modified_at,
-            collected_at=observed_at,
-            last_seen_at=observed_at,
-            status="active",
-            data_confidence=Decimal("0.900"),
-            geographic_scope="global",
-            uae_relevance_status="unknown",
-            uae_relevance_confidence=None,
-            uae_relevance_reason=None,
-            uae_relevance_method="unassigned",
-            analyst_review_status="pending",
+        item = existing_item
+        if item is None:
+            item = IntelligenceItem(
+                item_type="security_advisory",
+                canonical_title=normalized.canonical_title,
+                summary=normalized.summary,
+                canonical_url=normalized.canonical_url,
+                source_published_at=normalized.source_published_at,
+                source_modified_at=normalized.source_modified_at,
+                collected_at=observed_at,
+                last_seen_at=observed_at,
+                status="active",
+                data_confidence=Decimal("0.900"),
+                geographic_scope="global",
+                uae_relevance_status="unknown",
+                uae_relevance_confidence=None,
+                uae_relevance_reason=None,
+                uae_relevance_method="unassigned",
+                analyst_review_status="pending",
+            )
+            self._session.add(item)
+            identity_service.add_fingerprint_identifiers(
+                item,
+                canonical_url_hash=normalized.canonical_url_hash,
+                normalized_title_hash=normalized.normalized_title_hash,
+            )
+        has_primary_reference = any(
+            record.is_primary_reference for record in item.source_records
         )
         source_record = SourceRecord(
             source=source,
@@ -227,7 +303,7 @@ class RssIngestionService:
             source_url=normalized.canonical_url,
             canonical_url_hash=normalized.canonical_url_hash,
             content_hash=normalized.content_hash,
-            is_primary_reference=True,
+            is_primary_reference=not has_primary_reference,
             raw_payload=normalized.raw_payload,
             payload_collected_at=observed_at,
             first_seen_at=observed_at,
@@ -239,7 +315,6 @@ class RssIngestionService:
             safe_error_summary=None,
             upstream_status="present",
         )
-        self._session.add(item)
         self._session.add(source_record)
         return source_record
 

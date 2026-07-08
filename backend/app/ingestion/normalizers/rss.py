@@ -11,6 +11,7 @@ import json
 import re
 from time import struct_time
 from typing import Any
+import unicodedata
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 import calendar
 import ipaddress
@@ -49,6 +50,7 @@ class NormalizedRssEntry:
 
     source_external_id: str
     canonical_title: str
+    normalized_title_hash: str
     summary: str | None
     canonical_url: str
     canonical_url_hash: str
@@ -112,6 +114,7 @@ def normalize_rss_entry(entry: object) -> NormalizedRssEntry:
     if not isinstance(entry, dict):
         raise RssNormalizationError("The RSS entry must be an object.")
     title = _required_text(entry.get("title"), "title", MAX_TITLE_LENGTH)
+    normalized_title_hash = normalized_title_sha256(title)
     canonical_url = canonicalize_advisory_url(_entry_link(entry))
     canonical_url_hash = sha256(canonical_url.encode("utf-8")).hexdigest()
     source_external_id = _source_external_id(entry, canonical_url)
@@ -132,6 +135,7 @@ def normalize_rss_entry(entry: object) -> NormalizedRssEntry:
     return NormalizedRssEntry(
         source_external_id=source_external_id,
         canonical_title=title,
+        normalized_title_hash=normalized_title_hash,
         summary=summary,
         canonical_url=canonical_url,
         canonical_url_hash=canonical_url_hash,
@@ -189,6 +193,18 @@ def canonicalize_advisory_url(value: object) -> str:
     if len(canonical) > MAX_URL_LENGTH:
         raise RssNormalizationError("The RSS advisory URL exceeds the length limit.")
     return canonical
+
+
+def normalized_title_sha256(value: object) -> str:
+    """Return a conservative deterministic SHA-256 fingerprint for an article title."""
+
+    if not isinstance(value, str):
+        raise RssNormalizationError("The RSS entry title must be a string.")
+    normalized = unicodedata.normalize("NFKC", value)
+    normalized = re.sub(r"\s+", " ", normalized).strip().casefold()
+    if not normalized:
+        raise RssNormalizationError("The RSS entry title is required.")
+    return sha256(normalized.encode("utf-8")).hexdigest()
 
 
 def _entry_link(entry: dict[str, Any]) -> object:
