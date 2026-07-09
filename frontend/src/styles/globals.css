@@ -760,6 +760,11 @@ h1 {
   gap: var(--space-4);
 }
 
+.dashboardTrendsShell {
+  display: grid;
+  gap: var(--space-4);
+}
+
 .articleFeedShell {
   display: grid;
   gap: var(--space-4);
@@ -975,6 +980,128 @@ h1 {
   overflow-wrap: anywhere;
 }
 
+.trendSummaryStrip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.trendSummaryStrip > div,
+.trendChartBlock {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: rgba(15, 23, 42, 0.46);
+}
+
+.trendSummaryStrip > div {
+  padding: var(--space-4);
+}
+
+.trendSummaryStrip span {
+  display: block;
+  color: var(--text);
+  font-size: 1.45rem;
+  font-weight: 800;
+}
+
+.trendSummaryStrip p,
+.trendScopeNote,
+.timelineDate span,
+.timelineCounts,
+.trendBarLabel span {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.trendChartsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.trendChartBlock {
+  min-width: 0;
+  padding: var(--space-4);
+}
+
+.trendChartBlock h3 {
+  font-size: 1rem;
+}
+
+.trendBars,
+.timelineList {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.trendBarRow {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.trendBarLabel,
+.timelineCounts {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.trendBarTrack,
+.timelineTrack {
+  height: 0.72rem;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: rgba(2, 6, 23, 0.34);
+}
+
+.trendBarTrack span,
+.timelineTrack span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.trendBarTrack-critical span {
+  background: var(--critical);
+}
+
+.trendBarTrack-warning span {
+  background: var(--warning);
+}
+
+.trendBarTrack-info span,
+.trendBarTrack-uae span {
+  background: var(--accent);
+}
+
+.trendBarTrack-success span {
+  background: var(--success);
+}
+
+.trendBarTrack-neutral span {
+  background: var(--border);
+}
+
+.timelineRow {
+  display: grid;
+  grid-template-columns: minmax(8rem, 0.25fr) minmax(10rem, 1fr) minmax(10rem, 0.35fr);
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.timelineDate strong {
+  display: block;
+  color: var(--text);
+  font-size: 0.92rem;
+}
+
+.timelineTrack span {
+  background: var(--accent);
+}
+
 .drawerOverlay {
   position: fixed;
   inset: 0;
@@ -1079,12 +1206,16 @@ h1 {
   .kpiGrid,
   .intelList,
   .collectionGrid,
-  .workflowGrid {
+  .workflowGrid,
+  .trendSummaryStrip,
+  .trendChartsGrid {
     grid-template-columns: 1fr;
   }
 
-  .statusRow {
+  .statusRow,
+  .timelineRow {
     align-items: flex-start;
+    grid-template-columns: 1fr;
     flex-direction: column;
   }
 

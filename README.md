@@ -61,6 +61,8 @@ Current focus:
   API, with backend-powered search, severity filtering, and pagination
 - Frontend latest articles feed connected to the read-only article API, with
   backend-powered search, category filtering, scope filtering, and pagination
+- Frontend recent trends panel connected to existing read-only APIs, with
+  bounded stored-data severity, category, and timeline visualizations
 - Remaining dashboard integration work in later stages
 
 ## Setup Status
@@ -183,8 +185,10 @@ percentile, and score-date fields when enrichment exists. The dashboard summary
 endpoint returns database-backed KPI counts, latest article previews, and latest
 stored fetch status. The dashboard landing page uses this endpoint for the four
 top KPI cards and uses `GET /api/v1/intelligence/items` for the vulnerability
-table. Other dashboard preview panels still use deterministic frontend preview
-data until their dedicated backend views are implemented. Raw
+table. The dashboard also composes bounded latest CVE and article API results
+for a recent stored-data trends panel; this is not a complete historical
+analytics module. Other dashboard preview panels still use deterministic
+frontend preview data until their dedicated backend views are implemented. Raw
 source payloads, request headers, secrets, and ingestion audit internals are
 intentionally not returned, and these endpoints never trigger ingestion or
 external network calls.

@@ -1,6 +1,7 @@
 import { HealthStatusCard } from "@/components/HealthStatusCard";
 import { DashboardSummaryCards } from "@/components/dashboard/DashboardSummaryCards";
 import { DashboardPanel } from "@/components/dashboard/DashboardPanel";
+import { DashboardTrendsPanel } from "@/components/dashboard/DashboardTrendsPanel";
 import { LatestArticlesFeed } from "@/components/dashboard/LatestArticlesFeed";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { VulnerabilitiesTable } from "@/components/dashboard/VulnerabilitiesTable";
@@ -11,24 +12,35 @@ export default function DashboardOverviewPage() {
     <div className="dashboardPage">
       <section className="overviewHero" aria-labelledby="dashboard-title">
         <div>
-          <p className="pageKicker">Backend-connected summary, CVEs, and articles</p>
+          <p className="pageKicker">
+            Backend-connected summary, trends, CVEs, and articles
+          </p>
           <h1 id="dashboard-title">Cyber OSINT Dashboard</h1>
           <p className="pageSubtitle">
             KPI cards load from the backend summary endpoint, vulnerabilities
-            load from the read-only intelligence API, and latest articles load
-            from the read-only article feed. Remaining preview sections stay
-            clearly labeled until their data views are connected.
+            load from the read-only intelligence API, latest articles load from
+            the read-only article feed, and trends summarize bounded stored API
+            records. Remaining preview sections stay clearly labeled until their
+            data views are connected.
           </p>
         </div>
         <div className="previewCallout" aria-label="Preview data scope">
           <span className="previewDot" aria-hidden="true" />
-          KPI cards, CVEs, and articles use backend data
+          KPI cards, trends, CVEs, and articles use backend data
         </div>
       </section>
 
       <DashboardSummaryCards />
 
       <div className="dashboardGrid">
+        <DashboardPanel
+          className="panelFull"
+          eyebrow="Backend stored-data trends"
+          title="Recent trends"
+        >
+          <DashboardTrendsPanel />
+        </DashboardPanel>
+
         <DashboardPanel
           className="panelFull"
           eyebrow="Backend CVE data"
