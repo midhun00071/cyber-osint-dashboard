@@ -135,12 +135,36 @@ def test_missing_english_description_uses_cve_id_title() -> None:
 
 
 @pytest.mark.parametrize(
+    ("field", "target_attribute"),
+    [
+        ("published", "source_published_at"),
+        ("lastModified", "source_modified_at"),
+    ],
+)
+def test_timezone_naive_timestamp_is_treated_as_utc(
+    field: str,
+    target_attribute: str,
+) -> None:
+    normalized = normalize_nvd_cve(
+        make_wrapper(**{field: "2026-01-01T00:00:00"})
+    )
+
+    parsed = getattr(normalized, target_attribute)
+
+    assert parsed == datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
     "field",
     ["published", "lastModified"],
 )
-def test_invalid_or_naive_timestamp_is_rejected(field: str) -> None:
+@pytest.mark.parametrize(
+    "value",
+    ["not-a-date", "", None, 123],
+)
+def test_invalid_timestamp_is_rejected(field: str, value: object) -> None:
     with pytest.raises(NvdNormalizationError, match="timestamp"):
-        normalize_nvd_cve(make_wrapper(**{field: "2026-01-01T00:00:00"}))
+        normalize_nvd_cve(make_wrapper(**{field: value}))
 
 
 def test_cvss_precedence_prefers_newest_supported_version() -> None:

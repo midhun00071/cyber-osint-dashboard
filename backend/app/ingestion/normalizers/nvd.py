@@ -178,10 +178,10 @@ def _parse_timestamp(value: object, field_name: str) -> datetime:
         raise NvdNormalizationError(
             f"The NVD {field_name} timestamp is invalid."
         ) from exc
+
     if parsed.tzinfo is None or parsed.utcoffset() is None:
-        raise NvdNormalizationError(
-            f"The NVD {field_name} timestamp must include a timezone."
-        )
+        parsed = parsed.replace(tzinfo=UTC)
+
     return parsed.astimezone(UTC)
 
 
