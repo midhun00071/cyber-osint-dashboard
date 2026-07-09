@@ -539,6 +539,12 @@ h1 {
   font-weight: 700;
 }
 
+.articleActionRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
 .statusBadge {
   display: inline-flex;
   align-items: center;
@@ -952,6 +958,10 @@ h1 {
   overflow-wrap: anywhere;
 }
 
+.articleFeedCard h3 a {
+  color: var(--text);
+}
+
 .articleFeedCard p {
   margin-top: var(--space-3);
   color: var(--text-muted);
@@ -1102,6 +1112,69 @@ h1 {
   background: var(--accent);
 }
 
+.articleDetailPage {
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: calc(var(--header-height) + var(--space-6)) var(--space-6)
+    var(--space-6);
+}
+
+.articleDetailShell {
+  padding: var(--space-6);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+}
+
+.articleDetailNav {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+}
+
+.articleDetailHero {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.articleDetailHero .safeSourceLink,
+.articleDetailNav .safeSourceLink {
+  margin-top: 0;
+}
+
+.articleDetailGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+  margin-top: var(--space-6);
+}
+
+.articleDetailGrid > div {
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: rgba(15, 23, 42, 0.46);
+}
+
+.articleDetailGrid span {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.articleDetailGrid strong {
+  display: block;
+  margin-top: var(--space-2);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
 .drawerOverlay {
   position: fixed;
   inset: 0;
@@ -1236,8 +1309,18 @@ h1 {
   }
 
   .articleFeedList,
-  .articleMetadataGrid {
+  .articleMetadataGrid,
+  .articleDetailGrid {
     grid-template-columns: 1fr;
+  }
+
+  .articleDetailPage {
+    padding: calc(var(--header-height) + var(--space-4)) var(--space-4)
+      var(--space-4);
+  }
+
+  .articleDetailShell {
+    padding: var(--space-4);
   }
 }
 

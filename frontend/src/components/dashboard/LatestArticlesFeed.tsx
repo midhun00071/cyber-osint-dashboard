@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { fetchArticles } from "@/services/articleApi";
@@ -284,7 +285,11 @@ export function LatestArticlesFeed() {
                   tone={uaeRelevanceTone(article.uae_relevance_status)}
                 />
               </div>
-              <h3>{article.title}</h3>
+              <h3>
+                <Link href={`/articles/${encodeURIComponent(article.public_id)}`}>
+                  {article.title}
+                </Link>
+              </h3>
               <p>{summarize(article.summary)}</p>
               <dl className="articleMetadataGrid">
                 <div>
@@ -304,16 +309,24 @@ export function LatestArticlesFeed() {
                   <dd>{formatScope(article.geographic_scope)}</dd>
                 </div>
               </dl>
-              {isSafeExternalSourceUrl(article.source_url) ? (
-                <a
+              <div className="articleActionRow">
+                <Link
                   className="safeSourceLink"
-                  href={article.source_url}
-                  rel="noreferrer noopener"
-                  target="_blank"
+                  href={`/articles/${encodeURIComponent(article.public_id)}`}
                 >
-                  Open source
-                </a>
-              ) : null}
+                  View details
+                </Link>
+                {isSafeExternalSourceUrl(article.source_url) ? (
+                  <a
+                    className="safeSourceLink"
+                    href={article.source_url}
+                    rel="noreferrer noopener"
+                    target="_blank"
+                  >
+                    Open source
+                  </a>
+                ) : null}
+              </div>
             </article>
           ))}
         </div>

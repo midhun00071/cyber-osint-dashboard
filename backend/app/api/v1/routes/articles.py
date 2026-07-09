@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date as date_type
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
@@ -16,9 +17,10 @@ from app.api.v1.query_validation import (
     normalize_slug_filter,
     validate_article_date_range,
 )
-from app.api.v1.schemas.articles import ArticleListResponse
+from app.api.v1.schemas.articles import ArticleListResponse, ArticleSummary
 from app.db.session import get_db_session
 from app.services.article_query_service import (
+    ArticleNotFoundError,
     ArticleQueryError,
     ArticleQueryFilters,
     ArticleQueryService,
@@ -80,4 +82,26 @@ def list_articles(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Unable to load articles.",
+        ) from exc
+
+
+@router.get("/{public_id}", response_model=ArticleSummary)
+def get_article(
+    public_id: UUID,
+    db_session: Session = Depends(get_db_session),
+) -> ArticleSummary:
+    """Return one active stored article-like intelligence item safely."""
+
+    service = ArticleQueryService(db_session)
+    try:
+        return service.get_article(public_id)
+    except ArticleNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="The requested article was not found.",
+        ) from exc
+    except ArticleQueryError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to load article.",
         ) from exc

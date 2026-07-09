@@ -32,6 +32,12 @@ list endpoint at `GET /api/v1/articles`. It returns active article-like
 intelligence items only and does not expose raw payloads, hashes, source
 external IDs, ingestion audit fields, or internal database IDs.
 
+Implementation note as of July 9, 2026: P3-05 adds the implemented article
+detail endpoint at `GET /api/v1/articles/{public_id}`. It returns one active
+article-like intelligence item by public UUID using the same safe normalized
+fields as the article list endpoint and returns `404` for missing, inactive,
+non-article, merged, superseded, archived, or vulnerability records.
+
 Implementation note as of July 8, 2026: P2-11 adds strict validation for
 implemented article and intelligence list filters. Invalid individual query
 values return `422`; invalid combinations of otherwise valid filters return
@@ -136,6 +142,7 @@ Implemented P2-09/P2-11 article list endpoint:
 | Method | Path | Purpose | Parameters | Success model | Security considerations |
 |---|---|---|---|---|---|
 | GET | `/api/v1/articles` | Paginated active cybersecurity articles and advisories. | `limit`, `offset`, `q`, `category`, `source_slug`, `tag_slug`, `published_from`, `published_to`, `geographic_scope`, `uae_relevance_status`. | Offset envelope with article rows. | No raw payloads, hashes, identifiers, ingestion side effects, or internal IDs. |
+| GET | `/api/v1/articles/{public_id}` | One active cybersecurity article or advisory. | `public_id` UUID path parameter. | Article row. | Returns `404` for missing, inactive, non-article, merged, superseded, archived, or vulnerability records; no raw payloads, hashes, identifiers, ingestion side effects, or internal IDs. |
 
 `GET /api/v1/articles` includes these active `item_type` values:
 
@@ -527,6 +534,13 @@ Implemented `latest_articles` row fields:
 - `source_name`
 - `published_at`
 - `last_seen_at`
+
+`GET /api/v1/articles/{public_id}` returns the same article row fields for one
+record. It looks up only active article-like item types, excludes
+`vulnerability`, and excludes inactive `merged`, `superseded`, and `archived`
+records. It is read-only and never calls ingestion collectors, persistence
+services, schedulers, startup ingestion, API-triggered ingestion, or external
+network requests.
 
 Implemented `latest_fetch` fields:
 

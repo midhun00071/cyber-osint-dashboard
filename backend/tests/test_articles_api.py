@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from decimal import Decimal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -42,6 +42,13 @@ class FakeScalarResult:
     def all(self) -> list[IntelligenceItem]:
         return list(self._items)
 
+    def one_or_none(self) -> IntelligenceItem | None:
+        if not self._items:
+            return None
+        if len(self._items) > 1:
+            raise AssertionError("Fake detail query returned multiple rows.")
+        return self._items[0]
+
 
 class FakeItemResult:
     def __init__(self, items: list[IntelligenceItem]):
@@ -65,15 +72,24 @@ class FakeSession:
         self.execute_calls: list[str] = []
 
     def execute(self, statement):
-        kind = "count" if _is_count_statement(statement) else "items"
+        filters = _extract_filters(statement)
+        kind = (
+            "count"
+            if _is_count_statement(statement)
+            else "detail"
+            if filters.get("public_id") is not None
+            else "items"
+        )
         self.execute_calls.append(kind)
-        if self.error_on == kind:
+        if self.error_on == kind or (kind == "detail" and self.error_on == "items"):
             raise SQLAlchemyError(self.error_message)
 
-        filters = _extract_filters(statement)
         matches = _filtered_articles(self.items, filters)
         if kind == "count":
             return FakeCountResult(len(matches))
+
+        if kind == "detail":
+            return FakeItemResult(matches[:1])
 
         page = matches[_offset(statement) : _offset(statement) + _limit(statement)]
         return FakeItemResult(page)
@@ -264,6 +280,10 @@ def _extract_filters(statement) -> dict[str, object]:
     sql = str(statement)
     params = statement.compile().params
     filters: dict[str, object] = {}
+    for value in params.values():
+        if isinstance(value, UUID):
+            filters["public_id"] = value
+            break
     if isinstance(params.get("item_type_2"), str):
         filters["category"] = params["item_type_2"]
     for index in range(1, 5):
@@ -325,6 +345,8 @@ def _filtered_articles(
         for item in items
         if item.status == "active" and item.item_type in ARTICLE_ITEM_TYPES
     ]
+    if filters.get("public_id") is not None:
+        matches = [item for item in matches if item.public_id == filters["public_id"]]
     if filters.get("category") is not None:
         matches = [item for item in matches if item.item_type == filters["category"]]
     if filters.get("source_slug") is not None:
@@ -446,6 +468,78 @@ def test_articles_endpoint_returns_safe_article_fields(client) -> None:
     ]
     for value in forbidden:
         assert value not in response.text
+
+
+def test_article_detail_endpoint_returns_safe_article_fields(client) -> None:
+    item = make_article(
+        title="CERT-EU detail advisory",
+        summary="Plain text detail summary.",
+        geographic_scope="uae",
+        uae_relevance_status="probable",
+        uae_relevance_confidence=Decimal("0.640"),
+        raw_payload_marker="detail-do-not-leak",
+    )
+
+    response = client(FakeSession([item])).get(f"/api/v1/articles/{item.public_id}")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "public_id": str(item.public_id),
+        "title": "CERT-EU detail advisory",
+        "summary": "Plain text detail summary.",
+        "category": "security_advisory",
+        "source_slug": "cert-eu-security-advisories",
+        "source_name": "CERT-EU Security Advisories",
+        "source_url": "https://cert.europa.eu/publications/security-advisories/2026-001",
+        "published_at": "2026-07-08T12:00:00Z",
+        "modified_at": None,
+        "geographic_scope": "uae",
+        "uae_relevance_status": "probable",
+        "uae_relevance_confidence": 0.64,
+        "last_seen_at": "2026-07-08T12:00:00Z",
+    }
+    forbidden = [
+        "raw_payload",
+        "canonical_url_hash",
+        "content_hash",
+        "source_external_id",
+        "source_record",
+        "internal",
+        "safe_error_summary",
+        "analyst",
+        "detail-do-not-leak",
+    ]
+    for value in forbidden:
+        assert value not in response.text
+
+
+def test_article_detail_endpoint_returns_404_for_missing_public_id(client) -> None:
+    response = client(FakeSession()).get(f"/api/v1/articles/{uuid4()}")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "The requested article was not found."}
+
+
+def test_article_detail_endpoint_returns_404_for_vulnerability(client) -> None:
+    item = make_article(item_type="vulnerability", title="CVE record")
+
+    response = client(FakeSession([item])).get(f"/api/v1/articles/{item.public_id}")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "The requested article was not found."}
+
+
+@pytest.mark.parametrize("status_value", ["merged", "superseded", "archived"])
+def test_article_detail_endpoint_returns_404_for_inactive_status(
+    client,
+    status_value: str,
+) -> None:
+    item = make_article(status=status_value, title=status_value)
+
+    response = client(FakeSession([item])).get(f"/api/v1/articles/{item.public_id}")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "The requested article was not found."}
 
 
 def test_all_article_item_types_are_included(client) -> None:
@@ -1174,6 +1268,19 @@ def test_database_errors_are_sanitized(client, error_on: str) -> None:
     assert "postgresql://" not in response.text
 
 
+def test_article_detail_database_errors_are_sanitized(client) -> None:
+    item = make_article()
+
+    response = client(FakeSession([item], error_on="detail")).get(
+        f"/api/v1/articles/{item.public_id}"
+    )
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Unable to load article."}
+    assert "private-password" not in response.text
+    assert "postgresql://" not in response.text
+
+
 def test_article_listing_does_not_trigger_ingestion(client, monkeypatch: pytest.MonkeyPatch) -> None:
     def fail_if_called(*_args, **_kwargs):
         raise AssertionError("Article listing must not trigger ingestion.")
@@ -1210,5 +1317,47 @@ def test_article_listing_does_not_trigger_ingestion(client, monkeypatch: pytest.
     )
 
     response = client(FakeSession([make_article()])).get("/api/v1/articles")
+
+    assert response.status_code == 200
+
+
+def test_article_detail_does_not_trigger_ingestion(client, monkeypatch: pytest.MonkeyPatch) -> None:
+    item = make_article()
+
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("Article detail must not trigger ingestion.")
+
+    monkeypatch.setattr(
+        "app.ingestion.collectors.rss_client.RssClient.fetch_cert_eu_security_advisories",
+        fail_if_called,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "app.ingestion.collectors.nvd_client.NvdClient.fetch_page",
+        fail_if_called,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "app.ingestion.collectors.epss_client.EpssClient.fetch_scores",
+        fail_if_called,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "app.ingestion.services.rss_ingestion_service.RssIngestionService.persist",
+        fail_if_called,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "app.ingestion.services.nvd_ingestion_service.NvdIngestionService.persist",
+        fail_if_called,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "app.ingestion.services.epss_enrichment_service.EpssEnrichmentService.enrich",
+        fail_if_called,
+        raising=False,
+    )
+
+    response = client(FakeSession([item])).get(f"/api/v1/articles/{item.public_id}")
 
     assert response.status_code == 200

@@ -1,6 +1,7 @@
 import { API_BASE_URL } from "@/services/apiClient";
 import type {
   ArticleCategory,
+  ArticleDetailResult,
   ArticleFilters,
   ArticleListItem,
   ArticleListResponse,
@@ -154,6 +155,44 @@ export async function fetchArticles(
     const data: unknown = await response.json();
 
     if (!isArticleListResponse(data)) {
+      return { status: "error" };
+    }
+
+    return { status: "success", data };
+  } catch (error: unknown) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw error;
+    }
+
+    return { status: "error" };
+  }
+}
+
+export async function fetchArticleDetail(
+  publicId: string,
+  signal?: AbortSignal,
+): Promise<ArticleDetailResult> {
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/api/v1/articles/${encodeURIComponent(publicId)}`,
+      {
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+        signal,
+      },
+    );
+
+    if (response.status === 404) {
+      return { status: "not_found" };
+    }
+
+    if (!response.ok) {
+      return { status: "error" };
+    }
+
+    const data: unknown = await response.json();
+
+    if (!isArticleListItem(data)) {
       return { status: "error" };
     }
 

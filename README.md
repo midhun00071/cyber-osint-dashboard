@@ -61,6 +61,7 @@ Current focus:
   API, with backend-powered search, severity filtering, and pagination
 - Frontend latest articles feed connected to the read-only article API, with
   backend-powered search, category filtering, scope filtering, and pagination
+- Frontend article detail page connected to the read-only article detail API
 - Frontend recent trends panel connected to existing read-only APIs, with
   bounded stored-data severity, category, and timeline visualizations
 - Remaining dashboard integration work in later stages
@@ -170,6 +171,7 @@ The backend now exposes stored intelligence items through manual read-only API
 endpoints:
 
 - `GET /api/v1/articles`
+- `GET /api/v1/articles/{public_id}`
 - `GET /api/v1/dashboard/summary`
 - `GET /api/v1/intelligence/items`
 - `GET /api/v1/intelligence/items/{item_public_id}`
@@ -177,7 +179,10 @@ endpoints:
 The article list endpoint returns active article-like records with bounded
 `limit` and `offset` pagination, title/summary search through `q`, and safe
 filters for category, source slug, tag slug, publication date range,
-geographic scope, and UAE relevance status. The generic intelligence list
+geographic scope, and UAE relevance status. The article detail endpoint returns
+one active article-like record by public UUID using the same safe normalized
+fields and returns `404` for missing, inactive, non-article, merged,
+superseded, archived, or vulnerability records. The generic intelligence list
 endpoint supports bounded `limit` and `offset` pagination plus these safe
 filters: `q`, `severity`, `source_slug`, `item_type`, and `cve_id`. Responses
 return normalized dashboard-ready fields only, including safe EPSS score,
@@ -185,13 +190,14 @@ percentile, and score-date fields when enrichment exists. The dashboard summary
 endpoint returns database-backed KPI counts, latest article previews, and latest
 stored fetch status. The dashboard landing page uses this endpoint for the four
 top KPI cards and uses `GET /api/v1/intelligence/items` for the vulnerability
-table. The dashboard also composes bounded latest CVE and article API results
-for a recent stored-data trends panel; this is not a complete historical
-analytics module. Other dashboard preview panels still use deterministic
-frontend preview data until their dedicated backend views are implemented. Raw
-source payloads, request headers, secrets, and ingestion audit internals are
-intentionally not returned, and these endpoints never trigger ingestion or
-external network calls.
+table. The latest articles feed links each article to a frontend article detail
+page; CVE detail pages remain pending. The dashboard also composes bounded
+latest CVE and article API results for a recent stored-data trends panel; this
+is not a complete historical analytics module. Other dashboard preview panels
+still use deterministic frontend preview data until their dedicated backend
+views are implemented. Raw source payloads, request headers, secrets, and
+ingestion audit internals are intentionally not returned, and these endpoints
+never trigger ingestion or external network calls.
 
 ## Documentation
 

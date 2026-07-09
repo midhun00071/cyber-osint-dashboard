@@ -50,3 +50,8 @@ export type ArticleListResponse = {
 export type ArticleListResult =
   | { status: "success"; data: ArticleListResponse }
   | { status: "error" };
+
+export type ArticleDetailResult =
+  | { status: "success"; data: ArticleListItem }
+  | { status: "not_found" }
+  | { status: "error" };

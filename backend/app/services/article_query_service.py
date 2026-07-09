@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
+from uuid import UUID
 
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
@@ -28,6 +29,10 @@ SEARCH_ESCAPE = "\\"
 
 class ArticleQueryError(RuntimeError):
     """A read query failed without exposing database internals."""
+
+
+class ArticleNotFoundError(LookupError):
+    """No active article-like item matched the requested public ID."""
 
 
 @dataclass(frozen=True)
@@ -93,15 +98,31 @@ class ArticleQueryService:
             offset=filters.offset,
         )
 
+    def get_article(self, public_id: UUID) -> ArticleSummary:
+        statement = (
+            self._base_article_statement()
+            .where(IntelligenceItem.public_id == public_id)
+            .options(
+                selectinload(IntelligenceItem.source_records).selectinload(
+                    SourceRecord.source
+                )
+            )
+        )
+        try:
+            item = self._session.execute(statement).scalars().one_or_none()
+        except SQLAlchemyError as exc:
+            raise ArticleQueryError("Database error while loading article.") from exc
+
+        if item is None:
+            raise ArticleNotFoundError("Article not found.")
+
+        return self._serialize_item(item)
+
     def _filtered_statement(
         self,
         filters: ArticleQueryFilters,
     ) -> Select[tuple[IntelligenceItem]]:
-        statement = (
-            select(IntelligenceItem)
-            .where(IntelligenceItem.status == ACTIVE_STATUS)
-            .where(IntelligenceItem.item_type.in_(ARTICLE_ITEM_TYPES))
-        )
+        statement = self._base_article_statement()
         if filters.category is not None:
             statement = statement.where(IntelligenceItem.item_type == filters.category)
         if filters.source_slug is not None:
@@ -149,6 +170,14 @@ class ArticleQueryService:
                 )
             )
         return statement
+
+    @staticmethod
+    def _base_article_statement() -> Select[tuple[IntelligenceItem]]:
+        return (
+            select(IntelligenceItem)
+            .where(IntelligenceItem.status == ACTIVE_STATUS)
+            .where(IntelligenceItem.item_type.in_(ARTICLE_ITEM_TYPES))
+        )
 
     @staticmethod
     def _escape_like(value: str) -> str:
