@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { fetchVulnerabilities } from "@/services/vulnerabilityApi";
@@ -290,9 +291,17 @@ export function VulnerabilitiesTable() {
               {tableRows.map((item) => (
                 <tr key={item.public_id}>
                   <td>
-                    <strong>{item.cve_id ?? "Unassigned CVE"}</strong>
+                    <strong>
+                      <Link href={`/vulnerabilities/${encodeURIComponent(item.public_id)}`}>
+                        {item.cve_id ?? "Unassigned CVE"}
+                      </Link>
+                    </strong>
                     <span>{item.title}</span>
-                    <small>Detail page pending P3-06</small>
+                    <small>
+                      <Link href={`/vulnerabilities/${encodeURIComponent(item.public_id)}`}>
+                        Open vulnerability detail
+                      </Link>
+                    </small>
                   </td>
                   <td>
                     <StatusBadge

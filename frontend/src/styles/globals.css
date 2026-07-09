@@ -1175,6 +1175,23 @@ h1 {
   overflow-wrap: anywhere;
 }
 
+.vulnerabilityDetailSummary {
+  margin-top: var(--space-6);
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: rgba(15, 23, 42, 0.46);
+}
+
+.vulnerabilityDetailSummary h2 {
+  font-size: 1rem;
+}
+
+.vulnerabilityDetailSummary p {
+  margin-top: var(--space-2);
+  color: var(--text-muted);
+}
+
 .drawerOverlay {
   position: fixed;
   inset: 0;

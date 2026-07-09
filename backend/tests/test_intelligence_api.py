@@ -88,6 +88,10 @@ def make_vulnerability_item(
     epss_score: Decimal | None = None,
     epss_percentile: Decimal | None = None,
     epss_score_date: date_type | None = None,
+    kev_status: str = "unknown",
+    kev_date_added: date_type | None = None,
+    kev_due_date: date_type | None = None,
+    known_ransomware_campaign_use: bool | None = None,
 ) -> IntelligenceItem:
     item_public_id = public_id or uuid4()
     item_last_seen_at = last_seen_at or NOW
@@ -136,12 +140,12 @@ def make_vulnerability_item(
         cvss_version="3.1",
         epss_score=epss_score,
         epss_percentile=epss_percentile,
-        kev_status="unknown",
+        kev_status=kev_status,
         kev_last_checked_at=None,
-        kev_date_added=None,
-        kev_due_date=None,
+        kev_date_added=kev_date_added,
+        kev_due_date=kev_due_date,
         kev_required_action=None,
-        known_ransomware_campaign_use=None,
+        known_ransomware_campaign_use=known_ransomware_campaign_use,
         affected_summary="Example Product before 1.2.3.",
         affected_products_json=[{"criteria": "cpe:2.3:a:example:product"}],
         created_at=NOW,
@@ -341,8 +345,14 @@ def test_list_endpoint_returns_stored_vulnerability_record_without_raw_payloads(
     assert returned["epss_percentile"] is None
     assert returned["epss_score_date"] is None
     assert returned["kev_status"] == "unknown"
+    assert returned["kev_date_added"] is None
+    assert returned["kev_due_date"] is None
+    assert returned["known_ransomware_campaign_use"] is None
     assert "raw_payload" not in returned
     assert "affected_products_json" not in returned
+    assert "analyst_review_status" not in returned
+    assert "created_at" not in returned
+    assert "updated_at" not in returned
     assert "super-secret-marker" not in response.text
 
 
@@ -578,6 +588,10 @@ def test_detail_endpoint_returns_one_safe_item(client) -> None:
         epss_score=Decimal("0.123456"),
         epss_percentile=Decimal("0.654321"),
         epss_score_date=date_type(2026, 7, 8),
+        kev_status="listed",
+        kev_date_added=date_type(2026, 7, 7),
+        kev_due_date=date_type(2026, 7, 21),
+        known_ransomware_campaign_use=False,
         raw_payload_marker="nvd-secret-marker",
     )
 
@@ -592,12 +606,51 @@ def test_detail_endpoint_returns_one_safe_item(client) -> None:
     assert data["epss_score"] == 0.123456
     assert data["epss_percentile"] == 0.654321
     assert data["epss_score_date"] == "2026-07-08"
-    assert data["kev_status"] == "unknown"
+    assert data["kev_status"] == "listed"
+    assert data["kev_date_added"] == "2026-07-07"
+    assert data["kev_due_date"] == "2026-07-21"
+    assert data["known_ransomware_campaign_use"] is False
     assert data["source_slug"] == "nvd"
     assert data["source_name"] == "National Vulnerability Database"
+    assert data["geographic_scope"] == "global"
     assert "raw_payload" not in data
     assert "source_record" not in data
+    assert "source_external_id" not in data
+    assert "content_hash" not in data
+    assert "canonical_url_hash" not in data
+    assert "headers" not in data
+    assert "analyst_review_status" not in data
+    assert "created_at" not in data
+    assert "updated_at" not in data
     assert "nvd-secret-marker" not in response.text
+
+
+def test_detail_endpoint_does_not_trigger_ingestion_or_network(
+    client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    item = make_vulnerability_item(cve_id="CVE-2026-07001")
+
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("Read-only detail API must not trigger ingestion.")
+
+    monkeypatch.setattr(
+        "app.ingestion.collectors.nvd_client.NvdClient.fetch_page",
+        fail_if_called,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "app.ingestion.services.nvd_ingestion_service.NvdIngestionService.persist",
+        fail_if_called,
+        raising=False,
+    )
+
+    response = client(FakeSession([item])).get(
+        f"/api/v1/intelligence/items/{item.public_id}"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["cve_id"] == "CVE-2026-07001"
 
 
 def test_list_endpoint_returns_epss_fields_without_replacing_primary_source(client) -> None:

@@ -59,6 +59,8 @@ Current focus:
 - Frontend dashboard KPI cards connected to the backend summary endpoint
 - Frontend dashboard vulnerability table connected to the read-only intelligence
   API, with backend-powered search, severity filtering, and pagination
+- Frontend CVE/vulnerability detail page connected to the read-only
+  intelligence detail API
 - Frontend latest articles feed connected to the read-only article API, with
   backend-powered search, category filtering, scope filtering, and pagination
 - Frontend article detail page connected to the read-only article detail API
@@ -186,18 +188,19 @@ superseded, archived, or vulnerability records. The generic intelligence list
 endpoint supports bounded `limit` and `offset` pagination plus these safe
 filters: `q`, `severity`, `source_slug`, `item_type`, and `cve_id`. Responses
 return normalized dashboard-ready fields only, including safe EPSS score,
-percentile, and score-date fields when enrichment exists. The dashboard summary
-endpoint returns database-backed KPI counts, latest article previews, and latest
-stored fetch status. The dashboard landing page uses this endpoint for the four
-top KPI cards and uses `GET /api/v1/intelligence/items` for the vulnerability
-table. The latest articles feed links each article to a frontend article detail
-page; CVE detail pages remain pending. The dashboard also composes bounded
-latest CVE and article API results for a recent stored-data trends panel; this
-is not a complete historical analytics module. Other dashboard preview panels
-still use deterministic frontend preview data until their dedicated backend
-views are implemented. Raw source payloads, request headers, secrets, and
-ingestion audit internals are intentionally not returned, and these endpoints
-never trigger ingestion or external network calls.
+percentile, score-date, KEV date, KEV due-date, and ransomware-use fields when
+enrichment exists. The dashboard summary endpoint returns database-backed KPI
+counts, latest article previews, and latest stored fetch status. The dashboard
+landing page uses this endpoint for the four top KPI cards and uses
+`GET /api/v1/intelligence/items` for the vulnerability table. The vulnerability
+table links each CVE by public UUID to a frontend vulnerability detail page, and
+the latest articles feed links each article to a frontend article detail page.
+The dashboard also composes bounded latest CVE and article API results for a
+recent stored-data trends panel; this is not a complete historical analytics
+module. Other dashboard preview panels still use deterministic frontend preview
+data until their dedicated backend views are implemented. Raw source payloads,
+request headers, secrets, and ingestion audit internals are intentionally not
+returned, and these endpoints never trigger ingestion or external network calls.
 
 ## Documentation
 

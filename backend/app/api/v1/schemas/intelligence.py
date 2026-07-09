@@ -27,19 +27,18 @@ class IntelligenceItemSummary(BaseModel):
     epss_percentile: float | None
     epss_score_date: date | None
     kev_status: str | None
+    kev_date_added: date | None
+    kev_due_date: date | None
+    known_ransomware_campaign_use: bool | None
     affected_summary: str | None
     source_url: str | None
     source_published_at: datetime | None
     source_modified_at: datetime | None
     first_seen_at: datetime | None
     last_seen_at: datetime
-    analyst_review_status: str
+    geographic_scope: str
     uae_relevance_status: str
     uae_relevance_confidence: float | None
-    uae_relevance_reason: str | None
-    uae_relevance_method: str
-    created_at: datetime
-    updated_at: datetime
 
 
 class IntelligenceItemListResponse(BaseModel):

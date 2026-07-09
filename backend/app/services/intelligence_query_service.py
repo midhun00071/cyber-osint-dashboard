@@ -249,6 +249,11 @@ class IntelligenceQueryService:
                 else None
             ),
             kev_status=vulnerability.kev_status if vulnerability else None,
+            kev_date_added=vulnerability.kev_date_added if vulnerability else None,
+            kev_due_date=vulnerability.kev_due_date if vulnerability else None,
+            known_ransomware_campaign_use=(
+                vulnerability.known_ransomware_campaign_use if vulnerability else None
+            ),
             affected_summary=vulnerability.affected_summary if vulnerability else None,
             source_url=source_record.source_url if source_record else item.canonical_url,
             source_published_at=(
@@ -259,13 +264,9 @@ class IntelligenceQueryService:
             ),
             first_seen_at=source_record.first_seen_at if source_record else None,
             last_seen_at=item.last_seen_at,
-            analyst_review_status=item.analyst_review_status,
+            geographic_scope=item.geographic_scope,
             uae_relevance_status=item.uae_relevance_status,
             uae_relevance_confidence=self._decimal_to_float(item.uae_relevance_confidence),
-            uae_relevance_reason=item.uae_relevance_reason,
-            uae_relevance_method=item.uae_relevance_method,
-            created_at=item.created_at,
-            updated_at=item.updated_at,
         )
 
     @staticmethod

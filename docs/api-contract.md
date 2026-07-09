@@ -27,6 +27,16 @@ the safe normalized `kev_status` field for vulnerability rows so the frontend
 can distinguish `listed`, `not_listed`, and `unknown` states without exposing
 raw CISA KEV payloads.
 
+Implementation note as of July 9, 2026: P3-06 adds the frontend vulnerability
+detail page backed by `GET /api/v1/intelligence/items/{public_id}`. The
+implemented intelligence response also includes safe normalized
+`kev_date_added`, `kev_due_date`, `known_ransomware_campaign_use`,
+`affected_summary`, `geographic_scope`, `uae_relevance_status`, and
+`uae_relevance_confidence` fields for CVE detail display. Public responses do
+not expose analyst review fields, internal create/update timestamps, raw source
+payloads, source-record IDs, hashes, headers, secrets, stack traces, database
+URLs, or environment values.
+
 Implementation note as of July 8, 2026: P2-09 adds the implemented article
 list endpoint at `GET /api/v1/articles`. It returns active article-like
 intelligence items only and does not expose raw payloads, hashes, source
