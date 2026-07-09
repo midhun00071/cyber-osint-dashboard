@@ -50,6 +50,7 @@ Current focus:
 
 - Manual, bounded NVD CVE ingestion
 - Manual, bounded FIRST EPSS enrichment for existing CVEs
+- Manual, bounded CISA KEV enrichment for existing CVEs
 - Manual, bounded CERT-EU Security Advisories RSS ingestion
 - Idempotent vulnerability persistence and source provenance
 - Sanitized ingestion runs, per-record outcomes, and error auditing
@@ -60,8 +61,9 @@ Current focus:
 
 The local development environment, backend foundation, database schema, and
 initial frontend shell are implemented. NVD ingestion, FIRST EPSS enrichment,
-and CERT-EU RSS ingestion remain manual-only: they are not scheduled and are
-not connected to FastAPI startup, API routes, or the frontend dashboard.
+CISA KEV enrichment, and CERT-EU RSS ingestion remain manual-only: they are not
+scheduled and are not connected to FastAPI startup, API routes, or the frontend
+dashboard.
 
 ## Security Principles
 

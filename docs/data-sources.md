@@ -39,7 +39,17 @@ Purpose:
 
 Access method:
 
-- Official CSV or JSON catalog
+- Official JSON catalog
+- URL: `https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json`
+
+Implementation status:
+
+- Implemented as a manual-only bounded backend enrichment command for existing
+  local CVE vulnerability records.
+- Locked to the approved HTTPS host and catalog URL.
+- Unknown KEV-only CVEs are skipped safely and are not created locally.
+- No scheduler, startup hook, API route trigger, or frontend integration is
+  included.
 
 ### Cybersecurity RSS or News Source
 
@@ -88,7 +98,7 @@ UAE-focused sources should only be automated if an approved feed, API, or author
 
 ## Current Status
 
-NVD CVE ingestion, FIRST EPSS enrichment, and CERT-EU Security Advisories RSS
-ingestion are implemented as manual-only backend workflows with sanitized audit
-records. Other candidate sources still require explicit approval before live
-ingestion is implemented.
+NVD CVE ingestion, FIRST EPSS enrichment, CISA KEV enrichment, and CERT-EU
+Security Advisories RSS ingestion are implemented as manual-only backend
+workflows with sanitized audit records. Other candidate sources still require
+explicit approval before live ingestion is implemented.
