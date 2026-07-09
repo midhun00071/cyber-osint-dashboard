@@ -2,6 +2,7 @@ import { HealthStatusCard } from "@/components/HealthStatusCard";
 import { DashboardSummaryCards } from "@/components/dashboard/DashboardSummaryCards";
 import { DashboardPanel } from "@/components/dashboard/DashboardPanel";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
+import { VulnerabilitiesTable } from "@/components/dashboard/VulnerabilitiesTable";
 import {
   collectionOverview,
   operationalStatuses,
@@ -77,23 +78,32 @@ export default function DashboardOverviewPage() {
     <div className="dashboardPage">
       <section className="overviewHero" aria-labelledby="dashboard-title">
         <div>
-          <p className="pageKicker">Backend-connected KPIs</p>
+          <p className="pageKicker">Backend-connected summary and CVEs</p>
           <h1 id="dashboard-title">Cyber OSINT Dashboard</h1>
           <p className="pageSubtitle">
-            A defensive SOC-style workspace where KPI cards load from the
-            backend summary endpoint while deeper preview sections remain
-            synthetic until their data views are connected.
+            KPI cards load from the backend summary endpoint, and the
+            vulnerabilities table loads from the read-only intelligence API.
+            Preview sections remain synthetic until their data views are
+            connected.
           </p>
         </div>
         <div className="previewCallout" aria-label="Preview data scope">
           <span className="previewDot" aria-hidden="true" />
-          KPI cards use backend summary data
+          KPI cards and CVEs use backend data
         </div>
       </section>
 
       <DashboardSummaryCards />
 
       <div className="dashboardGrid">
+        <DashboardPanel
+          className="panelFull"
+          eyebrow="Backend CVE data"
+          title="Vulnerabilities"
+        >
+          <VulnerabilitiesTable />
+        </DashboardPanel>
+
         <DashboardPanel
           className="panelWide"
           eyebrow="Recent intelligence"

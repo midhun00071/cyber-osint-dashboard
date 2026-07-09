@@ -22,6 +22,11 @@ vulnerability extension, while `epss_score_date` comes from the non-primary
 `first-epss` source record. Primary source display fields continue to use the
 NVD source record.
 
+Implementation note as of July 9, 2026: the implemented read API also returns
+the safe normalized `kev_status` field for vulnerability rows so the frontend
+can distinguish `listed`, `not_listed`, and `unknown` states without exposing
+raw CISA KEV payloads.
+
 Implementation note as of July 8, 2026: P2-09 adds the implemented article
 list endpoint at `GET /api/v1/articles`. It returns active article-like
 intelligence items only and does not expose raw payloads, hashes, source

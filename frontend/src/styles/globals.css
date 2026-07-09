@@ -63,19 +63,22 @@ ul {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
 button,
 a,
-input {
+input,
+select {
   outline-offset: 3px;
 }
 
 button:focus-visible,
 a:focus-visible,
-input:focus-visible {
+input:focus-visible,
+select:focus-visible {
   outline: 2px solid var(--accent-strong);
 }
 
@@ -473,6 +476,10 @@ h1 {
   grid-column: span 1;
 }
 
+.panelFull {
+  grid-column: 1 / -1;
+}
+
 .panelHeader {
   margin-bottom: var(--space-4);
 }
@@ -748,6 +755,153 @@ h1 {
   margin-top: var(--space-2);
 }
 
+.vulnerabilityTableShell {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.vulnerabilityFilters {
+  display: grid;
+  grid-template-columns:
+    minmax(14rem, 1fr) minmax(10rem, 0.35fr) minmax(7rem, 0.2fr)
+    auto;
+  gap: var(--space-3);
+  align-items: end;
+}
+
+.vulnerabilityFilters label {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.vulnerabilityFilters label span {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.vulnerabilityFilters input,
+.vulnerabilityFilters select {
+  width: 100%;
+  min-height: 2.65rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(15, 23, 42, 0.82);
+  color: var(--text);
+}
+
+.filterActions,
+.paginationControls,
+.paginationControls > div {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.filterActions button,
+.paginationControls button {
+  min-height: 2.65rem;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid rgba(173, 198, 255, 0.22);
+  border-radius: var(--radius);
+  background: rgba(59, 130, 246, 0.14);
+  color: var(--text);
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.filterActions button[type="button"],
+.paginationControls button {
+  background: rgba(15, 23, 42, 0.72);
+  color: var(--text-soft);
+}
+
+.paginationControls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.vulnerabilityTableScroller {
+  overflow-x: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+}
+
+.vulnerabilityTable {
+  width: 100%;
+  min-width: 58rem;
+  border-collapse: collapse;
+}
+
+.vulnerabilityTable th,
+.vulnerabilityTable td {
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: left;
+  vertical-align: top;
+}
+
+.vulnerabilityTable th {
+  background: rgba(15, 23, 42, 0.82);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.vulnerabilityTable tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.vulnerabilityTable td {
+  color: var(--text-soft);
+  font-size: 0.88rem;
+}
+
+.vulnerabilityTable td:first-child {
+  width: 24rem;
+}
+
+.vulnerabilityTable strong,
+.vulnerabilityTable span,
+.vulnerabilityTable small {
+  display: block;
+}
+
+.vulnerabilityTable strong {
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.vulnerabilityTable small {
+  margin-top: var(--space-1);
+  color: var(--text-muted);
+  font-size: 0.76rem;
+}
+
+.tableLoadingState {
+  display: grid;
+  min-height: 7rem;
+  place-items: center;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+}
+
+.paginationControls {
+  justify-content: space-between;
+}
+
+.paginationControls p {
+  color: var(--text-muted);
+  font-size: 0.86rem;
+}
+
 .drawerOverlay {
   position: fixed;
   inset: 0;
@@ -840,7 +994,8 @@ h1 {
   }
 
   .overviewHero,
-  .healthContent {
+  .healthContent,
+  .paginationControls {
     flex-direction: column;
   }
 
@@ -858,6 +1013,21 @@ h1 {
   .statusRow {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .vulnerabilityFilters {
+    grid-template-columns: 1fr;
+  }
+
+  .filterActions,
+  .paginationControls,
+  .paginationControls > div {
+    width: 100%;
+  }
+
+  .filterActions button,
+  .paginationControls button {
+    flex: 1;
   }
 }
 

@@ -57,6 +57,8 @@ Current focus:
 - Read-only backend intelligence API endpoints for stored CVE records
 - Read-only dashboard summary endpoint for stored KPI and freshness metrics
 - Frontend dashboard KPI cards connected to the backend summary endpoint
+- Frontend dashboard vulnerability table connected to the read-only intelligence
+  API, with backend-powered search, severity filtering, and pagination
 - Dashboard integration work in later stages
 
 ## Setup Status
@@ -178,8 +180,9 @@ return normalized dashboard-ready fields only, including safe EPSS score,
 percentile, and score-date fields when enrichment exists. The dashboard summary
 endpoint returns database-backed KPI counts, latest article previews, and latest
 stored fetch status. The dashboard landing page uses this endpoint for the four
-top KPI cards only; other dashboard preview panels still use deterministic
-frontend preview data until their dedicated backend views are implemented. Raw
+top KPI cards and uses `GET /api/v1/intelligence/items` for the vulnerability
+table. Other dashboard preview panels still use deterministic frontend preview
+data until their dedicated backend views are implemented. Raw
 source payloads, request headers, secrets, and ingestion audit internals are
 intentionally not returned, and these endpoints never trigger ingestion or
 external network calls.

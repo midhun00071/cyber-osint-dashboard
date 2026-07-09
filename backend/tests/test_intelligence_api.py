@@ -340,6 +340,7 @@ def test_list_endpoint_returns_stored_vulnerability_record_without_raw_payloads(
     assert returned["epss_score"] is None
     assert returned["epss_percentile"] is None
     assert returned["epss_score_date"] is None
+    assert returned["kev_status"] == "unknown"
     assert "raw_payload" not in returned
     assert "affected_products_json" not in returned
     assert "super-secret-marker" not in response.text
@@ -591,6 +592,7 @@ def test_detail_endpoint_returns_one_safe_item(client) -> None:
     assert data["epss_score"] == 0.123456
     assert data["epss_percentile"] == 0.654321
     assert data["epss_score_date"] == "2026-07-08"
+    assert data["kev_status"] == "unknown"
     assert data["source_slug"] == "nvd"
     assert data["source_name"] == "National Vulnerability Database"
     assert "raw_payload" not in data

@@ -26,6 +26,7 @@ class IntelligenceItemSummary(BaseModel):
     epss_score: float | None
     epss_percentile: float | None
     epss_score_date: date | None
+    kev_status: str | None
     affected_summary: str | None
     source_url: str | None
     source_published_at: datetime | None

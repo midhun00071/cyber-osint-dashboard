@@ -248,6 +248,7 @@ class IntelligenceQueryService:
                 and epss_source_record.source_modified_at is not None
                 else None
             ),
+            kev_status=vulnerability.kev_status if vulnerability else None,
             affected_summary=vulnerability.affected_summary if vulnerability else None,
             source_url=source_record.source_url if source_record else item.canonical_url,
             source_published_at=(
