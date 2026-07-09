@@ -55,6 +55,7 @@ Current focus:
 - Idempotent vulnerability persistence and source provenance
 - Sanitized ingestion runs, per-record outcomes, and error auditing
 - Read-only backend intelligence API endpoints for stored CVE records
+- Read-only dashboard summary endpoint for stored KPI and freshness metrics
 - Dashboard integration work in later stages
 
 ## Setup Status
@@ -162,6 +163,7 @@ The backend now exposes stored intelligence items through manual read-only API
 endpoints:
 
 - `GET /api/v1/articles`
+- `GET /api/v1/dashboard/summary`
 - `GET /api/v1/intelligence/items`
 - `GET /api/v1/intelligence/items/{item_public_id}`
 
@@ -172,10 +174,11 @@ geographic scope, and UAE relevance status. The generic intelligence list
 endpoint supports bounded `limit` and `offset` pagination plus these safe
 filters: `q`, `severity`, `source_slug`, `item_type`, and `cve_id`. Responses
 return normalized dashboard-ready fields only, including safe EPSS score,
-percentile, and score-date fields when enrichment exists. Raw source payloads,
-request headers, secrets, and ingestion audit internals are intentionally not
-returned, and these endpoints never trigger ingestion or external network
-calls.
+percentile, and score-date fields when enrichment exists. The dashboard summary
+endpoint returns database-backed KPI counts, latest article previews, and latest
+stored fetch status. Raw source payloads, request headers, secrets, and
+ingestion audit internals are intentionally not returned, and these endpoints
+never trigger ingestion or external network calls.
 
 ## Documentation
 

@@ -32,6 +32,13 @@ implemented article and intelligence list filters. Invalid individual query
 values return `422`; invalid combinations of otherwise valid filters return
 `400` with sanitized messages.
 
+Implementation note as of July 10, 2026: P2-10 adds the implemented dashboard
+summary endpoint at `GET /api/v1/dashboard/summary`. It returns database-backed
+counts, latest article previews, and latest ingestion-run status without
+triggering ingestion or exposing raw payloads, hashes, checkpoints, internal
+database IDs, headers, secrets, stack traces, database URLs, or environment
+values.
+
 ## 1. Executive Recommendation
 
 The approved API contract uses `/api/v1` for domain resources. The existing `GET /api/health` endpoint remains unversioned as the stable operational health check, and future safe version metadata is deferred to `GET /api/version` under P1-13.
@@ -467,9 +474,12 @@ Response fields:
 - `window_start`
 - `window_end`
 - `generated_at`
-- counts
-- threshold configuration
-- ingestion freshness
+- `metrics`
+- `counts`
+- `thresholds`
+- `ingestion`
+- `latest_articles`
+- `latest_fetch`
 
 Semantics:
 
@@ -486,35 +496,98 @@ Semantics:
 - Collected count uses `collected_at` within the window.
 - Recommended high EPSS threshold is `0.7`.
 - The applied threshold is returned.
+- Latest articles include only active article-like item types and exclude
+  vulnerabilities.
+- Latest fetch status comes only from stored ingestion-run metadata and never
+  performs a live source check.
 
 `last_successful_ingestion_at` is the latest `last_successful_fetch_at` among enabled sources registered in `intelligence_sources`.
 
 Inclusion in `intelligence_sources` represents an approved project source for the MVP. No separate source approval field is introduced.
 
+Implemented `metrics` fields:
+
+- `critical_vulnerability_count`
+- `kev_vulnerability_count`
+- `active_article_count`
+- `uae_related_item_count`
+
+Implemented `latest_articles` row fields:
+
+- `public_id`
+- `title`
+- `summary`
+- `category`
+- `source_slug`
+- `source_name`
+- `published_at`
+- `last_seen_at`
+
+Implemented `latest_fetch` fields:
+
+- `source_slug`
+- `source_name`
+- `status`
+- `started_at`
+- `completed_at`
+- `fetched_count`
+- `processed_count`
+- `failed_count`
+
+The implemented endpoint is read-only. It uses stored database data only and
+does not call collectors, ingestion services, startup jobs, schedulers,
+workers, or external network resources.
+
 Example:
 
 ```json
 {
-  "data": {
-    "window_days": 30,
-    "window_start": "2026-06-02T08:30:00Z",
-    "window_end": "2026-07-02T08:30:00Z",
-    "generated_at": "2026-07-02T08:30:00Z",
-    "counts": {
-      "active_intelligence_items": 1240,
-      "critical_vulnerabilities": 18,
-      "high_severity_vulnerabilities": 86,
-      "cisa_kev_listed_vulnerabilities": 42,
-      "high_epss_vulnerabilities": 31,
-      "uae_relevant_intelligence": 14,
-      "intelligence_items_collected_in_window": 220
-    },
-    "thresholds": {
-      "high_epss_minimum": 0.7
-    },
-    "ingestion": {
-      "last_successful_ingestion_at": "2026-07-02T07:45:00Z"
+  "window_days": 30,
+  "window_start": "2026-06-10T12:00:00Z",
+  "window_end": "2026-07-10T12:00:00Z",
+  "generated_at": "2026-07-10T12:00:00Z",
+  "metrics": {
+    "critical_vulnerability_count": 18,
+    "kev_vulnerability_count": 42,
+    "active_article_count": 25,
+    "uae_related_item_count": 14
+  },
+  "counts": {
+    "active_intelligence_items": 1240,
+    "critical_vulnerabilities": 18,
+    "high_severity_vulnerabilities": 86,
+    "cisa_kev_listed_vulnerabilities": 42,
+    "high_epss_vulnerabilities": 31,
+    "uae_relevant_intelligence": 14,
+    "intelligence_items_collected_in_window": 220
+  },
+  "thresholds": {
+    "high_epss_minimum": 0.7
+  },
+  "ingestion": {
+    "last_successful_ingestion_at": "2026-07-10T10:00:00Z"
+  },
+  "latest_articles": [
+    {
+      "public_id": "6c20c9f8-70cb-4905-8221-4b16c7d3d7cc",
+      "title": "Public defensive security advisory",
+      "summary": "A safe public advisory summary.",
+      "category": "security_advisory",
+      "source_slug": "cert-eu-security-advisories",
+      "source_name": "CERT-EU Security Advisories",
+      "published_at": "2026-07-10T08:00:00Z",
+      "last_seen_at": "2026-07-10T09:00:00Z"
     }
+  ],
+  "latest_fetch": {
+    "source_slug": "cert-eu-security-advisories",
+    "source_name": "CERT-EU Security Advisories",
+    "status": "partial",
+    "started_at": "2026-07-10T11:00:00Z",
+    "completed_at": "2026-07-10T11:01:00Z",
+    "fetched_count": 8,
+    "processed_count": 7,
+    "failed_count": 1
   }
 }
 ```
