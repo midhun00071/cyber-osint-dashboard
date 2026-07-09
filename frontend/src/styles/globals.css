@@ -760,6 +760,11 @@ h1 {
   gap: var(--space-4);
 }
 
+.articleFeedShell {
+  display: grid;
+  gap: var(--space-4);
+}
+
 .vulnerabilityFilters {
   display: grid;
   grid-template-columns:
@@ -769,13 +774,24 @@ h1 {
   align-items: end;
 }
 
-.vulnerabilityFilters label {
+.articleFilters {
+  display: grid;
+  grid-template-columns:
+    minmax(14rem, 1fr) minmax(12rem, 0.35fr) minmax(9rem, 0.25fr)
+    auto;
+  gap: var(--space-3);
+  align-items: end;
+}
+
+.vulnerabilityFilters label,
+.articleFilters label {
   display: grid;
   gap: var(--space-2);
   min-width: 0;
 }
 
-.vulnerabilityFilters label span {
+.vulnerabilityFilters label span,
+.articleFilters label span {
   color: var(--text-muted);
   font-size: 0.72rem;
   font-weight: 800;
@@ -784,7 +800,9 @@ h1 {
 }
 
 .vulnerabilityFilters input,
-.vulnerabilityFilters select {
+.vulnerabilityFilters select,
+.articleFilters input,
+.articleFilters select {
   width: 100%;
   min-height: 2.65rem;
   padding: 0.6rem 0.75rem;
@@ -902,6 +920,61 @@ h1 {
   font-size: 0.86rem;
 }
 
+.articleFeedList {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.articleFeedCard {
+  min-width: 0;
+  padding: var(--space-5);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: rgba(15, 23, 42, 0.46);
+}
+
+.articleFeedMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.articleFeedCard h3 {
+  margin-top: var(--space-4);
+  font-size: 1.05rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.articleFeedCard p {
+  margin-top: var(--space-3);
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.articleMetadataGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.articleMetadataGrid dt {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.articleMetadataGrid dd {
+  margin-top: var(--space-1);
+  color: var(--text-soft);
+  font-size: 0.86rem;
+  overflow-wrap: anywhere;
+}
+
 .drawerOverlay {
   position: fixed;
   inset: 0;
@@ -1015,7 +1088,8 @@ h1 {
     flex-direction: column;
   }
 
-  .vulnerabilityFilters {
+  .vulnerabilityFilters,
+  .articleFilters {
     grid-template-columns: 1fr;
   }
 
@@ -1028,6 +1102,11 @@ h1 {
   .filterActions button,
   .paginationControls button {
     flex: 1;
+  }
+
+  .articleFeedList,
+  .articleMetadataGrid {
+    grid-template-columns: 1fr;
   }
 }
 

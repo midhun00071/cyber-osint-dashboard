@@ -59,7 +59,9 @@ Current focus:
 - Frontend dashboard KPI cards connected to the backend summary endpoint
 - Frontend dashboard vulnerability table connected to the read-only intelligence
   API, with backend-powered search, severity filtering, and pagination
-- Dashboard integration work in later stages
+- Frontend latest articles feed connected to the read-only article API, with
+  backend-powered search, category filtering, scope filtering, and pagination
+- Remaining dashboard integration work in later stages
 
 ## Setup Status
 

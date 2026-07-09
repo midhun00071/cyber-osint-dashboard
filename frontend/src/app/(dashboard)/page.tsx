@@ -1,95 +1,28 @@
 import { HealthStatusCard } from "@/components/HealthStatusCard";
 import { DashboardSummaryCards } from "@/components/dashboard/DashboardSummaryCards";
 import { DashboardPanel } from "@/components/dashboard/DashboardPanel";
+import { LatestArticlesFeed } from "@/components/dashboard/LatestArticlesFeed";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { VulnerabilitiesTable } from "@/components/dashboard/VulnerabilitiesTable";
-import {
-  collectionOverview,
-  operationalStatuses,
-  previewIntelligenceItems,
-} from "@/data/dashboardPreview";
-import type { IntelligencePreviewItem } from "@/types/dashboard";
-
-function isApprovedExternalUrl(url: string): boolean {
-  try {
-    const parsedUrl = new URL(url);
-
-    return (
-      parsedUrl.protocol === "https:" &&
-      ["example.com", "example.org", "example.net"].includes(parsedUrl.hostname)
-    );
-  } catch {
-    return false;
-  }
-}
-
-function RecentIntelligenceList({
-  items,
-}: Readonly<{
-  items: readonly IntelligencePreviewItem[];
-}>) {
-  if (items.length === 0) {
-    return (
-      <div className="emptyState">
-        <p className="panelEyebrow">Empty state</p>
-        <h3>No synthetic intelligence records to preview</h3>
-        <p>
-          Once local preview data is available, recent defensive intelligence
-          records will appear here.
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="intelList">
-      {items.map((item) => (
-        <article className="intelCard" key={item.id}>
-          <div className="intelCardHeader">
-            <StatusBadge label={item.severity} tone={item.severity} />
-            <span className="intelMeta">{item.categoryLabel}</span>
-          </div>
-          <h3>{item.title}</h3>
-          <p>{item.summary}</p>
-          <div className="intelCardFooter">
-            <StatusBadge label={item.exploitationLabel} tone={item.exploitation} />
-            {item.uaeRelevant ? (
-              <StatusBadge label="UAE defensive relevance" tone="uae" />
-            ) : null}
-          </div>
-          {item.sourceUrl && isApprovedExternalUrl(item.sourceUrl) ? (
-            <a
-              className="safeSourceLink"
-              href={item.sourceUrl}
-              rel="noreferrer noopener"
-              target="_blank"
-            >
-              View safe example source
-            </a>
-          ) : null}
-        </article>
-      ))}
-    </div>
-  );
-}
+import { collectionOverview, operationalStatuses } from "@/data/dashboardPreview";
 
 export default function DashboardOverviewPage() {
   return (
     <div className="dashboardPage">
       <section className="overviewHero" aria-labelledby="dashboard-title">
         <div>
-          <p className="pageKicker">Backend-connected summary and CVEs</p>
+          <p className="pageKicker">Backend-connected summary, CVEs, and articles</p>
           <h1 id="dashboard-title">Cyber OSINT Dashboard</h1>
           <p className="pageSubtitle">
-            KPI cards load from the backend summary endpoint, and the
-            vulnerabilities table loads from the read-only intelligence API.
-            Preview sections remain synthetic until their data views are
-            connected.
+            KPI cards load from the backend summary endpoint, vulnerabilities
+            load from the read-only intelligence API, and latest articles load
+            from the read-only article feed. Remaining preview sections stay
+            clearly labeled until their data views are connected.
           </p>
         </div>
         <div className="previewCallout" aria-label="Preview data scope">
           <span className="previewDot" aria-hidden="true" />
-          KPI cards and CVEs use backend data
+          KPI cards, CVEs, and articles use backend data
         </div>
       </section>
 
@@ -105,11 +38,11 @@ export default function DashboardOverviewPage() {
         </DashboardPanel>
 
         <DashboardPanel
-          className="panelWide"
-          eyebrow="Recent intelligence"
-          title="Preview feed"
+          className="panelFull"
+          eyebrow="Backend article data"
+          title="Latest articles"
         >
-          <RecentIntelligenceList items={previewIntelligenceItems} />
+          <LatestArticlesFeed />
         </DashboardPanel>
 
         <DashboardPanel eyebrow="Environment" title="Backend health">
