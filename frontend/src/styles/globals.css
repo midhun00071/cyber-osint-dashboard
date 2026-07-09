@@ -217,6 +217,7 @@ input:focus-visible {
 .sidebarStatus,
 .dashboardPanel,
 .kpiCard,
+.kpiErrorState,
 .intelCard,
 .healthCard {
   border: 1px solid var(--border-subtle);
@@ -403,6 +404,12 @@ h1 {
 }
 
 .kpiCard {
+  min-height: 10rem;
+  padding: var(--space-5);
+}
+
+.kpiErrorState {
+  grid-column: 1 / -1;
   min-height: 10rem;
   padding: var(--space-5);
 }
@@ -724,6 +731,17 @@ h1 {
 
 .emptyState h3 {
   margin-top: var(--space-2);
+}
+
+.kpiErrorState h2 {
+  margin-top: var(--space-2);
+  font-size: 1.2rem;
+}
+
+.kpiErrorState p:last-child {
+  margin-top: var(--space-2);
+  color: var(--text-muted);
+  font-size: 0.92rem;
 }
 
 .emptyState p:last-child {

@@ -56,6 +56,7 @@ Current focus:
 - Sanitized ingestion runs, per-record outcomes, and error auditing
 - Read-only backend intelligence API endpoints for stored CVE records
 - Read-only dashboard summary endpoint for stored KPI and freshness metrics
+- Frontend dashboard KPI cards connected to the backend summary endpoint
 - Dashboard integration work in later stages
 
 ## Setup Status
@@ -176,9 +177,12 @@ filters: `q`, `severity`, `source_slug`, `item_type`, and `cve_id`. Responses
 return normalized dashboard-ready fields only, including safe EPSS score,
 percentile, and score-date fields when enrichment exists. The dashboard summary
 endpoint returns database-backed KPI counts, latest article previews, and latest
-stored fetch status. Raw source payloads, request headers, secrets, and
-ingestion audit internals are intentionally not returned, and these endpoints
-never trigger ingestion or external network calls.
+stored fetch status. The dashboard landing page uses this endpoint for the four
+top KPI cards only; other dashboard preview panels still use deterministic
+frontend preview data until their dedicated backend views are implemented. Raw
+source payloads, request headers, secrets, and ingestion audit internals are
+intentionally not returned, and these endpoints never trigger ingestion or
+external network calls.
 
 ## Documentation
 

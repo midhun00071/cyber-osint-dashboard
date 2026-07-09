@@ -1,10 +1,9 @@
 import { HealthStatusCard } from "@/components/HealthStatusCard";
+import { DashboardSummaryCards } from "@/components/dashboard/DashboardSummaryCards";
 import { DashboardPanel } from "@/components/dashboard/DashboardPanel";
-import { KpiCard } from "@/components/dashboard/KpiCard";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import {
   collectionOverview,
-  dashboardKpis,
   operationalStatuses,
   previewIntelligenceItems,
 } from "@/data/dashboardPreview";
@@ -78,31 +77,21 @@ export default function DashboardOverviewPage() {
     <div className="dashboardPage">
       <section className="overviewHero" aria-labelledby="dashboard-title">
         <div>
-          <p className="pageKicker">Synthetic preview</p>
+          <p className="pageKicker">Backend-connected KPIs</p>
           <h1 id="dashboard-title">Cyber OSINT Dashboard</h1>
           <p className="pageSubtitle">
-            A defensive SOC-style workspace for reviewing fictional public
-            intelligence previews while backend ingestion and search remain
-            planned future work.
+            A defensive SOC-style workspace where KPI cards load from the
+            backend summary endpoint while deeper preview sections remain
+            synthetic until their data views are connected.
           </p>
         </div>
         <div className="previewCallout" aria-label="Preview data scope">
           <span className="previewDot" aria-hidden="true" />
-          Synthetic preview data only
+          KPI cards use backend summary data
         </div>
       </section>
 
-      <section className="kpiGrid" aria-label="Synthetic preview KPI cards">
-        {dashboardKpis.map((kpi) => (
-          <KpiCard
-            description={kpi.description}
-            key={kpi.label}
-            label={kpi.label}
-            tone={kpi.tone}
-            value={kpi.value}
-          />
-        ))}
-      </section>
+      <DashboardSummaryCards />
 
       <div className="dashboardGrid">
         <DashboardPanel
