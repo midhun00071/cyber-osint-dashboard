@@ -33,9 +33,23 @@ Planned processing tests:
 
 - Severity mapping works correctly.
 - CVE ID extraction works where available.
-- UAE or regional relevance tagging works with confidence levels.
+- UAE relevance classification uses deterministic direct-evidence rules,
+  preserves analyst/source-declared ownership, and remains offline.
 - Attack category classification works using basic rules.
 - Normalized output contains required fields.
+
+Implemented P4-01 backend coverage includes:
+
+- Unicode-safe text normalization and bounded inputs;
+- direct UAE country, acronym, and emirate matching;
+- regional and sector false-positive controls;
+- trusted source slug allow-list behavior;
+- rule priority and deterministic output;
+- dry-run and apply behavior for existing records;
+- protected classification ownership;
+- manual CLI validation and sanitized failure output;
+- NVD and CERT-EU RSS creation/update integration;
+- EPSS and CISA KEV preservation regressions through existing enrichment tests.
 
 ## Frontend Testing
 

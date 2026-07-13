@@ -212,6 +212,10 @@ def test_new_cve_creates_complete_normalized_record_graph() -> None:
     identifier = session.identifiers[0]
     assert item.item_type == "vulnerability"
     assert item.collected_at == OBSERVED_AT
+    assert item.geographic_scope == "global"
+    assert item.uae_relevance_status == "unknown"
+    assert item.uae_relevance_method == "automatic"
+    assert item.uae_relevance_reason == "No direct UAE evidence found."
     assert item.analyst_review_status == "pending"
     assert vulnerability.intelligence_item is item
     assert identifier.intelligence_item is item
@@ -284,6 +288,24 @@ def test_changed_hash_updates_nvd_fields_and_preserves_analyst_enrichment() -> N
     assert vulnerability.kev_status == "listed"
     assert item.collected_at == original_collected_at
     assert source_record.first_seen_at == original_first_seen
+
+
+def test_new_nvd_record_receives_automatic_uae_classification() -> None:
+    session = FakeSession()
+    record = replace(
+        make_normalized("CVE-2026-54321"),
+        summary="Vendor advisory references Dubai operations.",
+        content_hash="1" * 64,
+    )
+
+    _, result = persist_new(session, record)
+
+    assert result.outcome == "created"
+    item = session.items[0]
+    assert item.geographic_scope == "uae"
+    assert item.uae_relevance_status == "confirmed"
+    assert item.uae_relevance_method == "automatic"
+    assert item.uae_relevance_reason == "Matched emirate name: Dubai."
 
 
 def test_update_repairs_missing_vulnerability_extension_without_duplicates() -> None:

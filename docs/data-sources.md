@@ -88,6 +88,18 @@ Implementation status:
 
 UAE-focused sources should only be automated if an approved feed, API, or authorized access method exists.
 
+P4-01 UAE classification may trust only controlled canonical source slugs in
+the backend classifier allow-list. The current classification allow-list is
+limited to UAE government or cybersecurity source identities:
+
+- `ae-cert`
+- `uae-cert`
+- `uae-cyber-security-council`
+
+These slugs do not authorize new live collection by themselves. Any future UAE
+source ingestion still requires separate approval of the feed, API, access
+method, terms, and rate limits.
+
 ## Safety Notes
 
 - Do not download malware samples.

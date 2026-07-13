@@ -356,7 +356,8 @@ def test_new_advisory_creates_security_advisory_item_and_primary_source_record()
     assert item.status == "active"
     assert item.data_confidence == Decimal("0.900")
     assert item.uae_relevance_status == "unknown"
-    assert item.uae_relevance_method == "unassigned"
+    assert item.uae_relevance_method == "automatic"
+    assert item.uae_relevance_reason == "No direct UAE evidence found."
     assert item.analyst_review_status == "pending"
     assert source_record.intelligence_item is item
     assert source_record.is_primary_reference is True
@@ -450,6 +451,20 @@ def test_changed_hash_updates_source_owned_fields_and_preserves_analyst_fields()
     assert item.analyst_review_status == "reviewed"
     assert item.collected_at == original_collected_at
     assert source_record.first_seen_at == original_first_seen
+
+
+def test_new_rss_record_receives_automatic_uae_classification() -> None:
+    session = FakeSession()
+    record = normalized(title="Dubai defensive security advisory")
+
+    result = persist_new(session, record)
+
+    assert result.outcome == "created"
+    item = session.items[0]
+    assert item.geographic_scope == "uae"
+    assert item.uae_relevance_status == "confirmed"
+    assert item.uae_relevance_method == "automatic"
+    assert item.uae_relevance_reason == "Matched emirate name: Dubai."
 
 
 def test_external_id_and_url_hash_conflict_fails_without_auto_merge() -> None:

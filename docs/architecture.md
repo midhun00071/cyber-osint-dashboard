@@ -22,6 +22,18 @@ Open-source cybersecurity sources
 3. Data Processing and Enrichment
 4. Frontend Dashboard
 
+## UAE Relevance Classification
+
+The backend includes an offline processing component for P4-01 UAE relevance
+classification. It runs only when manually invoked for existing records or when
+new NVD/CERT-EU RSS records are persisted through the existing manual ingestion
+commands. It uses normalized title, summary, controlled source identity, and
+existing safe geographic metadata. It does not use raw payloads, network calls,
+machine learning, an LLM, schedulers, startup hooks, or public mutation routes.
+
+Manual and source-declared classifications are treated as analyst-owned and are
+not overwritten by automatic rules.
+
 ## Backend Responsibilities
 
 - Provide API endpoints for dashboard data.

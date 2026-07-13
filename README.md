@@ -52,6 +52,7 @@ Current focus:
 - Manual, bounded FIRST EPSS enrichment for existing CVEs
 - Manual, bounded CISA KEV enrichment for existing CVEs
 - Manual, bounded CERT-EU Security Advisories RSS ingestion
+- Manual, dry-run-by-default UAE relevance classification for existing records
 - Idempotent vulnerability persistence and source provenance
 - Sanitized ingestion runs, per-record outcomes, and error auditing
 - Read-only backend intelligence API endpoints for stored CVE records
@@ -202,6 +203,29 @@ data until their dedicated backend views are implemented. Raw source payloads,
 request headers, secrets, and ingestion audit internals are intentionally not
 returned, and these endpoints never trigger ingestion or external network calls.
 
+### Manual UAE relevance classification
+
+From the `backend` directory, a developer can preview deterministic offline UAE
+classification for existing records:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.processing.uae_classification_cli `
+    --max-items 20
+```
+
+The command is dry-run by default. To persist eligible automatic/unassigned
+classification changes, use:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.processing.uae_classification_cli `
+    --max-items 20 `
+    --apply
+```
+
+The classifier uses safe normalized metadata only, preserves manual and
+source-declared classification ownership, performs no network calls, and is not
+connected to application startup, a scheduler, or any public write endpoint.
+
 ## Documentation
 
 See the docs/ folder for:
@@ -211,3 +235,4 @@ See the docs/ folder for:
 - security-notes.md
 - testing-plan.md
 - deployment-notes.md
+- uae-classification.md

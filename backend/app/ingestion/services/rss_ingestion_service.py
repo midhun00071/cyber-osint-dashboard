@@ -19,6 +19,7 @@ from app.ingestion.services.article_identity_service import (
 )
 from app.models import IntelligenceItem, IntelligenceSource, SourceRecord
 from app.models.common import utc_now
+from app.processing.uae_classification_service import UaeClassificationService
 
 
 RSS_SOURCE_SLUG = "cert-eu-security-advisories"
@@ -287,6 +288,7 @@ class RssIngestionService:
                 uae_relevance_method="unassigned",
                 analyst_review_status="pending",
             )
+            UaeClassificationService(self._session).classify_and_apply_if_allowed(item)
             self._session.add(item)
             identity_service.add_fingerprint_identifiers(
                 item,
@@ -318,8 +320,8 @@ class RssIngestionService:
         self._session.add(source_record)
         return source_record
 
-    @staticmethod
     def _apply_update(
+        self,
         item: IntelligenceItem,
         source_record: SourceRecord,
         normalized: NormalizedRssEntry,
@@ -329,6 +331,7 @@ class RssIngestionService:
         item.canonical_url = normalized.canonical_url
         item.source_published_at = normalized.source_published_at
         item.source_modified_at = normalized.source_modified_at
+        UaeClassificationService(self._session).classify_and_apply_if_allowed(item)
 
         source_record.source_external_id = normalized.source_external_id
         source_record.source_url = normalized.canonical_url

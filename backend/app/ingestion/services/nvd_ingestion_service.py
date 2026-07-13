@@ -20,6 +20,7 @@ from app.models import (
     Vulnerability,
 )
 from app.models.common import utc_now
+from app.processing.uae_classification_service import UaeClassificationService
 
 
 NVD_SOURCE_SLUG = "nvd"
@@ -248,6 +249,7 @@ class NvdIngestionService:
             uae_relevance_method="unassigned",
             analyst_review_status="pending",
         )
+        UaeClassificationService(self._session).classify_and_apply_if_allowed(item)
         vulnerability = Vulnerability(
             intelligence_item=item,
             severity=normalized.severity,
@@ -338,6 +340,7 @@ class NvdIngestionService:
         item.source_modified_at = normalized.source_modified_at
         item.last_seen_at = observed_at
         item.status = normalized.status
+        UaeClassificationService(self._session).classify_and_apply_if_allowed(item)
 
         vulnerability, _ = self._ensure_vulnerability(item, normalized)
         vulnerability.severity = normalized.severity
