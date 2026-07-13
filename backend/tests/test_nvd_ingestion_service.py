@@ -23,6 +23,7 @@ from app.models import (
     SourceRecord,
     Vulnerability,
 )
+from app.processing.uae_relevance_classifier import confidence_for_rule
 
 
 OBSERVED_AT = datetime(2026, 7, 9, 10, 0, tzinfo=UTC)
@@ -214,6 +215,7 @@ def test_new_cve_creates_complete_normalized_record_graph() -> None:
     assert item.collected_at == OBSERVED_AT
     assert item.geographic_scope == "global"
     assert item.uae_relevance_status == "unknown"
+    assert item.uae_relevance_confidence is None
     assert item.uae_relevance_method == "automatic"
     assert item.uae_relevance_reason == "No direct UAE evidence found."
     assert item.analyst_review_status == "pending"
@@ -281,6 +283,7 @@ def test_changed_hash_updates_nvd_fields_and_preserves_analyst_enrichment() -> N
     assert vulnerability.cvss_score == Decimal("9.9")
     assert source_record.content_hash == "f" * 64
     assert item.uae_relevance_status == "confirmed"
+    assert item.uae_relevance_confidence == Decimal("0.900")
     assert item.uae_relevance_reason == "Analyst-owned reason"
     assert item.analyst_review_status == "reviewed"
     assert vulnerability.epss_score == Decimal("0.123456")
@@ -304,8 +307,32 @@ def test_new_nvd_record_receives_automatic_uae_classification() -> None:
     item = session.items[0]
     assert item.geographic_scope == "uae"
     assert item.uae_relevance_status == "confirmed"
+    assert item.uae_relevance_confidence == confidence_for_rule("direct_emirate_name")
     assert item.uae_relevance_method == "automatic"
     assert item.uae_relevance_reason == "Matched emirate name: Dubai."
+
+
+def test_automatic_nvd_update_refreshes_uae_confidence() -> None:
+    session = FakeSession()
+    normalized, _ = persist_new(session)
+    item = session.items[0]
+    item.uae_relevance_confidence = None
+    updated = replace(
+        normalized,
+        summary="Updated summary for United Arab Emirates operators.",
+        content_hash="2" * 64,
+    )
+
+    result = NvdIngestionService(session).persist(  # type: ignore[arg-type]
+        updated,
+        observed_at=UPDATED_AT,
+    )
+
+    assert result.outcome == "updated"
+    assert item.geographic_scope == "uae"
+    assert item.uae_relevance_status == "confirmed"
+    assert item.uae_relevance_confidence == confidence_for_rule("direct_country_name")
+    assert item.uae_relevance_reason == "Matched direct UAE country phrase."
 
 
 def test_update_repairs_missing_vulnerability_extension_without_duplicates() -> None:

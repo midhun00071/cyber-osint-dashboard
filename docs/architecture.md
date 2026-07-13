@@ -25,14 +25,28 @@ Open-source cybersecurity sources
 ## UAE Relevance Classification
 
 The backend includes an offline processing component for P4-01 UAE relevance
-classification. It runs only when manually invoked for existing records or when
-new NVD/CERT-EU RSS records are persisted through the existing manual ingestion
-commands. It uses normalized title, summary, controlled source identity, and
-existing safe geographic metadata. It does not use raw payloads, network calls,
-machine learning, an LLM, schedulers, startup hooks, or public mutation routes.
+classification and P4-02 rule-strength confidence. It runs only when manually
+invoked for existing records or when new NVD/CERT-EU RSS records are persisted
+through the existing manual ingestion commands. It uses normalized title,
+summary, controlled source identity, and existing safe geographic metadata. It
+does not use raw payloads, network calls, machine learning, an LLM, schedulers,
+startup hooks, or public mutation routes.
+
+Automatic confidence is a fixed deterministic mapping from the winning
+classification rule to a nullable `numeric(4,3)` value. It is not exploit
+probability, threat attribution, attacker intent, targeting certainty, source
+reliability in general, or business impact. Records with no direct UAE evidence
+retain `null` confidence rather than a misleading zero score.
+
+The frontend presents that canonical numeric confidence as a label for review
+clarity: High for `0.900`-`1.000`, Medium for `0.750`-`0.899`, Low for
+`0.000`-`0.749`, and no label for `null`. These labels are UI presentation
+levels only. They are not severity, exploit likelihood, statistical
+calibration, or attribution certainty, and P4-02 does not add confidence
+filters.
 
 Manual and source-declared classifications are treated as analyst-owned and are
-not overwritten by automatic rules.
+not overwritten by automatic rules, including their existing confidence values.
 
 ## Backend Responsibilities
 

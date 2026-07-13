@@ -27,6 +27,7 @@ from app.models import (
     IntelligenceSource,
     SourceRecord,
 )
+from app.processing.uae_relevance_classifier import confidence_for_rule
 
 
 OBSERVED_AT = datetime(2026, 7, 9, 10, 0, tzinfo=UTC)
@@ -356,6 +357,7 @@ def test_new_advisory_creates_security_advisory_item_and_primary_source_record()
     assert item.status == "active"
     assert item.data_confidence == Decimal("0.900")
     assert item.uae_relevance_status == "unknown"
+    assert item.uae_relevance_confidence is None
     assert item.uae_relevance_method == "automatic"
     assert item.uae_relevance_reason == "No direct UAE evidence found."
     assert item.analyst_review_status == "pending"
@@ -446,6 +448,7 @@ def test_changed_hash_updates_source_owned_fields_and_preserves_analyst_fields()
         if identifier.namespace == ARTICLE_TITLE_IDENTIFIER_NAMESPACE
     ).normalized_value == updated.normalized_title_hash
     assert item.uae_relevance_status == "confirmed"
+    assert item.uae_relevance_confidence == Decimal("0.750")
     assert item.uae_relevance_reason == "Analyst-owned reason"
     assert item.uae_relevance_method == "manual"
     assert item.analyst_review_status == "reviewed"
@@ -463,8 +466,33 @@ def test_new_rss_record_receives_automatic_uae_classification() -> None:
     item = session.items[0]
     assert item.geographic_scope == "uae"
     assert item.uae_relevance_status == "confirmed"
+    assert item.uae_relevance_confidence == confidence_for_rule("direct_emirate_name")
     assert item.uae_relevance_method == "automatic"
     assert item.uae_relevance_reason == "Matched emirate name: Dubai."
+
+
+def test_automatic_rss_update_refreshes_uae_confidence() -> None:
+    session = FakeSession()
+    first = normalized()
+    persist_new(session, first)
+    item = session.items[0]
+    item.uae_relevance_confidence = None
+    updated = replace(
+        first,
+        canonical_title="United Arab Emirates defensive advisory",
+        content_hash="9" * 64,
+    )
+
+    result = RssIngestionService(session).persist(  # type: ignore[arg-type]
+        updated,
+        observed_at=UPDATED_AT,
+    )
+
+    assert result.outcome == "updated"
+    assert item.geographic_scope == "uae"
+    assert item.uae_relevance_status == "confirmed"
+    assert item.uae_relevance_confidence == confidence_for_rule("direct_country_name")
+    assert item.uae_relevance_reason == "Matched direct UAE country phrase."
 
 
 def test_external_id_and_url_hash_conflict_fails_without_auto_merge() -> None:

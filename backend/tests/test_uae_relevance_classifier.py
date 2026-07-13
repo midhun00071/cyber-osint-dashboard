@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 import pytest
 
 from app.processing.uae_relevance_classifier import (
+    UAE_RELEVANCE_CONFIDENCE_BY_RULE,
     UaeClassificationInput,
     classify_uae_relevance,
+    confidence_for_rule,
     normalize_text,
 )
 
@@ -54,6 +58,7 @@ def test_country_phrase_matches(text: str) -> None:
     assert result.geographic_scope == "uae"
     assert result.uae_relevance_status == "confirmed"
     assert result.matched_rule_id == "direct_country_name"
+    assert result.uae_relevance_confidence == Decimal("0.950")
     assert result.uae_relevance_reason == "Matched direct UAE country phrase."
 
 
@@ -67,6 +72,7 @@ def test_standalone_uae_acronym_matches(text: str) -> None:
     assert result.geographic_scope == "uae"
     assert result.uae_relevance_status == "confirmed"
     assert result.matched_rule_id == "direct_uae_acronym"
+    assert result.uae_relevance_confidence == Decimal("0.900")
 
 
 @pytest.mark.parametrize(
@@ -92,6 +98,7 @@ def test_emirate_names_match(text: str) -> None:
     assert result.geographic_scope == "uae"
     assert result.uae_relevance_status == "confirmed"
     assert result.matched_rule_id == "direct_emirate_name"
+    assert result.uae_relevance_confidence == Decimal("0.850")
     assert result.uae_relevance_reason.startswith("Matched emirate name:")
 
 
@@ -114,6 +121,7 @@ def test_regional_and_sector_terms_alone_remain_unknown(text: str) -> None:
     assert result.geographic_scope == "global"
     assert result.uae_relevance_status == "unknown"
     assert result.matched_rule_id == "no_direct_uae_evidence"
+    assert result.uae_relevance_confidence is None
     assert result.uae_relevance_reason == "No direct UAE evidence found."
 
 
@@ -126,6 +134,7 @@ def test_approved_canonical_source_slug_matches_without_url_or_display_trust() -
     assert result.geographic_scope == "uae"
     assert result.uae_relevance_status == "confirmed"
     assert result.matched_rule_id == "approved_uae_source"
+    assert result.uae_relevance_confidence == Decimal("0.950")
 
 
 @pytest.mark.parametrize(
@@ -151,7 +160,109 @@ def test_strongest_rule_wins_and_output_is_stable() -> None:
 
     assert first == second
     assert first.matched_rule_id == "approved_uae_source"
+    assert first.uae_relevance_confidence == Decimal("0.950")
     assert first.uae_relevance_reason == "Matched approved UAE source."
+
+
+@pytest.mark.parametrize(
+    ("rule_id", "expected"),
+    [
+        ("approved_uae_source", Decimal("0.950")),
+        ("direct_country_name", Decimal("0.950")),
+        ("direct_uae_acronym", Decimal("0.900")),
+        ("direct_emirate_name", Decimal("0.850")),
+        ("no_direct_uae_evidence", None),
+    ],
+)
+def test_confidence_mapping_values_are_decimal_and_bounded(
+    rule_id: str,
+    expected: Decimal | None,
+) -> None:
+    value = confidence_for_rule(rule_id)
+
+    assert value == expected
+    if value is not None:
+        assert isinstance(value, Decimal)
+        assert Decimal("0") <= value <= Decimal("1")
+        assert value.as_tuple().exponent == -3
+
+
+def test_unknown_confidence_rule_fails_safely() -> None:
+    with pytest.raises(ValueError, match="Unknown UAE relevance confidence rule"):
+        confidence_for_rule("not_a_rule")
+
+
+def test_invalid_internal_confidence_mapping_fails_safely(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    invalid_mapping = dict(UAE_RELEVANCE_CONFIDENCE_BY_RULE)
+    invalid_mapping["direct_country_name"] = Decimal("1.001")
+    monkeypatch.setattr(
+        "app.processing.uae_relevance_classifier.UAE_RELEVANCE_CONFIDENCE_BY_RULE",
+        invalid_mapping,
+    )
+
+    with pytest.raises(ValueError, match="outside 0..1"):
+        confidence_for_rule("direct_country_name")
+
+
+def test_non_decimal_internal_confidence_mapping_fails_safely(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    invalid_mapping = dict(UAE_RELEVANCE_CONFIDENCE_BY_RULE)
+    invalid_mapping["direct_country_name"] = 0.95
+    monkeypatch.setattr(
+        "app.processing.uae_relevance_classifier.UAE_RELEVANCE_CONFIDENCE_BY_RULE",
+        invalid_mapping,
+    )
+
+    with pytest.raises(ValueError, match="Decimal or None"):
+        confidence_for_rule("direct_country_name")
+
+
+def test_non_finite_internal_confidence_mapping_fails_safely(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    invalid_mapping = dict(UAE_RELEVANCE_CONFIDENCE_BY_RULE)
+    invalid_mapping["direct_country_name"] = Decimal("NaN")
+    monkeypatch.setattr(
+        "app.processing.uae_relevance_classifier.UAE_RELEVANCE_CONFIDENCE_BY_RULE",
+        invalid_mapping,
+    )
+
+    with pytest.raises(ValueError, match="must be finite"):
+        confidence_for_rule("direct_country_name")
+
+
+def test_over_precise_internal_confidence_mapping_fails_safely(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    invalid_mapping = dict(UAE_RELEVANCE_CONFIDENCE_BY_RULE)
+    invalid_mapping["direct_country_name"] = Decimal("0.9501")
+    monkeypatch.setattr(
+        "app.processing.uae_relevance_classifier.UAE_RELEVANCE_CONFIDENCE_BY_RULE",
+        invalid_mapping,
+    )
+
+    with pytest.raises(ValueError, match="Numeric\\(4,3\\)"):
+        confidence_for_rule("direct_country_name")
+
+
+def test_repeated_mentions_do_not_inflate_confidence() -> None:
+    once = classify("Dubai advisory")
+    repeated = classify("Dubai Dubai Dubai advisory")
+
+    assert once.matched_rule_id == repeated.matched_rule_id == "direct_emirate_name"
+    assert once.uae_relevance_confidence == repeated.uae_relevance_confidence
+
+
+def test_title_and_summary_order_does_not_change_confidence() -> None:
+    title_match = classify(title="UAE advisory", summary="General summary")
+    summary_match = classify(title="General title", summary="UAE advisory")
+
+    assert title_match.matched_rule_id == summary_match.matched_rule_id
+    assert title_match.uae_relevance_confidence == Decimal("0.900")
+    assert summary_match.uae_relevance_confidence == Decimal("0.900")
 
 
 @pytest.mark.parametrize(
@@ -171,6 +282,7 @@ def test_direct_text_rules_do_not_match_across_field_boundaries(
 
     assert result.uae_relevance_status == "unknown"
     assert result.matched_rule_id == "no_direct_uae_evidence"
+    assert result.uae_relevance_confidence is None
 
 
 @pytest.mark.parametrize(
@@ -190,6 +302,7 @@ def test_underscores_are_safe_classification_separators(
 
     assert result.uae_relevance_status == "confirmed"
     assert result.matched_rule_id == rule_id
+    assert result.uae_relevance_confidence == confidence_for_rule(rule_id)
 
 
 def test_underscore_normalization_still_rejects_acronym_substrings() -> None:
@@ -197,3 +310,4 @@ def test_underscore_normalization_still_rejects_acronym_substrings() -> None:
 
     assert result.uae_relevance_status == "unknown"
     assert result.matched_rule_id == "no_direct_uae_evidence"
+    assert result.uae_relevance_confidence is None

@@ -14,6 +14,7 @@ import type {
   VulnerabilitySeverity,
 } from "@/types/vulnerability";
 import type { BadgeTone } from "@/types/dashboard";
+import { formatUaeRelevanceWithConfidence } from "@/utils/uaeConfidence";
 
 type DetailState =
   | { status: "loading" }
@@ -106,18 +107,6 @@ function formatPercentile(percentile: number | null): string {
 
 function formatScope(scope: GeographicScope): string {
   return scope === "uae" ? "UAE" : scope.charAt(0).toUpperCase() + scope.slice(1);
-}
-
-function formatUaeRelevance(
-  status: UaeRelevanceStatus,
-  confidence: number | null,
-): string {
-  const label =
-    status === "not_relevant"
-      ? "Not relevant"
-      : status.charAt(0).toUpperCase() + status.slice(1);
-
-  return confidence === null ? label : `${label} ${(confidence * 100).toFixed(0)}%`;
 }
 
 function uaeRelevanceTone(status: UaeRelevanceStatus): BadgeTone {
@@ -290,10 +279,10 @@ export default function VulnerabilityDetailPage() {
             <StatusBadge label={formatSeverity(item.severity)} tone={severityTone(item.severity)} />
             <StatusBadge label={kevLabel(item.kev_status)} tone={kevTone(item.kev_status)} />
             <StatusBadge
-              label={formatUaeRelevance(
+              label={formatUaeRelevanceWithConfidence(
                 item.uae_relevance_status,
                 item.uae_relevance_confidence,
-              )}
+              ).label}
               tone={uaeRelevanceTone(item.uae_relevance_status)}
             />
           </div>
@@ -363,10 +352,10 @@ export default function VulnerabilityDetailPage() {
           <div>
             <span>UAE relevance</span>
             <strong>
-              {formatUaeRelevance(
+              {formatUaeRelevanceWithConfidence(
                 item.uae_relevance_status,
                 item.uae_relevance_confidence,
-              )}
+              ).label}
             </strong>
           </div>
         </section>

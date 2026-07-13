@@ -22,6 +22,7 @@ from app.models import (
     SourceRecord,
     Vulnerability,
 )
+from app.processing.uae_relevance_classifier import confidence_for_rule
 
 
 OBSERVED_AT = datetime(2026, 7, 9, 10, 0, tzinfo=UTC)
@@ -187,6 +188,7 @@ def add_nvd_vulnerability(
         status="active",
         geographic_scope="global",
         uae_relevance_status="confirmed",
+        uae_relevance_confidence=confidence_for_rule("direct_emirate_name"),
         uae_relevance_reason="Analyst note",
         uae_relevance_method="manual",
         analyst_review_status="reviewed",
@@ -332,6 +334,7 @@ def test_changed_kev_fields_update_existing_record_and_preserve_non_kev_fields()
     assert vulnerability.affected_summary == "original"
     assert item.summary == "NVD summary"
     assert item.uae_relevance_status == "confirmed"
+    assert item.uae_relevance_confidence == confidence_for_rule("direct_emirate_name")
     assert item.uae_relevance_reason == "Analyst note"
     assert item.uae_relevance_method == "manual"
     assert item.analyst_review_status == "reviewed"

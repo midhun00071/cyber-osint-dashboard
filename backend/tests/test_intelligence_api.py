@@ -18,6 +18,7 @@ from app.models import (
     SourceRecord,
     Vulnerability,
 )
+from app.processing.uae_relevance_classifier import confidence_for_rule
 
 
 NOW = datetime(2026, 7, 7, 12, 0, tzinfo=UTC)
@@ -92,6 +93,7 @@ def make_vulnerability_item(
     kev_date_added: date_type | None = None,
     kev_due_date: date_type | None = None,
     known_ransomware_campaign_use: bool | None = None,
+    uae_relevance_confidence: Decimal | None = None,
 ) -> IntelligenceItem:
     item_public_id = public_id or uuid4()
     item_last_seen_at = last_seen_at or NOW
@@ -125,7 +127,7 @@ def make_vulnerability_item(
         data_confidence=Decimal("1.000"),
         geographic_scope="global",
         uae_relevance_status="unknown",
-        uae_relevance_confidence=None,
+        uae_relevance_confidence=uae_relevance_confidence,
         uae_relevance_reason=None,
         uae_relevance_method="unassigned",
         analyst_review_status="pending",
@@ -348,6 +350,7 @@ def test_list_endpoint_returns_stored_vulnerability_record_without_raw_payloads(
     assert returned["kev_date_added"] is None
     assert returned["kev_due_date"] is None
     assert returned["known_ransomware_campaign_use"] is None
+    assert returned["uae_relevance_confidence"] is None
     assert "raw_payload" not in returned
     assert "affected_products_json" not in returned
     assert "analyst_review_status" not in returned
@@ -592,6 +595,7 @@ def test_detail_endpoint_returns_one_safe_item(client) -> None:
         kev_date_added=date_type(2026, 7, 7),
         kev_due_date=date_type(2026, 7, 21),
         known_ransomware_campaign_use=False,
+        uae_relevance_confidence=confidence_for_rule("direct_country_name"),
         raw_payload_marker="nvd-secret-marker",
     )
 
@@ -613,6 +617,8 @@ def test_detail_endpoint_returns_one_safe_item(client) -> None:
     assert data["source_slug"] == "nvd"
     assert data["source_name"] == "National Vulnerability Database"
     assert data["geographic_scope"] == "global"
+    assert data["uae_relevance_confidence"] == 0.95
+    assert isinstance(data["uae_relevance_confidence"], float)
     assert "raw_payload" not in data
     assert "source_record" not in data
     assert "source_external_id" not in data

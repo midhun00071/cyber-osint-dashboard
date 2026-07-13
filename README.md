@@ -52,7 +52,8 @@ Current focus:
 - Manual, bounded FIRST EPSS enrichment for existing CVEs
 - Manual, bounded CISA KEV enrichment for existing CVEs
 - Manual, bounded CERT-EU Security Advisories RSS ingestion
-- Manual, dry-run-by-default UAE relevance classification for existing records
+- Manual, dry-run-by-default UAE relevance classification and deterministic
+  rule-strength confidence backfill for existing records
 - Idempotent vulnerability persistence and source provenance
 - Sanitized ingestion runs, per-record outcomes, and error auditing
 - Read-only backend intelligence API endpoints for stored CVE records
@@ -225,6 +226,22 @@ classification changes, use:
 The classifier uses safe normalized metadata only, preserves manual and
 source-declared classification ownership, performs no network calls, and is not
 connected to application startup, a scheduler, or any public write endpoint.
+Automatic confidence is a fixed deterministic mapping from the winning UAE
+classification rule to the existing nullable `uae_relevance_confidence` field:
+approved UAE source and direct `United Arab Emirates` phrase use `0.950`,
+standalone `UAE` uses `0.900`, direct emirate names use `0.850`, and records
+with no direct UAE evidence keep confidence `null`. The value represents the
+strength of deterministic evidence used for UAE relevance classification. It
+does not represent exploit probability, threat attribution, attacker intent,
+targeting certainty, or business impact.
+The frontend displays this canonical numeric value as a clear presentation
+label: High for `0.900`-`1.000`, Medium for `0.750`-`0.899`, Low for
+`0.000`-`0.749`, and no confidence label for `null`. The current automatic
+rules emit High or Medium labels; Low remains available for manually reviewed,
+source-declared, seeded, or future valid confidence values. These labels are
+not threat severity, exploit probability, statistical calibration, attribution
+certainty, or proof that low-confidence items are not relevant. P4-03 frontend
+filters remain out of scope.
 
 ## Documentation
 

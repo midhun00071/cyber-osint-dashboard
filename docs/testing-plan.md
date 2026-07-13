@@ -51,6 +51,26 @@ Implemented P4-01 backend coverage includes:
 - NVD and CERT-EU RSS creation/update integration;
 - EPSS and CISA KEV preservation regressions through existing enrichment tests.
 
+Implemented P4-02 backend coverage adds:
+
+- exact fixed confidence mapping for approved UAE source, direct country phrase,
+  standalone UAE acronym, direct emirate name, and no direct evidence;
+- nullable `numeric(4,3)` confidence semantics, Decimal type, finite-value,
+  range, and precision checks;
+- confidence-only dry-run/apply backfill behavior through the existing bounded
+  classification service and CLI counts;
+- ownership preservation for manual, source-declared, and unknown methods;
+- NVD and CERT-EU RSS creation/update confidence assignment;
+- EPSS and CISA KEV confidence preservation;
+- API regression coverage for JSON number and `null` confidence serialization.
+
+Implemented P4-02 frontend validation uses type-check, lint, and production
+build coverage for the centralized UAE confidence presentation helper and the
+three existing UI surfaces that render it: latest article feed, article detail,
+and vulnerability detail. The helper maps High to `0.900`-`1.000`, Medium to
+`0.750`-`0.899`, Low to `0.000`-`0.749`, and displays no confidence label for
+`null` or invalid non-finite/out-of-range presentation values.
+
 ## Frontend Testing
 
 Planned frontend tests:

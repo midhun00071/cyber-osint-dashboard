@@ -13,6 +13,7 @@ import type {
   UaeRelevanceStatus,
 } from "@/types/article";
 import type { BadgeTone } from "@/types/dashboard";
+import { formatUaeRelevanceWithConfidence } from "@/utils/uaeConfidence";
 
 type DetailState =
   | { status: "loading" }
@@ -52,15 +53,6 @@ function formatScope(scope: GeographicScope): string {
   }
 
   return scope.charAt(0).toUpperCase() + scope.slice(1);
-}
-
-function formatUaeRelevance(status: UaeRelevanceStatus, confidence: number | null): string {
-  const label =
-    status === "not_relevant"
-      ? "Not relevant"
-      : status.charAt(0).toUpperCase() + status.slice(1);
-
-  return confidence === null ? label : `${label} ${(confidence * 100).toFixed(0)}%`;
 }
 
 function uaeRelevanceTone(status: UaeRelevanceStatus): BadgeTone {
@@ -217,10 +209,10 @@ export default function ArticleDetailPage() {
           <div className="articleFeedMeta">
             <StatusBadge label={formatCategory(article.category)} tone="info" />
             <StatusBadge
-              label={formatUaeRelevance(
+              label={formatUaeRelevanceWithConfidence(
                 article.uae_relevance_status,
                 article.uae_relevance_confidence,
-              )}
+              ).label}
               tone={uaeRelevanceTone(article.uae_relevance_status)}
             />
           </div>
@@ -255,10 +247,10 @@ export default function ArticleDetailPage() {
           <div>
             <span>UAE relevance</span>
             <strong>
-              {formatUaeRelevance(
+              {formatUaeRelevanceWithConfidence(
                 article.uae_relevance_status,
                 article.uae_relevance_confidence,
-              )}
+              ).label}
             </strong>
           </div>
         </section>

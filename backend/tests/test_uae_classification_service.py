@@ -13,6 +13,7 @@ from app.processing.uae_classification_service import (
     UaeClassificationService,
     UaeClassificationServiceError,
 )
+from app.processing.uae_relevance_classifier import confidence_for_rule
 
 
 OBSERVED_AT = datetime(2026, 7, 13, 10, 0, tzinfo=UTC)
@@ -103,6 +104,7 @@ def make_item(
     status: str = "unknown",
     reason: str | None = None,
     scope: str = "global",
+    confidence: Decimal | None = None,
     source_slug: str = "nvd",
     item_id: int = 1,
 ) -> IntelligenceItem:
@@ -123,7 +125,7 @@ def make_item(
         data_confidence=Decimal("1.000"),
         geographic_scope=scope,
         uae_relevance_status=status,
-        uae_relevance_confidence=None,
+        uae_relevance_confidence=confidence,
         uae_relevance_reason=reason,
         uae_relevance_method=method,
         analyst_review_status="pending",
@@ -165,6 +167,7 @@ def test_dry_run_counts_expected_changes_without_mutation() -> None:
     assert counts.would_update == 1
     assert counts.updated == 0
     assert item.uae_relevance_status == "unknown"
+    assert item.uae_relevance_confidence is None
     assert item.uae_relevance_method == "unassigned"
     assert session.commits == 0
     assert session.rollbacks == 1
@@ -183,6 +186,7 @@ def test_apply_updates_eligible_rows_and_commits_once() -> None:
     assert counts.updated == 1
     assert item.geographic_scope == "uae"
     assert item.uae_relevance_status == "confirmed"
+    assert item.uae_relevance_confidence == confidence_for_rule("direct_country_name")
     assert item.uae_relevance_method == "automatic"
     assert item.uae_relevance_reason == "Matched direct UAE country phrase."
     assert session.commits == 1
@@ -196,6 +200,7 @@ def test_unchanged_automatic_rows_are_not_rewritten() -> None:
         status="confirmed",
         reason="Matched emirate name: Dubai.",
         scope="uae",
+        confidence=confidence_for_rule("direct_emirate_name"),
     )
     session = FakeSession([item])
 
@@ -206,7 +211,28 @@ def test_unchanged_automatic_rows_are_not_rewritten() -> None:
 
     assert counts.unchanged == 1
     assert counts.updated == 0
+    assert item.uae_relevance_confidence == confidence_for_rule("direct_emirate_name")
     assert session.commits == 1
+
+
+def test_automatic_row_with_missing_confidence_is_recalculated() -> None:
+    item = make_item(
+        title="Dubai advisory",
+        method="automatic",
+        status="confirmed",
+        reason="Matched emirate name: Dubai.",
+        scope="uae",
+        confidence=None,
+    )
+    session = FakeSession([item])
+
+    counts = UaeClassificationService(session).classify_existing(  # type: ignore[arg-type]
+        max_items=1,
+        apply=True,
+    )
+
+    assert counts.updated == 1
+    assert item.uae_relevance_confidence == confidence_for_rule("direct_emirate_name")
 
 
 @pytest.mark.parametrize("method", ["manual", "source_declared", "reviewed"])
@@ -216,6 +242,7 @@ def test_protected_or_unknown_methods_are_skipped(method: str) -> None:
         method=method,
         status="possible",
         reason="Analyst-owned reason",
+        confidence=Decimal("0.333"),
     )
 
     counts = UaeClassificationService(FakeSession([item])).classify_existing(  # type: ignore[arg-type]
@@ -225,6 +252,7 @@ def test_protected_or_unknown_methods_are_skipped(method: str) -> None:
 
     assert counts.skipped_protected == 1
     assert item.uae_relevance_status == "possible"
+    assert item.uae_relevance_confidence == Decimal("0.333")
     assert item.uae_relevance_reason == "Analyst-owned reason"
     assert item.uae_relevance_method == method
 
@@ -264,6 +292,10 @@ def test_repeated_bounded_apply_runs_progress_through_unassigned_backfill() -> N
     assert second.unchanged == 10
     assert all(item.uae_relevance_method == "automatic" for item in items)
     assert all(item.uae_relevance_status == "confirmed" for item in items)
+    assert all(
+        item.uae_relevance_confidence == confidence_for_rule("direct_emirate_name")
+        for item in items
+    )
     assert session.commits == 2
 
 
@@ -274,6 +306,7 @@ def test_protected_records_do_not_consume_unassigned_backfill_batch() -> None:
             method="manual",
             status="possible",
             reason="Analyst-owned reason",
+            confidence=Decimal("0.250"),
             item_id=index,
         )
         for index in range(1, 6)
@@ -293,7 +326,12 @@ def test_protected_records_do_not_consume_unassigned_backfill_batch() -> None:
     assert counts.updated == 5
     assert counts.skipped_protected == 0
     assert all(item.uae_relevance_method == "manual" for item in protected)
+    assert all(item.uae_relevance_confidence == Decimal("0.250") for item in protected)
     assert all(item.uae_relevance_method == "automatic" for item in backfill)
+    assert all(
+        item.uae_relevance_confidence == confidence_for_rule("direct_emirate_name")
+        for item in backfill
+    )
 
 
 def test_automatic_reclassification_runs_after_unassigned_backfill_is_exhausted() -> None:
@@ -303,6 +341,7 @@ def test_automatic_reclassification_runs_after_unassigned_backfill_is_exhausted(
         method="automatic",
         status="unknown",
         reason="No direct UAE evidence found.",
+        confidence=None,
         item_id=2,
     )
     session = FakeSession([automatic, unassigned])
@@ -316,6 +355,12 @@ def test_automatic_reclassification_runs_after_unassigned_backfill_is_exhausted(
     assert counts.updated == 2
     assert unassigned.uae_relevance_reason == "Matched emirate name: Dubai."
     assert automatic.uae_relevance_reason == "Matched direct UAE country phrase."
+    assert unassigned.uae_relevance_confidence == confidence_for_rule(
+        "direct_emirate_name"
+    )
+    assert automatic.uae_relevance_confidence == confidence_for_rule(
+        "direct_country_name"
+    )
 
 
 def test_commit_failure_rolls_back_and_raises_sanitized_error() -> None:

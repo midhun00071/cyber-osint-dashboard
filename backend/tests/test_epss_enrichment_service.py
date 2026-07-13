@@ -22,6 +22,7 @@ from app.models import (
     SourceRecord,
     Vulnerability,
 )
+from app.processing.uae_relevance_classifier import confidence_for_rule
 
 
 OBSERVED_AT = datetime(2026, 7, 9, 10, 0, tzinfo=UTC)
@@ -174,6 +175,7 @@ def add_nvd_vulnerability(
         status="active",
         geographic_scope="global",
         uae_relevance_status="unknown",
+        uae_relevance_confidence=confidence_for_rule("direct_emirate_name"),
         uae_relevance_method="unassigned",
         analyst_review_status="reviewed",
     )
@@ -303,6 +305,7 @@ def test_newer_score_updates_existing_epss_values_and_preserves_other_fields() -
     session = FakeSession()
     item, vulnerability, _ = add_nvd_vulnerability(session)
     item.uae_relevance_status = "confirmed"
+    item.uae_relevance_confidence = confidence_for_rule("direct_emirate_name")
     service = EpssEnrichmentService(session)  # type: ignore[arg-type]
     service.enrich(normalized(), observed_at=OBSERVED_AT)
 
@@ -318,6 +321,7 @@ def test_newer_score_updates_existing_epss_values_and_preserves_other_fields() -
     assert vulnerability.cvss_score == Decimal("8.8")
     assert vulnerability.kev_status == "listed"
     assert item.uae_relevance_status == "confirmed"
+    assert item.uae_relevance_confidence == confidence_for_rule("direct_emirate_name")
     assert result.source_record.source_modified_at == datetime(2026, 7, 10, tzinfo=UTC)
 
 
