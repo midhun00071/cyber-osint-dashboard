@@ -38,6 +38,8 @@ class IntelligenceQueryFilters:
     source_slug: str | None = None
     item_type: str | None = None
     cve_id: str | None = None
+    geographic_scope: str | None = None
+    uae_relevance_status: str | None = None
     limit: int = 25
     offset: int = 0
 
@@ -65,6 +67,20 @@ class IntelligenceQueryFilters:
         if self.cve_id is None:
             return None
         value = self.cve_id.strip().upper()
+        return value or None
+
+    @property
+    def normalized_geographic_scope(self) -> str | None:
+        if self.geographic_scope is None:
+            return None
+        value = self.geographic_scope.strip().lower()
+        return value or None
+
+    @property
+    def normalized_uae_relevance_status(self) -> str | None:
+        if self.uae_relevance_status is None:
+            return None
+        value = self.uae_relevance_status.strip().lower()
         return value or None
 
     @property
@@ -148,6 +164,14 @@ class IntelligenceQueryService:
                 primary_identifier is None
                 or primary_identifier.normalized_value != filters.normalized_cve_id
             ):
+                return False
+
+        if filters.normalized_geographic_scope is not None:
+            if item.geographic_scope != filters.normalized_geographic_scope:
+                return False
+
+        if filters.normalized_uae_relevance_status is not None:
+            if item.uae_relevance_status != filters.normalized_uae_relevance_status:
                 return False
 
         normalized_query = filters.normalized_query

@@ -93,6 +93,8 @@ def make_vulnerability_item(
     kev_date_added: date_type | None = None,
     kev_due_date: date_type | None = None,
     known_ransomware_campaign_use: bool | None = None,
+    geographic_scope: str = "global",
+    uae_relevance_status: str = "unknown",
     uae_relevance_confidence: Decimal | None = None,
 ) -> IntelligenceItem:
     item_public_id = public_id or uuid4()
@@ -125,8 +127,8 @@ def make_vulnerability_item(
         last_seen_at=item_last_seen_at,
         status="active",
         data_confidence=Decimal("1.000"),
-        geographic_scope="global",
-        uae_relevance_status="unknown",
+        geographic_scope=geographic_scope,
+        uae_relevance_status=uae_relevance_status,
         uae_relevance_confidence=uae_relevance_confidence,
         uae_relevance_reason=None,
         uae_relevance_method="unassigned",
@@ -427,6 +429,104 @@ def test_source_slug_filter_works(client) -> None:
     ]
 
 
+@pytest.mark.parametrize("scope", ["global", "regional", "uae", "unknown"])
+def test_geographic_scope_filter_accepts_approved_values(client, scope: str) -> None:
+    other_scope = "global" if scope != "global" else "regional"
+    matching = make_vulnerability_item(
+        cve_id="CVE-2026-02100",
+        geographic_scope=scope,
+    )
+    other = make_vulnerability_item(
+        cve_id="CVE-2026-02101",
+        geographic_scope=other_scope,
+    )
+
+    response = client(FakeSession([matching, other])).get(
+        f"/api/v1/intelligence/items?geographic_scope={scope.upper()}"
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 1
+    assert data["items"][0]["cve_id"] == "CVE-2026-02100"
+    assert data["items"][0]["geographic_scope"] == scope
+
+
+@pytest.mark.parametrize(
+    "status_value",
+    ["confirmed", "probable", "possible", "not_relevant", "unknown"],
+)
+def test_uae_relevance_status_filter_accepts_approved_values(
+    client,
+    status_value: str,
+) -> None:
+    other_status = "unknown" if status_value != "unknown" else "confirmed"
+    matching = make_vulnerability_item(
+        cve_id="CVE-2026-02110",
+        uae_relevance_status=status_value,
+    )
+    other = make_vulnerability_item(
+        cve_id="CVE-2026-02111",
+        uae_relevance_status=other_status,
+    )
+
+    response = client(FakeSession([matching, other])).get(
+        f"/api/v1/intelligence/items?uae_relevance_status={status_value.upper()}"
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 1
+    assert data["items"][0]["cve_id"] == "CVE-2026-02110"
+    assert data["items"][0]["uae_relevance_status"] == status_value
+
+
+def test_geographic_and_uae_relevance_filters_combine_after_search(client) -> None:
+    matching = make_vulnerability_item(
+        cve_id="CVE-2026-02120",
+        title="Exchange appliance issue",
+        severity="critical",
+        geographic_scope="uae",
+        uae_relevance_status="confirmed",
+    )
+    wrong_scope = make_vulnerability_item(
+        cve_id="CVE-2026-02121",
+        title="Exchange appliance issue",
+        severity="critical",
+        geographic_scope="global",
+        uae_relevance_status="confirmed",
+    )
+    wrong_status = make_vulnerability_item(
+        cve_id="CVE-2026-02122",
+        title="Exchange appliance issue",
+        severity="critical",
+        geographic_scope="uae",
+        uae_relevance_status="possible",
+    )
+    wrong_search = make_vulnerability_item(
+        cve_id="CVE-2026-02123",
+        title="Other appliance issue",
+        severity="critical",
+        geographic_scope="uae",
+        uae_relevance_status="confirmed",
+    )
+
+    response = client(
+        FakeSession([matching, wrong_scope, wrong_status, wrong_search])
+    ).get(
+        "/api/v1/intelligence/items?"
+        "q=exchange"
+        "&severity=critical"
+        "&geographic_scope=uae"
+        "&uae_relevance_status=confirmed",
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 1
+    assert data["items"][0]["cve_id"] == "CVE-2026-02120"
+
+
 def test_q_search_matches_title_summary_and_cve_id(client) -> None:
     title_match = make_vulnerability_item(
         cve_id="CVE-2026-03000",
@@ -471,6 +571,23 @@ def test_whitespace_only_q_returns_422(client) -> None:
 def test_invalid_severity_returns_422(client, severity: str) -> None:
     response = client(FakeSession([make_vulnerability_item()])).get(
         f"/api/v1/intelligence/items?severity={severity}"
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "geographic_scope=local",
+        "geographic_scope=%20%20",
+        "uae_relevance_status=yes",
+        "uae_relevance_status=%20%20",
+    ],
+)
+def test_invalid_uae_filter_returns_422(client, query: str) -> None:
+    response = client(FakeSession([make_vulnerability_item()])).get(
+        f"/api/v1/intelligence/items?{query}"
     )
 
     assert response.status_code == 422

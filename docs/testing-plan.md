@@ -71,6 +71,14 @@ and vulnerability detail. The helper maps High to `0.900`-`1.000`, Medium to
 `0.750`-`0.899`, Low to `0.000`-`0.749`, and displays no confidence label for
 `null` or invalid non-finite/out-of-range presentation values.
 
+Implemented P4-03 coverage adds focused API tests for intelligence-item
+`geographic_scope` and `uae_relevance_status` filters, invalid enum rejection,
+and combined search/severity/UAE filters. Frontend validation relies on the
+existing TypeScript, lint, production build, and manual browser/network checks
+because the broader automated frontend test suite remains deferred to P6-03.
+The dashboard filters are backend-driven and reset offset pagination when a
+search or filter changes.
+
 ## Frontend Testing
 
 Planned frontend tests:

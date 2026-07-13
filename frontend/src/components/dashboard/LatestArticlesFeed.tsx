@@ -31,9 +31,21 @@ const scopeOptions: readonly {
   value: GeographicScope | "";
 }[] = [
   { label: "All scopes", value: "" },
-  { label: "Global", value: "global" },
-  { label: "Regional", value: "regional" },
   { label: "UAE", value: "uae" },
+  { label: "Regional", value: "regional" },
+  { label: "Global", value: "global" },
+  { label: "Unknown", value: "unknown" },
+] as const;
+
+const relevanceOptions: readonly {
+  label: string;
+  value: UaeRelevanceStatus | "";
+}[] = [
+  { label: "All relevance statuses", value: "" },
+  { label: "Confirmed", value: "confirmed" },
+  { label: "Probable", value: "probable" },
+  { label: "Possible", value: "possible" },
+  { label: "Not relevant", value: "not_relevant" },
   { label: "Unknown", value: "unknown" },
 ] as const;
 
@@ -121,6 +133,7 @@ export function LatestArticlesFeed() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<ArticleCategory | "">("");
   const [scope, setScope] = useState<GeographicScope | "">("");
+  const [relevance, setRelevance] = useState<UaeRelevanceStatus | "">("");
   const [offset, setOffset] = useState(0);
   const [state, setState] = useState<FeedState>({ status: "loading" });
 
@@ -138,6 +151,7 @@ export function LatestArticlesFeed() {
             limit,
             offset,
             q: query,
+            uae_relevance_status: relevance || undefined,
           },
           controller.signal,
         );
@@ -160,7 +174,7 @@ export function LatestArticlesFeed() {
     void loadArticles();
 
     return () => controller.abort();
-  }, [category, offset, query, scope]);
+  }, [category, offset, query, relevance, scope]);
 
   const articles = useMemo(
     () => (state.status === "success" ? state.data.items : []),
@@ -185,8 +199,12 @@ export function LatestArticlesFeed() {
     setQuery("");
     setCategory("");
     setScope("");
+    setRelevance("");
     setOffset(0);
   }
+
+  const hasActiveFilters =
+    query !== "" || category !== "" || scope !== "" || relevance !== "";
 
   return (
     <div className="articleFeedShell">
@@ -218,7 +236,7 @@ export function LatestArticlesFeed() {
           </select>
         </label>
         <label>
-          <span>Scope</span>
+          <span>Geographic scope</span>
           <select
             onChange={(event) => {
               setScope(event.target.value as GeographicScope | "");
@@ -227,6 +245,22 @@ export function LatestArticlesFeed() {
             value={scope}
           >
             {scopeOptions.map((option) => (
+              <option key={option.label} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>UAE relevance</span>
+          <select
+            onChange={(event) => {
+              setRelevance(event.target.value as UaeRelevanceStatus | "");
+              setOffset(0);
+            }}
+            value={relevance}
+          >
+            {relevanceOptions.map((option) => (
               <option key={option.label} value={option.value}>
                 {option.label}
               </option>
@@ -254,9 +288,19 @@ export function LatestArticlesFeed() {
 
       {state.status === "success" && articles.length === 0 ? (
         <div className="emptyState" role="status">
-          <p className="panelEyebrow">No matching articles</p>
-          <h3>No articles found</h3>
-          <p>Try a different search term, category, or scope filter.</p>
+          <p className="panelEyebrow">
+            {hasActiveFilters ? "No matching articles" : "No stored articles"}
+          </p>
+          <h3>
+            {hasActiveFilters
+              ? "No articles match the selected filters"
+              : "No articles found"}
+          </h3>
+          <p>
+            {hasActiveFilters
+              ? "Try a different search term, category, scope, or UAE relevance filter."
+              : "Stored article records will appear here after manual ingestion writes them to the database."}
+          </p>
         </div>
       ) : null}
 

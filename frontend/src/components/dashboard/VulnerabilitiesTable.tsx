@@ -7,7 +7,9 @@ import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { fetchVulnerabilities } from "@/services/vulnerabilityApi";
 import type { BadgeTone } from "@/types/dashboard";
 import type {
+  GeographicScope,
   KevStatus,
+  UaeRelevanceStatus,
   VulnerabilityListResponse,
   VulnerabilitySeverity,
 } from "@/types/vulnerability";
@@ -22,6 +24,29 @@ const severityOptions: readonly {
   { label: "Medium", value: "medium" },
   { label: "Low", value: "low" },
   { label: "None", value: "none" },
+  { label: "Unknown", value: "unknown" },
+] as const;
+
+const scopeOptions: readonly {
+  label: string;
+  value: GeographicScope | "";
+}[] = [
+  { label: "All scopes", value: "" },
+  { label: "UAE", value: "uae" },
+  { label: "Regional", value: "regional" },
+  { label: "Global", value: "global" },
+  { label: "Unknown", value: "unknown" },
+] as const;
+
+const relevanceOptions: readonly {
+  label: string;
+  value: UaeRelevanceStatus | "";
+}[] = [
+  { label: "All relevance statuses", value: "" },
+  { label: "Confirmed", value: "confirmed" },
+  { label: "Probable", value: "probable" },
+  { label: "Possible", value: "possible" },
+  { label: "Not relevant", value: "not_relevant" },
   { label: "Unknown", value: "unknown" },
 ] as const;
 
@@ -135,6 +160,8 @@ export function VulnerabilitiesTable() {
   const [queryInput, setQueryInput] = useState("");
   const [query, setQuery] = useState("");
   const [severity, setSeverity] = useState<VulnerabilitySeverity | "">("");
+  const [scope, setScope] = useState<GeographicScope | "">("");
+  const [relevance, setRelevance] = useState<UaeRelevanceStatus | "">("");
   const [limit, setLimit] = useState<number>(10);
   const [offset, setOffset] = useState(0);
   const [state, setState] = useState<TableState>({ status: "loading" });
@@ -148,10 +175,12 @@ export function VulnerabilitiesTable() {
       try {
         const result = await fetchVulnerabilities(
           {
+            geographic_scope: scope || undefined,
             limit,
             offset,
             q: query,
             severity: severity || undefined,
+            uae_relevance_status: relevance || undefined,
           },
           controller.signal,
         );
@@ -174,7 +203,7 @@ export function VulnerabilitiesTable() {
     void loadVulnerabilities();
 
     return () => controller.abort();
-  }, [limit, offset, query, severity]);
+  }, [limit, offset, query, relevance, scope, severity]);
 
   const total = state.status === "success" ? state.data.total : 0;
   const pageStart = total === 0 ? 0 : offset + 1;
@@ -198,8 +227,13 @@ export function VulnerabilitiesTable() {
     setQueryInput("");
     setQuery("");
     setSeverity("");
+    setScope("");
+    setRelevance("");
     setOffset(0);
   }
+
+  const hasActiveFilters =
+    query !== "" || severity !== "" || scope !== "" || relevance !== "";
 
   return (
     <div className="vulnerabilityTableShell">
@@ -224,6 +258,38 @@ export function VulnerabilitiesTable() {
             value={severity}
           >
             {severityOptions.map((option) => (
+              <option key={option.label} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Geographic scope</span>
+          <select
+            onChange={(event) => {
+              setScope(event.target.value as GeographicScope | "");
+              setOffset(0);
+            }}
+            value={scope}
+          >
+            {scopeOptions.map((option) => (
+              <option key={option.label} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>UAE relevance</span>
+          <select
+            onChange={(event) => {
+              setRelevance(event.target.value as UaeRelevanceStatus | "");
+              setOffset(0);
+            }}
+            value={relevance}
+          >
+            {relevanceOptions.map((option) => (
               <option key={option.label} value={option.value}>
                 {option.label}
               </option>
@@ -267,9 +333,19 @@ export function VulnerabilitiesTable() {
 
       {state.status === "success" && tableRows.length === 0 ? (
         <div className="emptyState" role="status">
-          <p className="panelEyebrow">No matching CVEs</p>
-          <h3>No vulnerabilities found</h3>
-          <p>Try a different search term or severity filter.</p>
+          <p className="panelEyebrow">
+            {hasActiveFilters ? "No matching CVEs" : "No stored CVEs"}
+          </p>
+          <h3>
+            {hasActiveFilters
+              ? "No vulnerabilities match the selected filters"
+              : "No vulnerabilities found"}
+          </h3>
+          <p>
+            {hasActiveFilters
+              ? "Try a different search term, severity, scope, or UAE relevance filter."
+              : "Stored vulnerability records will appear here after manual ingestion writes them to the database."}
+          </p>
         </div>
       ) : null}
 

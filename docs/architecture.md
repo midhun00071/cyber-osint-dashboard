@@ -45,6 +45,13 @@ levels only. They are not severity, exploit likelihood, statistical
 calibration, or attribution certainty, and P4-02 does not add confidence
 filters.
 
+P4-03 adds backend-driven frontend controls for geographic scope and UAE
+relevance status on the dashboard latest-articles feed and vulnerability table.
+Those controls send the existing read-only backend query parameters, combine
+with search and pagination, and reset the current offset when changed. UAE
+relevance status remains a classification field; it is not threat attribution,
+attacker intent, or targeting certainty.
+
 Manual and source-declared classifications are treated as analyst-owned and are
 not overwritten by automatic rules, including their existing confidence values.
 

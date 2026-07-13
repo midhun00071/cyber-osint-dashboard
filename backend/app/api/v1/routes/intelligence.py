@@ -8,8 +8,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.v1.query_validation import (
+    GEOGRAPHIC_SCOPE_VALUES,
     ITEM_TYPE_VALUES,
     SEVERITY_VALUES,
+    UAE_RELEVANCE_STATUS_VALUES,
     normalize_cve_id_filter,
     normalize_enum_filter,
     normalize_search_text,
@@ -41,6 +43,8 @@ def list_intelligence_items(
     source_slug: str | None = Query(default=None, min_length=1, max_length=80),
     item_type: str | None = Query(default=None, min_length=1, max_length=40),
     cve_id: str | None = Query(default=None, min_length=1, max_length=40),
+    geographic_scope: str | None = Query(default=None, min_length=1, max_length=40),
+    uae_relevance_status: str | None = Query(default=None, min_length=1, max_length=40),
     db_session: Session = Depends(get_db_session),
 ) -> IntelligenceItemListResponse:
     """Return stored intelligence items with safe filtering and pagination."""
@@ -68,6 +72,16 @@ def list_intelligence_items(
         source_slug=normalize_slug_filter(source_slug, field_name="source_slug"),
         item_type=normalized_item_type,
         cve_id=normalized_cve_id,
+        geographic_scope=normalize_enum_filter(
+            geographic_scope,
+            allowed_values=GEOGRAPHIC_SCOPE_VALUES,
+            field_name="geographic_scope",
+        ),
+        uae_relevance_status=normalize_enum_filter(
+            uae_relevance_status,
+            allowed_values=UAE_RELEVANCE_STATUS_VALUES,
+            field_name="uae_relevance_status",
+        ),
         limit=limit,
         offset=offset,
     )

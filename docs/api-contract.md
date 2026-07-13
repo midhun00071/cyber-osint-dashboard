@@ -53,6 +53,11 @@ implemented article and intelligence list filters. Invalid individual query
 values return `422`; invalid combinations of otherwise valid filters return
 `400` with sanitized messages.
 
+Implementation note as of July 13, 2026: P4-03 adds single-value
+`geographic_scope` and `uae_relevance_status` filters to the implemented
+`GET /api/v1/intelligence/items` endpoint. They use the same approved enum
+values as the article endpoint and are applied before offset pagination.
+
 Implementation note as of July 10, 2026: P2-10 adds the implemented dashboard
 summary endpoint at `GET /api/v1/dashboard/summary`. It returns database-backed
 counts, latest article previews, and latest ingestion-run status without
@@ -262,9 +267,17 @@ Implemented `GET /api/v1/intelligence/items` validation:
 - `cve_id` is optional, trims surrounding whitespace, normalizes to uppercase,
   and must match `CVE-YYYY-NNNN...` with a four-digit year and at least four
   sequence digits. The year and sequence digits must be ASCII digits.
+- `geographic_scope` is optional, normalizes to lowercase, and allows only
+  `global`, `regional`, `uae`, or `unknown`.
+- `uae_relevance_status` is optional, normalizes to lowercase, and allows only
+  `confirmed`, `probable`, `possible`, `not_relevant`, or `unknown`.
 - Supplying `severity` or `cve_id` with an explicit non-vulnerability
   `item_type` returns `400` with
   `Vulnerability filters require item_type=vulnerability.`.
+
+The implemented list endpoint accepts one value for each of these filters.
+Different supplied filters combine with logical `AND`, and `total`, `limit`,
+and `offset` describe the result set after filtering.
 
 ## 7. Intelligence-Item Query Parameters
 
@@ -276,8 +289,8 @@ Implemented `GET /api/v1/intelligence/items` validation:
 | `tag` | Repeatable tag slug; maximum 20 values. |
 | `severity` | Repeatable controlled enum. |
 | `kev_status` | Repeatable controlled enum. |
-| `geographic_scope` | Repeatable controlled enum. |
-| `uae_relevance_status` | Repeatable controlled enum. |
+| `geographic_scope` | Implemented as a single-value exact controlled enum filter. Planned repeatable semantics remain deferred. |
+| `uae_relevance_status` | Implemented as a single-value exact controlled enum filter. Planned repeatable semantics remain deferred. |
 | `published_from` | ISO 8601 timestamp. |
 | `published_to` | ISO 8601 timestamp. |
 | `collected_from` | ISO 8601 timestamp. |
@@ -336,12 +349,14 @@ Approved UAE relevance values:
 - `not_relevant`
 - `unknown`
 
-Filter behavior:
+Implemented filter behavior:
 
 - Different filter categories combine with `AND`.
-- Repeated values of the same filter combine with `OR`.
-- `q` searches only canonical title and summary.
-- Exact identifier matching uses `identifier`.
+- Single supplied values are exact matches after safe normalization.
+- Repeated values of the same filter and page-based response links remain
+  deferred for the broader planned API contract.
+- `q` searches canonical title, summary, and the primary CVE identifier.
+- Exact CVE identifier matching uses `cve_id`.
 - Raw payload content is never searched.
 - `analyst_review_status` is excluded from the public MVP.
 

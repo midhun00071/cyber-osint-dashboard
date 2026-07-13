@@ -188,15 +188,20 @@ one active article-like record by public UUID using the same safe normalized
 fields and returns `404` for missing, inactive, non-article, merged,
 superseded, archived, or vulnerability records. The generic intelligence list
 endpoint supports bounded `limit` and `offset` pagination plus these safe
-filters: `q`, `severity`, `source_slug`, `item_type`, and `cve_id`. Responses
-return normalized dashboard-ready fields only, including safe EPSS score,
-percentile, score-date, KEV date, KEV due-date, and ransomware-use fields when
-enrichment exists. The dashboard summary endpoint returns database-backed KPI
-counts, latest article previews, and latest stored fetch status. The dashboard
-landing page uses this endpoint for the four top KPI cards and uses
+filters: `q`, `severity`, `source_slug`, `item_type`, `cve_id`,
+`geographic_scope`, and `uae_relevance_status`. Responses return normalized
+dashboard-ready fields only, including safe EPSS score, percentile,
+score-date, KEV date, KEV due-date, and ransomware-use fields when enrichment
+exists. The dashboard summary endpoint returns database-backed KPI counts,
+latest article previews, and latest stored fetch status. The dashboard landing
+page uses this endpoint for the four top KPI cards and uses
 `GET /api/v1/intelligence/items` for the vulnerability table. The vulnerability
 table links each CVE by public UUID to a frontend vulnerability detail page, and
 the latest articles feed links each article to a frontend article detail page.
+The dashboard latest-articles feed and vulnerability table both send
+backend-driven geographic-scope and UAE relevance-status filters through those
+read-only APIs. Search, filters, and offset pagination combine at the backend;
+changing a filter resets the frontend view to the first page.
 The dashboard also composes bounded latest CVE and article API results for a
 recent stored-data trends panel; this is not a complete historical analytics
 module. Other dashboard preview panels still use deterministic frontend preview
@@ -241,7 +246,7 @@ rules emit High or Medium labels; Low remains available for manually reviewed,
 source-declared, seeded, or future valid confidence values. These labels are
 not threat severity, exploit probability, statistical calibration, attribution
 certainty, or proof that low-confidence items are not relevant. P4-03 frontend
-filters remain out of scope.
+filters use the relevance status values only and do not add confidence filters.
 
 ## Documentation
 

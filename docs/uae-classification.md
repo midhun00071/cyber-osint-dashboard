@@ -205,7 +205,9 @@ P4-01/P4-02 do not add:
 
 ## Limitations
 
-P4-03 frontend filters remain incomplete.
+P4-03 adds frontend geographic-scope and UAE relevance-status filters for the
+dashboard article feed and vulnerability table. It does not add confidence
+filters, ingestion triggers, scheduler code, or public mutation endpoints.
 
 Scheduling remains deferred.
 
