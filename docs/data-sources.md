@@ -123,6 +123,25 @@ behavior. The registry also records disabled planned metadata for selected
 future public-source families, including Censys, Google Threat Intelligence,
 Mandiant, Anomali, and IBM X-Force.
 
+P9-03 adds a common publication pipeline for source adapters that already have
+safe parsed publication candidates. CERT-EU RSS now uses this shared
+persistence path. The pipeline does not approve or fetch new vendors; planned
+source registry entries remain disabled until a later task explicitly approves
+and implements an adapter. Adapters cannot supply arbitrary normalized source
+definitions, and publication item type is derived from the registered content
+family rather than adapter input.
+
+Required publication identities are rejected when oversized. Safe source
+metadata is shallow, defensively copied, bounded, and must not contain
+credential, token, signed-URL alias, cookie, password, or request/response
+header metadata. ASCII controls and Unicode surrogates are rejected from
+persisted publication and payload text while normal human-readable Unicode is
+retained.
+Publication identity is isolated by trusted article type, currently
+`security_advisory` and `threat_report`, and timestamps are normalized to UTC.
+Publication URLs with raw control characters or exact normalized credential and
+signed-URL query aliases are rejected before persistence.
+
 Planned registry entries do not authorize collection, scraping, API use,
 licensing, report mirroring, IOC extraction, or scheduler behavior. Host
 allow-lists are controlled by application code and use strict exact-host

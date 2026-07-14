@@ -19,6 +19,11 @@ ARTICLE_TITLE_ONLY_CONFLICT_MESSAGE = (
     "A possible duplicate advisory title requires analyst review."
 )
 SECURITY_ADVISORY_ITEM_TYPE = "security_advisory"
+THREAT_REPORT_ITEM_TYPE = "threat_report"
+SUPPORTED_PUBLICATION_ITEM_TYPES = (
+    SECURITY_ADVISORY_ITEM_TYPE,
+    THREAT_REPORT_ITEM_TYPE,
+)
 
 
 @dataclass(frozen=True)
@@ -59,7 +64,9 @@ class ArticleIdentityService:
         *,
         canonical_url_hash: str,
         normalized_title_hash: str,
+        expected_item_type: str = SECURITY_ADVISORY_ITEM_TYPE,
     ) -> ArticleIdentityResolution:
+        _validate_expected_item_type(expected_item_type)
         url_identifier = self._find_global_identifier(
             ARTICLE_URL_IDENTIFIER_NAMESPACE,
             canonical_url_hash,
@@ -68,19 +75,19 @@ class ArticleIdentityService:
             ARTICLE_TITLE_IDENTIFIER_NAMESPACE,
             normalized_title_hash,
         )
-        url_item = self._safe_advisory_item(url_identifier)
-        title_item = self._safe_advisory_item(title_identifier)
+        url_item = self._safe_item(url_identifier, expected_item_type)
+        title_item = self._safe_item(title_identifier, expected_item_type)
         if url_identifier is not None and url_item is None:
             return ArticleIdentityResolution(
-                failure_message=ARTICLE_IDENTITY_CONFLICT_MESSAGE
+                failure_message=_identity_conflict_message(expected_item_type)
             )
         if title_identifier is not None and title_item is None:
             return ArticleIdentityResolution(
-                failure_message=ARTICLE_IDENTITY_CONFLICT_MESSAGE
+                failure_message=_identity_conflict_message(expected_item_type)
             )
         if url_item is not None and title_item is not None and url_item is not title_item:
             return ArticleIdentityResolution(
-                failure_message=ARTICLE_IDENTITY_CONFLICT_MESSAGE
+                failure_message=_identity_conflict_message(expected_item_type)
             )
         if url_item is not None:
             try:
@@ -89,13 +96,14 @@ class ArticleIdentityService:
                     canonical_url_hash=canonical_url_hash,
                     normalized_title_hash=normalized_title_hash,
                     allow_missing_title_owner=True,
+                    expected_item_type=expected_item_type,
                 )
             except ArticleIdentityConflictError as exc:
                 return ArticleIdentityResolution(failure_message=str(exc))
             return ArticleIdentityResolution(item=url_item)
         if title_item is not None:
             return ArticleIdentityResolution(
-                failure_message=ARTICLE_TITLE_ONLY_CONFLICT_MESSAGE
+                failure_message=_title_only_conflict_message(expected_item_type)
             )
         return ArticleIdentityResolution()
 
@@ -106,22 +114,26 @@ class ArticleIdentityService:
         canonical_url_hash: str,
         normalized_title_hash: str,
         allow_missing_title_owner: bool = False,
+        expected_item_type: str = SECURITY_ADVISORY_ITEM_TYPE,
     ) -> ArticleIdentifierUpdatePlan:
+        _validate_expected_item_type(expected_item_type)
         if (
             item is None
-            or item.item_type != SECURITY_ADVISORY_ITEM_TYPE
+            or item.item_type != expected_item_type
             or item.status != "active"
         ):
             raise ArticleIdentityConflictError(
-                "The existing RSS source record is not linked to an active security advisory."
+                _inactive_item_message(expected_item_type)
             )
         item_url_identifier = self._item_identifier(
             item,
             ARTICLE_URL_IDENTIFIER_NAMESPACE,
+            expected_item_type,
         )
         item_title_identifier = self._item_identifier(
             item,
             ARTICLE_TITLE_IDENTIFIER_NAMESPACE,
+            expected_item_type,
         )
         url_identifier = self._find_global_identifier(
             ARTICLE_URL_IDENTIFIER_NAMESPACE,
@@ -131,18 +143,28 @@ class ArticleIdentityService:
             ARTICLE_TITLE_IDENTIFIER_NAMESPACE,
             normalized_title_hash,
         )
-        url_item = self._safe_advisory_item(url_identifier)
-        title_item = self._safe_advisory_item(title_identifier)
+        url_item = self._safe_item(url_identifier, expected_item_type)
+        title_item = self._safe_item(title_identifier, expected_item_type)
         if url_identifier is not None and url_item is None:
-            raise ArticleIdentityConflictError(ARTICLE_IDENTITY_CONFLICT_MESSAGE)
+            raise ArticleIdentityConflictError(
+                _identity_conflict_message(expected_item_type)
+            )
         if title_identifier is not None and title_item is None:
-            raise ArticleIdentityConflictError(ARTICLE_IDENTITY_CONFLICT_MESSAGE)
+            raise ArticleIdentityConflictError(
+                _identity_conflict_message(expected_item_type)
+            )
         if url_item is not None and url_item is not item:
-            raise ArticleIdentityConflictError(ARTICLE_IDENTITY_CONFLICT_MESSAGE)
+            raise ArticleIdentityConflictError(
+                _identity_conflict_message(expected_item_type)
+            )
         if title_item is not None and title_item is not item:
-            raise ArticleIdentityConflictError(ARTICLE_IDENTITY_CONFLICT_MESSAGE)
+            raise ArticleIdentityConflictError(
+                _identity_conflict_message(expected_item_type)
+            )
         if url_item is not None and title_item is not None and url_item is not title_item:
-            raise ArticleIdentityConflictError(ARTICLE_IDENTITY_CONFLICT_MESSAGE)
+            raise ArticleIdentityConflictError(
+                _identity_conflict_message(expected_item_type)
+            )
         return ArticleIdentifierUpdatePlan(
             item=item,
             url_identifier=item_url_identifier,
@@ -157,14 +179,17 @@ class ArticleIdentityService:
         *,
         canonical_url_hash: str,
         normalized_title_hash: str,
+        expected_item_type: str = SECURITY_ADVISORY_ITEM_TYPE,
     ) -> str | None:
+        _validate_expected_item_type(expected_item_type)
         if item is None:
-            return "The existing RSS source record is not linked to an active security advisory."
+            return _inactive_item_message(expected_item_type)
         try:
             self.prepare_identifier_update(
                 item,
                 canonical_url_hash=canonical_url_hash,
                 normalized_title_hash=normalized_title_hash,
+                expected_item_type=expected_item_type,
             )
         except ArticleIdentityConflictError as exc:
             return str(exc)
@@ -248,15 +273,16 @@ class ArticleIdentityService:
         ).scalar_one_or_none()
 
     @staticmethod
-    def _safe_advisory_item(
+    def _safe_item(
         identifier: IntelligenceItemIdentifier | None,
+        expected_item_type: str,
     ) -> IntelligenceItem | None:
         if identifier is None:
             return None
         item = identifier.intelligence_item
         if (
             item is None
-            or item.item_type != SECURITY_ADVISORY_ITEM_TYPE
+            or item.item_type != expected_item_type
             or item.status != "active"
         ):
             return None
@@ -290,6 +316,7 @@ class ArticleIdentityService:
     def _item_identifier(
         item: IntelligenceItem,
         namespace: str,
+        expected_item_type: str = SECURITY_ADVISORY_ITEM_TYPE,
     ) -> IntelligenceItemIdentifier | None:
         matches = [
             identifier
@@ -297,5 +324,34 @@ class ArticleIdentityService:
             if identifier.source_id is None and identifier.namespace == namespace
         ]
         if len(matches) > 1:
-            raise ArticleIdentityConflictError(ARTICLE_IDENTITY_CONFLICT_MESSAGE)
+            raise ArticleIdentityConflictError(
+                _identity_conflict_message(expected_item_type)
+            )
         return matches[0] if matches else None
+
+
+def _validate_expected_item_type(expected_item_type: str) -> None:
+    if expected_item_type not in SUPPORTED_PUBLICATION_ITEM_TYPES:
+        raise ArticleIdentityConflictError(
+            "The publication item type is not supported for identity resolution."
+        )
+
+
+def _identity_conflict_message(expected_item_type: str) -> str:
+    if expected_item_type == SECURITY_ADVISORY_ITEM_TYPE:
+        return ARTICLE_IDENTITY_CONFLICT_MESSAGE
+    return "The publication identity signals conflict with existing records."
+
+
+def _title_only_conflict_message(expected_item_type: str) -> str:
+    if expected_item_type == SECURITY_ADVISORY_ITEM_TYPE:
+        return ARTICLE_TITLE_ONLY_CONFLICT_MESSAGE
+    return "A possible duplicate publication title requires analyst review."
+
+
+def _inactive_item_message(expected_item_type: str) -> str:
+    if expected_item_type == SECURITY_ADVISORY_ITEM_TYPE:
+        return "The existing RSS source record is not linked to an active security advisory."
+    if expected_item_type == THREAT_REPORT_ITEM_TYPE:
+        return "The existing publication source record is not linked to an active threat report."
+    return "The existing publication source record is not linked to an active publication."

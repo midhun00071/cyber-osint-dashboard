@@ -54,6 +54,8 @@ Current focus:
 - Manual, bounded CERT-EU Security Advisories RSS ingestion
 - Developer-controlled source registry metadata for implemented sources and
   disabled planned public-source families
+- Common publication pipeline for validating and persisting approved
+  pre-fetched public publication candidates
 - Manual, dry-run-by-default UAE relevance classification and deterministic
   rule-strength confidence backfill for existing records
 - Idempotent vulnerability persistence and source provenance
@@ -93,6 +95,37 @@ Registry entries do not grant authorization, licensing, API access, or
 collection approval. No public source-management API, scheduler, startup
 ingestion, frontend workflow, or new vendor collector was added. Existing
 source ingestion remains manual-only.
+
+### Common publication pipeline
+
+P9-03 adds a shared backend pipeline for already-fetched and already-parsed
+public publication candidates. The pipeline validates source registry status,
+publication-compatible source families, HTTPS URLs, exact allowed hostnames,
+safe shallow metadata, timezone-aware timestamps, deterministic title and URL
+fingerprints, and caller-owned database persistence. Adapters enter through
+`PublicationCandidate` validation only; they cannot supply arbitrary normalized
+source definitions or runtime host allow-lists.
+
+The stored article item type is derived from the registered source content
+family. Required identity fields such as source external ID and title are
+rejected when oversized rather than silently truncated. Safe source metadata is
+defensively copied, shallow, bounded, and screened for sensitive header, token,
+password, signed-URL alias, and credential-style keys. Malformed ASCII control
+characters and Unicode surrogates are rejected before hashing or persistence;
+normal human-readable Unicode remains supported.
+
+Publication identity handling supports the trusted `security_advisory` and
+`threat_report` article types without linking identities across those types.
+Publication timestamps are runtime validated and normalized to UTC before
+hashing and storage. Publication URLs reject credential-bearing or signed-query
+aliases, including common separator and case variants, while continuing to
+strip ordinary tracking parameters. Raw URL control characters are rejected
+before parsing rather than silently cleaned.
+
+CERT-EU RSS ingestion now uses this shared persistence path through its
+existing manual service facade. P9-03 does not add new collectors, new vendor
+adapters, scheduling, API-triggered ingestion, database migrations, frontend
+changes, article-body fetching, or live network behavior.
 
 ## Security Principles
 
@@ -182,8 +215,8 @@ approved public CERT-EU Security Advisories feed entries:
 This command runs only when explicitly invoked. It is locked to the approved
 `https://cert.europa.eu/publications/security-advisories-rss` feed, stores
 normalized advisory metadata as `security_advisory` intelligence items, records
-sanitized audit outcomes, and does not fetch article bodies or arbitrary RSS
-sources.
+sanitized audit outcomes through the common publication pipeline, and does not
+fetch article bodies or arbitrary RSS sources.
 
 ### Read-only intelligence API
 

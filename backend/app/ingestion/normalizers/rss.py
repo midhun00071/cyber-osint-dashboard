@@ -11,36 +11,33 @@ import json
 import re
 from time import struct_time
 from typing import Any
-import unicodedata
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 import calendar
-import ipaddress
 
 import feedparser
 
-from app.ingestion.source_registry import get_source_definition, source_allows_hostname
+from app.ingestion.publication_pipeline import (
+    MAX_PUBLICATION_EXTERNAL_ID_LENGTH,
+    MAX_PUBLICATION_SUMMARY_LENGTH,
+    MAX_PUBLICATION_TITLE_LENGTH,
+    MAX_PUBLICATION_URL_LENGTH,
+    PublicationCandidateError,
+    PublicationSourceError,
+    canonicalize_publication_url,
+    normalized_publication_title_sha256,
+    publication_content_hash,
+)
+from app.ingestion.source_registry import get_source_definition
 
 
 APPROVED_SOURCE_SLUG = "cert-eu-security-advisories"
 APPROVED_HOST = get_source_definition(APPROVED_SOURCE_SLUG).allowed_hosts[0]
-MAX_TITLE_LENGTH = 500
-MAX_SUMMARY_LENGTH = 10_000
-MAX_ID_LENGTH = 300
-MAX_URL_LENGTH = 2048
+MAX_TITLE_LENGTH = MAX_PUBLICATION_TITLE_LENGTH
+MAX_SUMMARY_LENGTH = MAX_PUBLICATION_SUMMARY_LENGTH
+MAX_ID_LENGTH = MAX_PUBLICATION_EXTERNAL_ID_LENGTH
+MAX_URL_LENGTH = MAX_PUBLICATION_URL_LENGTH
 MAX_AUTHOR_LENGTH = 200
 MAX_CATEGORY_LENGTH = 100
 MAX_CATEGORIES = 20
-TRACKING_PARAMS = {
-    "gclid",
-    "fbclid",
-    "msclkid",
-    "mc_cid",
-    "mc_eid",
-    "campaign",
-    "campaignid",
-    "adgroupid",
-    "creative",
-}
 
 
 class RssNormalizationError(ValueError):
@@ -125,16 +122,15 @@ def normalize_rss_entry(entry: object) -> NormalizedRssEntry:
     published = _entry_datetime(entry, "published")
     modified = _entry_datetime(entry, "updated")
     raw_payload = _safe_payload(entry, source_external_id, published, modified)
-    hash_payload = {
-        "source_external_id": source_external_id,
-        "canonical_title": title,
-        "summary": summary,
-        "canonical_url": canonical_url,
-        "source_published_at": published.isoformat() if published else None,
-        "source_modified_at": modified.isoformat() if modified else None,
-        "raw_payload": raw_payload,
-    }
-    content_hash = sha256(_canonical_bytes(hash_payload)).hexdigest()
+    content_hash = publication_content_hash(
+        source_external_id=source_external_id,
+        canonical_title=title,
+        summary=summary,
+        canonical_url=canonical_url,
+        source_published_at=published,
+        source_modified_at=modified,
+        raw_payload=raw_payload,
+    )
     return NormalizedRssEntry(
         source_external_id=source_external_id,
         canonical_title=title,
@@ -150,65 +146,19 @@ def normalize_rss_entry(entry: object) -> NormalizedRssEntry:
 
 
 def canonicalize_advisory_url(value: object) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise RssNormalizationError("The RSS entry contains an invalid advisory URL.")
     try:
-        parsed = urlparse(value.strip())
-        scheme = parsed.scheme.lower()
-        netloc = parsed.netloc
-        username = parsed.username
-        password = parsed.password
-        port = parsed.port
-        host = (parsed.hostname or "").lower()
-    except ValueError as exc:
-        raise RssNormalizationError("The RSS advisory URL is invalid.") from exc
-    if scheme != "https":
-        raise RssNormalizationError("The RSS advisory URL must use HTTPS.")
-    if "@" in netloc or username or password:
-        raise RssNormalizationError("The RSS advisory URL must not contain credentials.")
-    if port not in (None, 443):
-        raise RssNormalizationError("The RSS advisory URL uses an unexpected port.")
-    if not source_allows_hostname(APPROVED_SOURCE_SLUG, host):
-        raise RssNormalizationError("The RSS advisory URL host is not approved.")
-    try:
-        ipaddress.ip_address(host)
-    except ValueError:
-        pass
-    else:
-        raise RssNormalizationError("The RSS advisory URL host is not approved.")
-
-    query = [
-        (key, value)
-        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
-        if not _is_tracking_param(key)
-    ]
-    query.sort()
-    path = parsed.path or "/"
-    canonical = urlunparse(
-        (
-            "https",
-            host,
-            path,
-            "",
-            urlencode(query, doseq=True),
-            "",
-        )
-    )
-    if len(canonical) > MAX_URL_LENGTH:
-        raise RssNormalizationError("The RSS advisory URL exceeds the length limit.")
-    return canonical
+        return canonicalize_publication_url(APPROVED_SOURCE_SLUG, value)
+    except (PublicationCandidateError, PublicationSourceError) as exc:
+        raise RssNormalizationError(str(exc)) from exc
 
 
 def normalized_title_sha256(value: object) -> str:
     """Return a conservative deterministic SHA-256 fingerprint for an article title."""
 
-    if not isinstance(value, str):
-        raise RssNormalizationError("The RSS entry title must be a string.")
-    normalized = unicodedata.normalize("NFKC", value)
-    normalized = re.sub(r"\s+", " ", normalized).strip().casefold()
-    if not normalized:
-        raise RssNormalizationError("The RSS entry title is required.")
-    return sha256(normalized.encode("utf-8")).hexdigest()
+    try:
+        return normalized_publication_title_sha256(value)
+    except PublicationCandidateError as exc:
+        raise RssNormalizationError(str(exc)) from exc
 
 
 def _entry_link(entry: dict[str, Any]) -> object:
@@ -340,11 +290,6 @@ def _canonical_bytes(payload: dict[str, Any]) -> bytes:
         ).encode("utf-8")
     except (TypeError, ValueError) as exc:
         raise RssNormalizationError("The RSS entry is not valid canonical JSON.") from exc
-
-
-def _is_tracking_param(key: str) -> bool:
-    lowered = key.lower()
-    return lowered.startswith("utm_") or lowered in TRACKING_PARAMS
 
 
 class _PlainTextParser(HTMLParser):

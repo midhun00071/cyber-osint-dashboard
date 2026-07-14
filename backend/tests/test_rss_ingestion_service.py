@@ -10,6 +10,10 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.sql import operators
 
 from app.ingestion.normalizers.rss import normalize_rss_feed
+from app.ingestion.publication_pipeline import (
+    normalized_publication_title_sha256,
+    publication_content_hash,
+)
 from app.ingestion.services.article_identity_service import (
     ARTICLE_TITLE_IDENTIFIER_NAMESPACE,
     ARTICLE_URL_IDENTIFIER_NAMESPACE,
@@ -376,6 +380,60 @@ def test_new_advisory_creates_security_advisory_item_and_primary_source_record()
     }
 
 
+@pytest.mark.parametrize(
+    ("changes", "expected_external_id", "forbidden_values"),
+    [
+        (
+            {
+                "source_external_id": "unsafe\x00external-id",
+                "raw_payload": {"source_id": "unsafe\x00external-id"},
+            },
+            "unknown",
+            ("unsafe",),
+        ),
+        (
+            {"raw_payload": {"source_id": "CERT-EU-SA2026-001", "category": "bad\x00value"}},
+            "CERT-EU-SA2026-001",
+            ("category", "bad", "value"),
+        ),
+        (
+            {"raw_payload": {"api_token": "credential-value"}},
+            "CERT-EU-SA2026-001",
+            ("api_token", "credential-value"),
+        ),
+        (
+            {"raw_payload": {"categories": ["safe", 7]}},
+            "CERT-EU-SA2026-001",
+            ("categories",),
+        ),
+    ],
+)
+def test_candidate_construction_failures_return_sanitized_failed_results(
+    changes: dict[str, object],
+    expected_external_id: str,
+    forbidden_values: tuple[str, ...],
+) -> None:
+    session = FakeSession()
+    record = replace(normalized(), **changes)
+
+    result = RssIngestionService(session).persist(  # type: ignore[arg-type]
+        record,
+        observed_at=OBSERVED_AT,
+    )
+
+    assert result.outcome == "failed"
+    assert result.source_external_id == expected_external_id
+    assert result.message == "The CERT-EU RSS advisory could not be validated safely."
+    assert all(value not in result.message for value in forbidden_values)
+    assert session.sources == []
+    assert session.items == []
+    assert session.source_records == []
+    assert session.identifiers == []
+    assert session.flushes == 0
+    assert session.commits == 0
+    assert session.rollbacks == 0
+
+
 def test_repeated_identical_advisory_is_unchanged_without_duplicates() -> None:
     session = FakeSession()
     record = normalized()
@@ -437,16 +495,25 @@ def test_changed_hash_updates_source_owned_fields_and_preserves_analyst_fields()
         updated,
         observed_at=UPDATED_AT,
     )
+    expected_content_hash = publication_content_hash(
+        source_external_id=updated.source_external_id,
+        canonical_title=updated.canonical_title,
+        summary=updated.summary,
+        canonical_url=updated.canonical_url,
+        source_published_at=updated.source_published_at,
+        source_modified_at=updated.source_modified_at,
+        raw_payload=updated.raw_payload,
+    )
 
     assert result.outcome == "updated"
     assert item.canonical_title == "Updated advisory"
     assert item.summary == "Updated summary"
-    assert source_record.content_hash == "b" * 64
+    assert source_record.content_hash == expected_content_hash
     assert next(
         identifier
         for identifier in session.identifiers
         if identifier.namespace == ARTICLE_TITLE_IDENTIFIER_NAMESPACE
-    ).normalized_value == updated.normalized_title_hash
+    ).normalized_value == normalized_publication_title_sha256(updated.canonical_title)
     assert item.uae_relevance_status == "confirmed"
     assert item.uae_relevance_confidence == Decimal("0.750")
     assert item.uae_relevance_reason == "Analyst-owned reason"
@@ -509,7 +576,11 @@ def test_external_id_and_url_hash_conflict_fails_without_auto_merge() -> None:
     )
     persist_new(session, first)
     persist_new(session, second)
-    conflicting = replace(first, canonical_url_hash=second.canonical_url_hash)
+    conflicting = replace(
+        first,
+        canonical_url=second.canonical_url,
+        canonical_url_hash=second.canonical_url_hash,
+    )
 
     result = RssIngestionService(session).persist(  # type: ignore[arg-type]
         conflicting,

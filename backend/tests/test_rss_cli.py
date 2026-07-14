@@ -410,6 +410,40 @@ def test_persistence_failure_is_sanitized_and_committed_as_partial() -> None:
     assert error.error_type == "rss_persistence_error"
 
 
+def test_failed_advisory_result_does_not_prevent_later_advisory() -> None:
+    two_records = b"""<rss><channel>
+<item><guid>CERT-EU-SA2026-001</guid><title>Invalid candidate</title>
+<link>https://cert.europa.eu/publications/a</link></item>
+<item><guid>CERT-EU-SA2026-002</guid><title>Valid candidate</title>
+<link>https://cert.europa.eu/publications/b</link></item>
+</channel></rss>"""
+    services = ServiceFactory(["failed", "created"])
+
+    exit_code, _, _, session, _, services = run_fake(
+        client=FakeClient(two_records),
+        service_factory=services,
+    )
+
+    run = next(record for record in session.added if isinstance(record, IngestionRun))
+    actions = [
+        record.action
+        for record in session.added
+        if isinstance(record, IngestionRunRecord)
+    ]
+    errors = [record for record in session.added if isinstance(record, IngestionError)]
+    assert exit_code == 1
+    assert run.status == "partial"
+    assert run.records_fetched == 2
+    assert run.records_failed == 1
+    assert run.records_created == 1
+    assert actions == ["failed", "created"]
+    assert len(errors) == 1
+    assert errors[0].error_type == "rss_persistence_error"
+    assert len(services.service.persist_calls) == 2
+    assert session.commits == 1
+    assert session.rollbacks == 0
+
+
 @pytest.mark.parametrize(
     ("error", "expected_type", "retryable"),
     [

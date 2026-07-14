@@ -51,6 +51,33 @@ runtime source mutation, startup ingestion, scheduling, or new external
 requests. For implemented collectors, the registry is the source of truth for
 the approved base URLs used by exported collector URL constants.
 
+P9-03 adds a common publication pipeline below source-specific adapters. It
+accepts already-fetched and already-parsed publication candidates only; it does
+not perform HTTP requests, parse arbitrary upstream pages, schedule jobs, or
+expose public write APIs. The pipeline enforces implemented/enabled registry
+sources, publication-compatible content families, HTTPS-only exact host
+allow-lists, sanitized shallow source metadata, timezone-aware timestamps, and
+the existing article identity and provenance rules. Source-specific adapters
+must pass `PublicationCandidate` values through common validation and cannot
+provide arbitrary `SourceDefinition` objects or pre-normalized database-ready
+source definitions.
+
+Publication item type is derived from registry content family: security
+advisory and public OSINT advisory sources store `security_advisory` items,
+while threat research and exposure research sources store `threat_report`
+items. The article identity helper accepts only these trusted publication
+types and refuses cross-type linking, so an advisory cannot merge with a threat
+report even when URL or title fingerprints collide. Required identity fields
+are rejected if they exceed current schema limits. Safe source metadata is
+shallow, defensively copied, byte/key/sequence bounded, and rejects sensitive
+credential, signed-URL alias, or header-like keys. Persisted publication and
+payload text rejects ASCII controls and Unicode surrogates before hashing and
+persistence while retaining normal human-readable Unicode. Publication
+timestamps are validated as aware datetimes and normalized to UTC. Publication
+URLs reject raw controls before parsing and reject exact normalized credential,
+token, password, signature, and cloud signed-URL query aliases while preserving
+ordinary safe query parameters and stripping tracking parameters.
+
 ## UAE Relevance Classification
 
 The backend includes an offline processing component for P4-01 UAE relevance
@@ -117,7 +144,7 @@ Security, or IBM X-Force.
 
 1. Source assessment
 2. Source registry (P9-02 metadata foundation implemented)
-3. Common publication pipeline (P9-03 planned)
+3. Common publication pipeline (P9-03 foundation implemented)
 4. Public research adapters
 5. Indicator model
 6. IOC extraction and relationships

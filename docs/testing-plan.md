@@ -87,6 +87,21 @@ allowed-host validation, exact-host matching, suffix-confusion rejection,
 duplicate definition rejection, invalid enabled/planned combinations, and
 compatibility with existing collector/service source constants.
 
+Implemented P9-03 backend coverage adds focused offline tests for the common
+publication pipeline: publication source enforcement, non-publication source
+rejection, exact URL host-boundary validation, tracking-parameter removal,
+timezone-aware candidate validation, shallow safe metadata handling,
+caller-owned persistence, removed normalized-persistence bypass coverage,
+content-family item-type derivation, required identity length rejection,
+raw-URL pre-parse length limits, bounded immutable payload snapshots,
+sanitized database failures, batch result counters, `threat_report`
+idempotency and update behavior, cross-type identity collision rejection,
+aware timestamp type validation with UTC normalization, credential and
+signed-query alias rejection, malformed text/payload/URL control and surrogate
+rejection, sanitized UTF-8 failures, type-aware duplicate-identifier conflict
+wording, CERT-EU RSS adapter integration, and regression coverage for the
+existing manual RSS normalizer, service, and CLI behavior.
+
 ## Frontend Testing
 
 Planned frontend tests:

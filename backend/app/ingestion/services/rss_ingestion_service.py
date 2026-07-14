@@ -1,26 +1,26 @@
-"""Caller-transactional persistence for normalized CERT-EU RSS advisories."""
+"""Caller-transactional persistence facade for normalized CERT-EU RSS advisories."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from decimal import Decimal
 
-from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.ingestion.collectors.rss_client import CERT_EU_FEED_URL
 from app.ingestion.normalizers.rss import NormalizedRssEntry
-from app.ingestion.source_registry import get_source_definition
-from app.ingestion.services.article_identity_service import (
-    ARTICLE_IDENTITY_CONFLICT_MESSAGE,
-    ArticleIdentityConflictError,
-    ArticleIdentityService,
+from app.ingestion.publication_pipeline import (
+    PublicationCandidate,
+    PublicationCandidateError,
+    PublicationPersistenceError,
+    PublicationPipeline,
+    PublicationSourceError,
+    VALID_PUBLICATION_OUTCOMES,
+    safe_publication_external_id_for_error,
 )
-from app.models import IntelligenceItem, IntelligenceSource, SourceRecord
-from app.models.common import utc_now
-from app.processing.uae_classification_service import UaeClassificationService
+from app.ingestion.source_registry import get_source_definition
+from app.models import IntelligenceSource, SourceRecord
 
 
 _RSS_SOURCE = get_source_definition("cert-eu-security-advisories")
@@ -29,7 +29,7 @@ RSS_SOURCE_NAME = _RSS_SOURCE.display_name
 RSS_SOURCE_TYPE = _RSS_SOURCE.source_type
 RSS_SOURCE_BASE_URL = CERT_EU_FEED_URL
 RSS_RATE_LIMIT_NOTES = _RSS_SOURCE.rate_limit_notes
-VALID_OUTCOMES = {"created", "updated", "unchanged", "skipped", "failed"}
+VALID_OUTCOMES = VALID_PUBLICATION_OUTCOMES
 
 
 class RssPersistenceError(RuntimeError):
@@ -55,17 +55,17 @@ class RssIngestionService:
     """Persist normalized CERT-EU advisories without committing or rolling back."""
 
     def __init__(self, session: Session) -> None:
-        self._session = session
+        self._pipeline = PublicationPipeline(session)
 
     def ensure_source(self) -> IntelligenceSource:
         """Create or validate the fixed CERT-EU RSS source without committing."""
 
         try:
-            source, failure = self._get_or_create_source()
-            if failure is not None:
-                raise RssPersistenceError(failure)
-            return source
-        except SQLAlchemyError as exc:
+            return self._pipeline.ensure_source(RSS_SOURCE_SLUG)
+        except (PublicationPersistenceError, PublicationSourceError, SQLAlchemyError) as exc:
+            message = _rss_message(str(exc))
+            if message and "conflicts" in message:
+                raise RssPersistenceError(message) from exc
             raise RssPersistenceError(
                 "Database error while preparing the approved CERT-EU RSS source."
             ) from exc
@@ -76,286 +76,48 @@ class RssIngestionService:
         *,
         observed_at: datetime | None = None,
     ) -> RssPersistenceResult:
-        observation_time = observed_at or utc_now()
-        if observation_time.tzinfo is None or observation_time.utcoffset() is None:
-            return self._result(
-                normalized.source_external_id,
-                "failed",
-                "The RSS observation time must be timezone-aware.",
-            )
-
         try:
-            source, source_failure = self._get_or_create_source()
-            if source_failure is not None:
-                return self._result(normalized.source_external_id, "failed", source_failure)
-            identity_service = ArticleIdentityService(self._session)
-
-            by_external_id = self._find_by_external_id(source, normalized.source_external_id)
-            by_url_hash = self._find_by_url_hash(source, normalized.canonical_url_hash)
-            if (
-                by_external_id is not None
-                and by_url_hash is not None
-                and by_external_id is not by_url_hash
-            ):
-                return self._result(
-                    normalized.source_external_id,
-                    "failed",
-                    "The RSS external ID and URL hash refer to different source records.",
-                    source_record=by_external_id,
-                    intelligence_item_id=getattr(by_external_id.intelligence_item, "id", None),
-                )
-
-            source_record = by_external_id or by_url_hash
-            if source_record is None:
-                identity_resolution = identity_service.resolve_new_article(
-                    canonical_url_hash=normalized.canonical_url_hash,
-                    normalized_title_hash=normalized.normalized_title_hash,
-                )
-                if identity_resolution.failed:
-                    return self._result(
-                        normalized.source_external_id,
-                        "failed",
-                        identity_resolution.failure_message,
-                    )
-                source_record = self._create_records(
-                    source,
-                    normalized,
-                    observation_time,
-                    existing_item=identity_resolution.item,
-                    identity_service=identity_service,
-                )
-                self._session.flush()
-                message = (
-                    "A new source record was linked to an existing advisory."
-                    if identity_resolution.item is not None
-                    else None
-                )
-                return self._result(
-                    normalized.source_external_id,
-                    "created",
-                    message,
-                    source_record=source_record,
-                    intelligence_item_id=getattr(source_record.intelligence_item, "id", None),
-                )
-
-            item = source_record.intelligence_item
-            identity_failure = identity_service.validate_source_record_identity(
-                item,
-                canonical_url_hash=normalized.canonical_url_hash,
-                normalized_title_hash=normalized.normalized_title_hash,
+            candidate = _candidate_from_rss_entry(normalized)
+        except PublicationCandidateError:
+            return RssPersistenceResult(
+                source_external_id=safe_publication_external_id_for_error(
+                    normalized.source_external_id
+                ),
+                outcome="failed",
+                message="The CERT-EU RSS advisory could not be validated safely.",
             )
-            if identity_failure is not None:
-                return self._result(
-                    normalized.source_external_id,
-                    "failed",
-                    identity_failure,
-                    source_record=source_record,
-                    intelligence_item_id=getattr(item, "id", None),
-                )
-            if item is None:
-                return self._result(
-                    normalized.source_external_id,
-                    "failed",
-                    ARTICLE_IDENTITY_CONFLICT_MESSAGE,
-                    source_record=source_record,
-                )
-
-            try:
-                identity_plan = identity_service.prepare_identifier_update(
-                    item,
-                    canonical_url_hash=normalized.canonical_url_hash,
-                    normalized_title_hash=normalized.normalized_title_hash,
-                )
-            except ArticleIdentityConflictError as exc:
-                return self._result(
-                    normalized.source_external_id,
-                    "failed",
-                    str(exc),
-                    source_record=source_record,
-                    intelligence_item_id=getattr(item, "id", None),
-                )
-
-            identity_service.apply_identifier_update(identity_plan)
-            source_record.last_seen_at = observation_time
-            source_record.payload_collected_at = observation_time
-            source_record.last_processed_at = observation_time
-            source_record.upstream_status = "present"
-            source_record.processing_status = "processed"
-            source_record.safe_error_summary = None
-            item.last_seen_at = observation_time
-
-            if source_record.content_hash == normalized.content_hash:
-                self._session.flush()
-                return self._result(
-                    normalized.source_external_id,
-                    "unchanged",
-                    source_record=source_record,
-                    intelligence_item_id=getattr(item, "id", None),
-                )
-
-            self._apply_update(item, source_record, normalized)
-            self._session.flush()
-            return self._result(
-                normalized.source_external_id,
-                "updated",
-                source_record=source_record,
-                intelligence_item_id=getattr(item, "id", None),
+        try:
+            result = self._pipeline.persist(
+                candidate,
+                observed_at=observed_at,
             )
-        except ArticleIdentityConflictError as exc:
-            return self._result(
-                normalized.source_external_id,
-                "failed",
-                str(exc),
-            )
-        except SQLAlchemyError as exc:
+        except PublicationPersistenceError as exc:
             raise RssPersistenceError(
                 "Database error while persisting normalized RSS data."
             ) from exc
-
-    def _get_or_create_source(self) -> tuple[IntelligenceSource, str | None]:
-        source = self._session.execute(
-            select(IntelligenceSource).where(IntelligenceSource.slug == RSS_SOURCE_SLUG)
-        ).scalar_one_or_none()
-        if source is None:
-            source = IntelligenceSource(
-                slug=RSS_SOURCE_SLUG,
-                name=RSS_SOURCE_NAME,
-                source_type=RSS_SOURCE_TYPE,
-                base_url=RSS_SOURCE_BASE_URL,
-                is_enabled=True,
-                rate_limit_notes=RSS_RATE_LIMIT_NOTES,
-                checkpoint_value=None,
-            )
-            self._session.add(source)
-            self._session.flush()
-            return source, None
-
-        expected = (
-            source.name == RSS_SOURCE_NAME
-            and source.source_type == RSS_SOURCE_TYPE
-            and source.base_url == RSS_SOURCE_BASE_URL
-        )
-        if not expected:
-            return source, "The existing RSS source configuration conflicts with the approved source."
-        return source, None
-
-    def _find_by_external_id(
-        self,
-        source: IntelligenceSource,
-        source_external_id: str,
-    ) -> SourceRecord | None:
-        return self._session.execute(
-            select(SourceRecord)
-            .where(SourceRecord.source_id == source.id)
-            .where(SourceRecord.source_external_id == source_external_id)
-        ).scalar_one_or_none()
-
-    def _find_by_url_hash(
-        self,
-        source: IntelligenceSource,
-        canonical_url_hash: str,
-    ) -> SourceRecord | None:
-        return self._session.execute(
-            select(SourceRecord)
-            .where(SourceRecord.source_id == source.id)
-            .where(SourceRecord.canonical_url_hash == canonical_url_hash)
-        ).scalar_one_or_none()
-
-    def _create_records(
-        self,
-        source: IntelligenceSource,
-        normalized: NormalizedRssEntry,
-        observed_at: datetime,
-        *,
-        existing_item: IntelligenceItem | None,
-        identity_service: ArticleIdentityService,
-    ) -> SourceRecord:
-        item = existing_item
-        if item is None:
-            item = IntelligenceItem(
-                item_type="security_advisory",
-                canonical_title=normalized.canonical_title,
-                summary=normalized.summary,
-                canonical_url=normalized.canonical_url,
-                source_published_at=normalized.source_published_at,
-                source_modified_at=normalized.source_modified_at,
-                collected_at=observed_at,
-                last_seen_at=observed_at,
-                status="active",
-                data_confidence=Decimal("0.900"),
-                geographic_scope="global",
-                uae_relevance_status="unknown",
-                uae_relevance_confidence=None,
-                uae_relevance_reason=None,
-                uae_relevance_method="unassigned",
-                analyst_review_status="pending",
-            )
-            UaeClassificationService(self._session).classify_and_apply_if_allowed(item)
-            self._session.add(item)
-            identity_service.add_fingerprint_identifiers(
-                item,
-                canonical_url_hash=normalized.canonical_url_hash,
-                normalized_title_hash=normalized.normalized_title_hash,
-            )
-        has_primary_reference = any(
-            record.is_primary_reference for record in item.source_records
-        )
-        source_record = SourceRecord(
-            source=source,
-            intelligence_item=item,
-            source_external_id=normalized.source_external_id,
-            source_url=normalized.canonical_url,
-            canonical_url_hash=normalized.canonical_url_hash,
-            content_hash=normalized.content_hash,
-            is_primary_reference=not has_primary_reference,
-            raw_payload=normalized.raw_payload,
-            payload_collected_at=observed_at,
-            first_seen_at=observed_at,
-            last_seen_at=observed_at,
-            source_published_at=normalized.source_published_at,
-            source_modified_at=normalized.source_modified_at,
-            processing_status="processed",
-            last_processed_at=observed_at,
-            safe_error_summary=None,
-            upstream_status="present",
-        )
-        self._session.add(source_record)
-        return source_record
-
-    def _apply_update(
-        self,
-        item: IntelligenceItem,
-        source_record: SourceRecord,
-        normalized: NormalizedRssEntry,
-    ) -> None:
-        item.canonical_title = normalized.canonical_title
-        item.summary = normalized.summary
-        item.canonical_url = normalized.canonical_url
-        item.source_published_at = normalized.source_published_at
-        item.source_modified_at = normalized.source_modified_at
-        UaeClassificationService(self._session).classify_and_apply_if_allowed(item)
-
-        source_record.source_external_id = normalized.source_external_id
-        source_record.source_url = normalized.canonical_url
-        source_record.canonical_url_hash = normalized.canonical_url_hash
-        source_record.content_hash = normalized.content_hash
-        source_record.raw_payload = normalized.raw_payload
-        source_record.source_published_at = normalized.source_published_at
-        source_record.source_modified_at = normalized.source_modified_at
-
-    @staticmethod
-    def _result(
-        source_external_id: str,
-        outcome: str,
-        message: str | None = None,
-        *,
-        source_record: SourceRecord | None = None,
-        intelligence_item_id: int | None = None,
-    ) -> RssPersistenceResult:
         return RssPersistenceResult(
-            source_external_id=source_external_id,
-            outcome=outcome,
-            message=message,
-            source_record=source_record,
-            intelligence_item_id=intelligence_item_id,
+            source_external_id=result.source_external_id,
+            outcome=result.outcome,
+            message=_rss_message(result.message),
+            source_record=result.source_record,
+            intelligence_item_id=result.intelligence_item_id,
         )
+
+
+def _candidate_from_rss_entry(normalized: NormalizedRssEntry) -> PublicationCandidate:
+    return PublicationCandidate(
+        source_slug=RSS_SOURCE_SLUG,
+        source_external_id=normalized.source_external_id,
+        canonical_title=normalized.canonical_title,
+        summary=normalized.summary,
+        canonical_url=normalized.canonical_url,
+        source_published_at=normalized.source_published_at,
+        source_modified_at=normalized.source_modified_at,
+        safe_source_payload=normalized.raw_payload,
+    )
+
+
+def _rss_message(message: str | None) -> str | None:
+    if message is None:
+        return None
+    return message.replace("publication", "RSS").replace("Publication", "RSS")
