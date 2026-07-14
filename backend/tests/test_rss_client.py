@@ -77,6 +77,8 @@ def test_same_host_redirect_is_followed_safely() -> None:
         "http://cert.europa.eu/feed.xml",
         "https://example.com/feed.xml",
         "https://user:pass@cert.europa.eu/feed.xml",
+        "https://@cert.europa.eu/feed.xml",
+        "https://:password@cert.europa.eu/feed.xml",
         "https://cert.europa.eu:444/feed.xml",
         "https://cert.europa.eu/feed.xml#frag",
     ],
@@ -86,8 +88,9 @@ def test_unsafe_redirect_targets_are_rejected(location: str) -> None:
         del request
         return httpx.Response(302, headers={"location": location})
 
-    with pytest.raises(RssRedirectError):
+    with pytest.raises(RssRedirectError) as exc_info:
         client_for(handler).fetch_cert_eu_security_advisories()
+    assert location not in str(exc_info.value)
 
 
 @pytest.mark.parametrize(

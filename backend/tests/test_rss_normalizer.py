@@ -95,6 +95,8 @@ def test_missing_guid_falls_back_to_url_hash_identifier() -> None:
         "http://cert.europa.eu/publications/x",
         "https://example.com/publications/x",
         "https://user:pass@cert.europa.eu/publications/x",
+        "https://@cert.europa.eu/publications/x",
+        "https://:password@cert.europa.eu/publications/x",
         "https://cert.europa.eu:444/publications/x",
         "https://192.0.2.10/publications/x",
         "https://cert.europa.eu:bad/feed",

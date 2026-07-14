@@ -8,10 +8,17 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
+from app.ingestion.source_registry import (
+    get_required_source_base_url,
+    get_source_definition,
+    source_allows_hostname,
+)
 
-CERT_EU_FEED_URL = "https://cert.europa.eu/publications/security-advisories-rss"
+
+CERT_EU_SOURCE_SLUG = "cert-eu-security-advisories"
+CERT_EU_FEED_URL = get_required_source_base_url(CERT_EU_SOURCE_SLUG)
 CERT_EU_ALLOWED_SCHEME = "https"
-CERT_EU_ALLOWED_HOST = "cert.europa.eu"
+CERT_EU_ALLOWED_HOST = get_source_definition(CERT_EU_SOURCE_SLUG).allowed_hosts[0]
 DEFAULT_TIMEOUT = httpx.Timeout(20.0, connect=5.0, read=10.0, write=5.0, pool=5.0)
 MAX_RESPONSE_BYTES = 1024 * 1024
 MAX_REDIRECTS = 3
@@ -185,6 +192,7 @@ def _validate_approved_url(url: str) -> None:
     try:
         parsed = urlparse(url)
         scheme = parsed.scheme.lower()
+        netloc = parsed.netloc
         username = parsed.username
         password = parsed.password
         fragment = parsed.fragment
@@ -194,13 +202,13 @@ def _validate_approved_url(url: str) -> None:
         raise RssRedirectError("The RSS feed URL is invalid.") from exc
     if scheme != CERT_EU_ALLOWED_SCHEME:
         raise RssRedirectError("The RSS feed URL must use HTTPS.")
-    if username or password:
+    if "@" in netloc or username or password:
         raise RssRedirectError("The RSS feed URL must not contain credentials.")
     if fragment:
         raise RssRedirectError("The RSS feed URL must not contain a fragment.")
     if port not in (None, 443):
         raise RssRedirectError("The RSS feed URL uses an unexpected port.")
-    if host != CERT_EU_ALLOWED_HOST:
+    if not source_allows_hostname(CERT_EU_SOURCE_SLUG, host):
         raise RssRedirectError("The RSS feed URL host is not approved.")
     try:
         ipaddress.ip_address(host)

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.ingestion.collectors.rss_client import CERT_EU_FEED_URL
 from app.ingestion.normalizers.rss import NormalizedRssEntry
+from app.ingestion.source_registry import get_source_definition
 from app.ingestion.services.article_identity_service import (
     ARTICLE_IDENTITY_CONFLICT_MESSAGE,
     ArticleIdentityConflictError,
@@ -22,11 +23,12 @@ from app.models.common import utc_now
 from app.processing.uae_classification_service import UaeClassificationService
 
 
-RSS_SOURCE_SLUG = "cert-eu-security-advisories"
-RSS_SOURCE_NAME = "CERT-EU Security Advisories"
-RSS_SOURCE_TYPE = "rss"
+_RSS_SOURCE = get_source_definition("cert-eu-security-advisories")
+RSS_SOURCE_SLUG = _RSS_SOURCE.slug
+RSS_SOURCE_NAME = _RSS_SOURCE.display_name
+RSS_SOURCE_TYPE = _RSS_SOURCE.source_type
 RSS_SOURCE_BASE_URL = CERT_EU_FEED_URL
-RSS_RATE_LIMIT_NOTES = "Manual bounded requests to the approved CERT-EU RSS feed only."
+RSS_RATE_LIMIT_NOTES = _RSS_SOURCE.rate_limit_notes
 VALID_OUTCOMES = {"created", "updated", "unchanged", "skipped", "failed"}
 
 

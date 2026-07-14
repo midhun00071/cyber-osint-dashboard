@@ -12,6 +12,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.ingestion.normalizers.nvd import NormalizedNvdCve
+from app.ingestion.source_registry import get_source_definition
 from app.models import (
     IntelligenceItem,
     IntelligenceItemIdentifier,
@@ -23,14 +24,12 @@ from app.models.common import utc_now
 from app.processing.uae_classification_service import UaeClassificationService
 
 
-NVD_SOURCE_SLUG = "nvd"
-NVD_SOURCE_NAME = "National Vulnerability Database"
-NVD_SOURCE_TYPE = "api"
-NVD_SOURCE_BASE_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
-NVD_RATE_LIMIT_NOTES = (
-    "Use conservative NVD API pacing; authenticated requests may use the "
-    "documented higher limit."
-)
+_NVD_SOURCE = get_source_definition("nvd")
+NVD_SOURCE_SLUG = _NVD_SOURCE.slug
+NVD_SOURCE_NAME = _NVD_SOURCE.display_name
+NVD_SOURCE_TYPE = _NVD_SOURCE.source_type
+NVD_SOURCE_BASE_URL = _NVD_SOURCE.base_url
+NVD_RATE_LIMIT_NOTES = _NVD_SOURCE.rate_limit_notes
 VALID_OUTCOMES = {"created", "updated", "unchanged", "failed"}
 
 

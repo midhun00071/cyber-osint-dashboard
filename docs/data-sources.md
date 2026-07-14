@@ -116,6 +116,18 @@ Security Advisories RSS ingestion are implemented as manual-only backend
 workflows with sanitized audit records. Other candidate sources still require
 explicit approval before live ingestion is implemented.
 
+P9-02 adds a static backend source registry for developer-controlled metadata
+only. The implemented entries for NVD, FIRST EPSS, CISA KEV, and CERT-EU
+Security Advisories preserve the existing canonical slugs and manual ingestion
+behavior. The registry also records disabled planned metadata for selected
+future public-source families, including Censys, Google Threat Intelligence,
+Mandiant, Anomali, and IBM X-Force.
+
+Planned registry entries do not authorize collection, scraping, API use,
+licensing, report mirroring, IOC extraction, or scheduler behavior. Host
+allow-lists are controlled by application code and use strict exact-host
+matching; there is no public source-management API.
+
 ## Proposed Source Expansion
 
 The following vendors have been assessed for future source-expansion planning

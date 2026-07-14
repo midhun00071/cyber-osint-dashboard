@@ -9,13 +9,17 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
-
-CISA_KEV_CATALOG_URL = (
-    "https://www.cisa.gov/sites/default/files/feeds/"
-    "known_exploited_vulnerabilities.json"
+from app.ingestion.source_registry import (
+    get_required_source_base_url,
+    get_source_definition,
+    source_allows_hostname,
 )
+
+
+CISA_KEV_SOURCE_SLUG = "cisa-kev"
+CISA_KEV_CATALOG_URL = get_required_source_base_url(CISA_KEV_SOURCE_SLUG)
 CISA_KEV_ALLOWED_SCHEME = "https"
-CISA_KEV_ALLOWED_HOST = "www.cisa.gov"
+CISA_KEV_ALLOWED_HOST = get_source_definition(CISA_KEV_SOURCE_SLUG).allowed_hosts[0]
 DEFAULT_TIMEOUT = httpx.Timeout(20.0, connect=5.0, read=10.0, write=5.0, pool=5.0)
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 MAX_REDIRECTS = 3
@@ -210,6 +214,7 @@ def _validate_approved_url(url: str) -> None:
     try:
         parsed = urlparse(url)
         scheme = parsed.scheme.lower()
+        netloc = parsed.netloc
         username = parsed.username
         password = parsed.password
         fragment = parsed.fragment
@@ -219,13 +224,13 @@ def _validate_approved_url(url: str) -> None:
         raise CisaKevRedirectError("The CISA KEV URL is invalid.") from exc
     if scheme != CISA_KEV_ALLOWED_SCHEME:
         raise CisaKevRedirectError("The CISA KEV URL must use HTTPS.")
-    if username or password:
+    if "@" in netloc or username or password:
         raise CisaKevRedirectError("The CISA KEV URL must not contain credentials.")
     if fragment:
         raise CisaKevRedirectError("The CISA KEV URL must not contain a fragment.")
     if port not in (None, 443):
         raise CisaKevRedirectError("The CISA KEV URL uses an unexpected port.")
-    if host != CISA_KEV_ALLOWED_HOST:
+    if not source_allows_hostname(CISA_KEV_SOURCE_SLUG, host):
         raise CisaKevRedirectError("The CISA KEV URL host is not approved.")
     try:
         ipaddress.ip_address(host)

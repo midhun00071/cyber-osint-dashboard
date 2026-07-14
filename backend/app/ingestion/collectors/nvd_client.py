@@ -11,8 +11,11 @@ from typing import Any
 import httpx
 from pydantic import SecretStr
 
+from app.ingestion.source_registry import get_required_source_base_url
 
-NVD_CVE_API_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
+
+NVD_SOURCE_SLUG = "nvd"
+NVD_CVE_API_URL = get_required_source_base_url(NVD_SOURCE_SLUG)
 MAX_RESULTS_PER_PAGE = 2000
 MAX_DATE_WINDOW = timedelta(days=120)
 DEFAULT_TIMEOUT = httpx.Timeout(30.0, connect=10.0)

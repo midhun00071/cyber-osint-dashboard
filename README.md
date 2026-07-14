@@ -52,6 +52,8 @@ Current focus:
 - Manual, bounded FIRST EPSS enrichment for existing CVEs
 - Manual, bounded CISA KEV enrichment for existing CVEs
 - Manual, bounded CERT-EU Security Advisories RSS ingestion
+- Developer-controlled source registry metadata for implemented sources and
+  disabled planned public-source families
 - Manual, dry-run-by-default UAE relevance classification and deterministic
   rule-strength confidence backfill for existing records
 - Idempotent vulnerability persistence and source provenance
@@ -77,6 +79,20 @@ initial frontend shell are implemented. NVD ingestion, FIRST EPSS enrichment,
 CISA KEV enrichment, and CERT-EU RSS ingestion remain manual-only: they are not
 scheduled and are not connected to FastAPI startup, API routes, or the frontend
 dashboard.
+
+### Source registry foundation
+
+P9-02 adds an immutable backend source registry for safe source metadata,
+canonical source slugs, implementation status, and developer-controlled host
+allow-lists. The registry marks NVD, FIRST EPSS, CISA KEV, and CERT-EU Security
+Advisories as enabled implemented sources. Future public research and advisory
+families for Censys, Google Threat Intelligence, Mandiant, Anomali, and IBM
+X-Force are registered only as disabled planned metadata.
+
+Registry entries do not grant authorization, licensing, API access, or
+collection approval. No public source-management API, scheduler, startup
+ingestion, frontend workflow, or new vendor collector was added. Existing
+source ingestion remains manual-only.
 
 ## Security Principles
 

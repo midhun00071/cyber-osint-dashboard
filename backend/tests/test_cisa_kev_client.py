@@ -81,6 +81,8 @@ def test_same_host_redirect_is_followed_safely() -> None:
         "http://www.cisa.gov/feed.json",
         "https://example.com/feed.json",
         "https://user:pass@www.cisa.gov/feed.json",
+        "https://@www.cisa.gov/feed.json",
+        "https://:password@www.cisa.gov/feed.json",
         "https://www.cisa.gov:444/feed.json",
         "https://www.cisa.gov/feed.json#frag",
     ],
@@ -90,8 +92,9 @@ def test_unsafe_redirect_targets_are_rejected(location: str) -> None:
         del request
         return httpx.Response(302, headers={"location": location})
 
-    with pytest.raises(CisaKevRedirectError):
+    with pytest.raises(CisaKevRedirectError) as exc_info:
         client_for(handler).fetch_catalog()
+    assert location not in str(exc_info.value)
 
 
 @pytest.mark.parametrize(

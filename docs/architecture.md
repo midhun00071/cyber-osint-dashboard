@@ -43,6 +43,14 @@ CERT-EU Security Advisories RSS ingestion. These workflows are not connected to
 application startup, a scheduler, background workers, public write endpoints, or
 frontend-triggered ingestion.
 
+P9-02 adds a static source registry inside the backend ingestion layer. It is a
+developer-controlled code registry for safe non-secret source metadata,
+canonical source slugs, implementation status, and exact host allow-lists. It
+does not add source registration APIs, database-backed source onboarding,
+runtime source mutation, startup ingestion, scheduling, or new external
+requests. For implemented collectors, the registry is the source of truth for
+the approved base URLs used by exported collector URL constants.
+
 ## UAE Relevance Classification
 
 The backend includes an offline processing component for P4-01 UAE relevance
@@ -108,8 +116,8 @@ VirusTotal / Google Threat Intelligence, Recorded Future, Mandiant / Google
 Security, or IBM X-Force.
 
 1. Source assessment
-2. Source registry
-3. Common publication pipeline
+2. Source registry (P9-02 metadata foundation implemented)
+3. Common publication pipeline (P9-03 planned)
 4. Public research adapters
 5. Indicator model
 6. IOC extraction and relationships
@@ -128,6 +136,13 @@ approved host allow-lists, bounded collection, normalized allow-listed fields,
 sanitized audit records, and read-only public API exposure. Public publication
 ingestion and structured API enrichment must remain separate architecture
 families.
+
+P9-02 planned registry entries for Censys, Google Threat Intelligence,
+Mandiant, Anomali, and IBM X-Force remain disabled metadata only. They do not
+authorize collection, licensing, API access, scraping, IOC extraction, or
+storage of upstream report bodies. Public publication hosts and developer
+documentation hosts are treated as separate source families; documentation
+hosts are not automatically allowed for public threat-research definitions.
 
 ## Current Status
 

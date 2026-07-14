@@ -8,8 +8,11 @@ from typing import Any
 
 import httpx
 
+from app.ingestion.source_registry import get_required_source_base_url
 
-FIRST_EPSS_API_URL = "https://api.first.org/data/v1/epss"
+
+FIRST_EPSS_SOURCE_SLUG = "first-epss"
+FIRST_EPSS_API_URL = get_required_source_base_url(FIRST_EPSS_SOURCE_SLUG)
 DEFAULT_TIMEOUT = httpx.Timeout(20.0, connect=5.0)
 MAX_CVE_QUERY_CHARS = 2000
 DEFAULT_MAX_BATCH_SIZE = 100

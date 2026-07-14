@@ -18,8 +18,11 @@ import ipaddress
 
 import feedparser
 
+from app.ingestion.source_registry import get_source_definition, source_allows_hostname
 
-APPROVED_HOST = "cert.europa.eu"
+
+APPROVED_SOURCE_SLUG = "cert-eu-security-advisories"
+APPROVED_HOST = get_source_definition(APPROVED_SOURCE_SLUG).allowed_hosts[0]
 MAX_TITLE_LENGTH = 500
 MAX_SUMMARY_LENGTH = 10_000
 MAX_ID_LENGTH = 300
@@ -152,6 +155,7 @@ def canonicalize_advisory_url(value: object) -> str:
     try:
         parsed = urlparse(value.strip())
         scheme = parsed.scheme.lower()
+        netloc = parsed.netloc
         username = parsed.username
         password = parsed.password
         port = parsed.port
@@ -160,11 +164,11 @@ def canonicalize_advisory_url(value: object) -> str:
         raise RssNormalizationError("The RSS advisory URL is invalid.") from exc
     if scheme != "https":
         raise RssNormalizationError("The RSS advisory URL must use HTTPS.")
-    if username or password:
+    if "@" in netloc or username or password:
         raise RssNormalizationError("The RSS advisory URL must not contain credentials.")
     if port not in (None, 443):
         raise RssNormalizationError("The RSS advisory URL uses an unexpected port.")
-    if host != APPROVED_HOST:
+    if not source_allows_hostname(APPROVED_SOURCE_SLUG, host):
         raise RssNormalizationError("The RSS advisory URL host is not approved.")
     try:
         ipaddress.ip_address(host)

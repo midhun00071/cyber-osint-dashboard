@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.ingestion.collectors.cisa_kev_client import CISA_KEV_CATALOG_URL
 from app.ingestion.normalizers.cisa_kev import NormalizedCisaKevEntry
+from app.ingestion.source_registry import get_source_definition
 from app.models import (
     IntelligenceItemIdentifier,
     IntelligenceSource,
@@ -19,11 +20,12 @@ from app.models import (
 from app.models.common import utc_now
 
 
-CISA_KEV_SOURCE_SLUG = "cisa-kev"
-CISA_KEV_SOURCE_NAME = "CISA Known Exploited Vulnerabilities Catalog"
-CISA_KEV_SOURCE_TYPE = "json"
+_CISA_KEV_SOURCE = get_source_definition("cisa-kev")
+CISA_KEV_SOURCE_SLUG = _CISA_KEV_SOURCE.slug
+CISA_KEV_SOURCE_NAME = _CISA_KEV_SOURCE.display_name
+CISA_KEV_SOURCE_TYPE = _CISA_KEV_SOURCE.source_type
 CISA_KEV_SOURCE_BASE_URL = CISA_KEV_CATALOG_URL
-CISA_KEV_RATE_LIMIT_NOTES = "Use bounded manual requests to the official CISA KEV JSON catalog."
+CISA_KEV_RATE_LIMIT_NOTES = _CISA_KEV_SOURCE.rate_limit_notes
 VALID_OUTCOMES = {"created", "updated", "unchanged", "skipped", "failed"}
 
 

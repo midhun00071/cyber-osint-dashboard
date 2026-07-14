@@ -79,6 +79,14 @@ because the broader automated frontend test suite remains deferred to P6-03.
 The dashboard filters are backend-driven and reset offset pagination when a
 search or filter changes.
 
+Implemented P9-02 backend coverage adds focused offline tests for the static
+source registry: unique canonical slugs, immutable definitions, unknown-source
+failure behavior, enabled implemented-source listing, disabled planned-source
+metadata, implemented NVD/FIRST EPSS/CISA KEV/CERT-EU definitions, strict
+allowed-host validation, exact-host matching, suffix-confusion rejection,
+duplicate definition rejection, invalid enabled/planned combinations, and
+compatibility with existing collector/service source constants.
+
 ## Frontend Testing
 
 Planned frontend tests:

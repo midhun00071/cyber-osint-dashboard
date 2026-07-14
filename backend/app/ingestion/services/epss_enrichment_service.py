@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.ingestion.collectors.epss_client import FIRST_EPSS_API_URL
 from app.ingestion.normalizers.epss import NormalizedEpssRecord
+from app.ingestion.source_registry import get_source_definition
 from app.models import (
     IntelligenceItemIdentifier,
     IntelligenceSource,
@@ -19,11 +20,12 @@ from app.models import (
 from app.models.common import utc_now
 
 
-EPSS_SOURCE_SLUG = "first-epss"
-EPSS_SOURCE_NAME = "FIRST EPSS"
-EPSS_SOURCE_TYPE = "api"
+_EPSS_SOURCE = get_source_definition("first-epss")
+EPSS_SOURCE_SLUG = _EPSS_SOURCE.slug
+EPSS_SOURCE_NAME = _EPSS_SOURCE.display_name
+EPSS_SOURCE_TYPE = _EPSS_SOURCE.source_type
 EPSS_SOURCE_BASE_URL = FIRST_EPSS_API_URL
-EPSS_RATE_LIMIT_NOTES = "Use bounded manual requests to the public FIRST EPSS API."
+EPSS_RATE_LIMIT_NOTES = _EPSS_SOURCE.rate_limit_notes
 VALID_OUTCOMES = {"created", "updated", "unchanged", "skipped", "failed"}
 
 
