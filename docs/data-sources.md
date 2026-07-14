@@ -2,17 +2,18 @@
 
 ## Purpose
 
-This document tracks approved and candidate open-source cybersecurity data sources for the dashboard.
+This document tracks approved and candidate safe public and authorized cybersecurity data sources for the dashboard.
 
 ## Source Selection Rules
 
 All sources must be:
 
-- Publicly available.
-- Authorized for automated access.
+- Publicly available, or explicitly authorized for project use through approved licensed, account, API, feed, or standards-based access.
+- Automated access must be authorized.
+- Access and licensing must be verified before implementation; mentor and project approval are required before implementing a future gated or commercial source.
 - Relevant to defensive cybersecurity awareness.
 - Documented with source name, access method, and original URL.
-- Used without scraping restricted or unsafe content.
+- Used without scraping restricted or unsafe content; arbitrary private, stolen, leaked, restricted, dark-web, and unauthorized data are not allowed.
 
 ## MVP Candidate Sources
 
@@ -114,3 +115,33 @@ NVD CVE ingestion, FIRST EPSS enrichment, CISA KEV enrichment, and CERT-EU
 Security Advisories RSS ingestion are implemented as manual-only backend
 workflows with sanitized audit records. Other candidate sources still require
 explicit approval before live ingestion is implemented.
+
+## Proposed Source Expansion
+
+The following vendors have been assessed for future source-expansion planning
+only:
+
+- Censys
+- Anomali
+- VirusTotal / Google Threat Intelligence
+- Recorded Future
+- Mandiant / Google Security
+- IBM X-Force
+
+They are not implemented sources in the current dashboard. The assessment
+separates public publication metadata, manual catalogue candidates, developer
+reference material, standardized STIX/TAXII concepts, and authorized structured
+API enrichment. Any future implementation must complete source onboarding,
+security review, and current access/licensing verification before live
+collection or enrichment is added.
+
+Planning references:
+
+- [Source Assessment Matrix](source-assessment-matrix.md)
+- [Source Integration Policy](source-integration-policy.md)
+
+The proposed source expansion preserves the existing defensive scope:
+manual-only ingestion unless scheduling is explicitly approved, no startup
+ingestion, no background worker, no arbitrary URL fetching, no active scanning,
+no target probing, no malware retrieval, no automatic file submission, no
+exploit execution, and no raw upstream payload exposure through public APIs.

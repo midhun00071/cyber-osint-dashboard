@@ -254,6 +254,8 @@ See the docs/ folder for:
 
 - architecture.md
 - data-sources.md
+- source-assessment-matrix.md
+- source-integration-policy.md
 - security-notes.md
 - testing-plan.md
 - deployment-notes.md

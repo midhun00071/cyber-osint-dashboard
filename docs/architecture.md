@@ -22,6 +22,27 @@ Open-source cybersecurity sources
 3. Data Processing and Enrichment
 4. Frontend Dashboard
 
+## Current Implemented Data Flow
+
+The implemented MVP data flow is intentionally bounded and defensive:
+
+```text
+approved public OSINT source
+-> manual ingestion CLI
+-> bounded collector
+-> normalizer
+-> persistence service
+-> PostgreSQL
+-> read-only FastAPI APIs
+-> Next.js frontend
+```
+
+Current implemented source workflows are manual-only NVD CVE ingestion, FIRST
+EPSS enrichment for existing CVEs, CISA KEV enrichment for existing CVEs, and
+CERT-EU Security Advisories RSS ingestion. These workflows are not connected to
+application startup, a scheduler, background workers, public write endpoints, or
+frontend-triggered ingestion.
+
 ## UAE Relevance Classification
 
 The backend includes an offline processing component for P4-01 UAE relevance
@@ -78,6 +99,35 @@ not overwritten by automatic rules, including their existing confidence values.
 - Store normalized intelligence records.
 - Preserve source traceability.
 - Support filtering and future historical analysis.
+
+## Proposed Source-Expansion Architecture
+
+The following roadmap is proposed source-expansion architecture only. It is not
+implemented, and it does not approve live collection from Censys, Anomali,
+VirusTotal / Google Threat Intelligence, Recorded Future, Mandiant / Google
+Security, or IBM X-Force.
+
+1. Source assessment
+2. Source registry
+3. Common publication pipeline
+4. Public research adapters
+5. Indicator model
+6. IOC extraction and relationships
+7. Generic STIX/TAXII importer
+8. Threat entity model
+9. Censys exposure enrichment
+10. Commercial API assessment
+11. Threat-intelligence frontend views
+12. Full integration/security review
+
+Source expansion must follow [source-integration-policy.md](source-integration-policy.md)
+and the vendor family decisions in
+[source-assessment-matrix.md](source-assessment-matrix.md). Future structured
+or commercial integrations require current access/licensing verification,
+approved host allow-lists, bounded collection, normalized allow-listed fields,
+sanitized audit records, and read-only public API exposure. Public publication
+ingestion and structured API enrichment must remain separate architecture
+families.
 
 ## Current Status
 
