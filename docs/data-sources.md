@@ -101,6 +101,34 @@ These slugs do not authorize new live collection by themselves. Any future UAE
 source ingestion still requires separate approval of the feed, API, access
 method, terms, and rate limits.
 
+## Censys Public Publications
+
+Approved manual metadata families:
+
+- `censys-arc-research`: official `https://censys.com/blog/` pages, stored as
+  `threat_report` items.
+- `censys-rapid-response-advisories`: official
+  `https://censys.com/advisory/` pages, stored as `security_advisory` items.
+
+P9-04 implements only an offline, operator-triggered import of a strict local
+structured JSON catalogue. The upstream source pages are unstructured public
+publication content; the JSON `source_type` describes only the operator-supplied
+catalogue format. The application does not visit, crawl, or scrape Censys pages
+and does not use a Censys API, account, or API key. Publication fetching and
+metadata preparation are external/manual. Exposure records, hosts,
+certificates, DNS data, scan results, search results, and rescan capability are
+not imported.
+
+Input is strict UTF-8 JSON limited to 1 MiB, 100 publications, 20 authors per
+publication, and 20 categories per publication. Only the fixed schema fields
+and plain-text metadata are accepted. The file must be reached through an
+ordinary local path without symlink or reparse-point components; UNC/network
+and Windows device-namespace forms are rejected before traversal. URLs must use
+exact host `censys.com`, the selected source's literal path family without
+percent escapes or path parameters, and no residual non-tracking query string.
+All accepted records pass through the P9-03 common publication pipeline and
+produce sanitized ingestion audit records.
+
 ## Safety Notes
 
 - Do not download malware samples.
@@ -111,17 +139,18 @@ method, terms, and rate limits.
 
 ## Current Status
 
-NVD CVE ingestion, FIRST EPSS enrichment, CISA KEV enrichment, and CERT-EU
-Security Advisories RSS ingestion are implemented as manual-only backend
-workflows with sanitized audit records. Other candidate sources still require
-explicit approval before live ingestion is implemented.
+NVD CVE ingestion, FIRST EPSS enrichment, CISA KEV enrichment, CERT-EU Security
+Advisories RSS ingestion, and Censys local-file publication metadata import are
+implemented as manual-only backend workflows with sanitized audit records.
+Other candidate sources still require explicit approval before ingestion is
+implemented.
 
 P9-02 adds a static backend source registry for developer-controlled metadata
-only. The implemented entries for NVD, FIRST EPSS, CISA KEV, and CERT-EU
-Security Advisories preserve the existing canonical slugs and manual ingestion
-behavior. The registry also records disabled planned metadata for selected
-future public-source families, including Censys, Google Threat Intelligence,
-Mandiant, Anomali, and IBM X-Force.
+only. The implemented entries for NVD, FIRST EPSS, CISA KEV, CERT-EU Security
+Advisories, and the two Censys manual-catalogue families preserve canonical
+slugs and manual ingestion behavior. The registry also records disabled planned
+metadata for selected future public-source families, including Google Threat
+Intelligence, Mandiant, Anomali, and IBM X-Force.
 
 P9-03 adds a common publication pipeline for source adapters that already have
 safe parsed publication candidates. CERT-EU RSS now uses this shared
@@ -159,12 +188,13 @@ only:
 - Mandiant / Google Security
 - IBM X-Force
 
-They are not implemented sources in the current dashboard. The assessment
-separates public publication metadata, manual catalogue candidates, developer
-reference material, standardized STIX/TAXII concepts, and authorized structured
-API enrichment. Any future implementation must complete source onboarding,
+Only Censys's bounded manual publication-metadata catalogue is implemented from
+this proposed group; no live Censys collection exists. The assessment separates
+public publication metadata, manual catalogue candidates, developer reference
+material, standardized STIX/TAXII concepts, and authorized structured API
+enrichment. Any future implementation must complete source onboarding,
 security review, and current access/licensing verification before live
-collection or enrichment is added.
+collection or enrichment is added. P9-05 remains not started.
 
 Planning references:
 

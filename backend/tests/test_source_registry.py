@@ -40,10 +40,10 @@ IMPLEMENTED_SLUGS = {
     "first-epss",
     "cisa-kev",
     "cert-eu-security-advisories",
-}
-PLANNED_PUBLIC_SLUGS = {
     "censys-arc-research",
     "censys-rapid-response-advisories",
+}
+PLANNED_PUBLIC_SLUGS = {
     "google-threat-intelligence-public-research",
     "mandiant-public-threat-research",
     "anomali-cyber-watch",
@@ -162,6 +162,40 @@ def test_censys_publication_sources_allow_only_exact_canonical_host(slug: str) -
     assert source_allows_hostname(slug, "evil-censys.com") is False
     assert source_allows_hostname(slug, "censys.com.evil.example") is False
     assert source_allows_hostname(slug, "docs.censys.com") is False
+
+
+@pytest.mark.parametrize(
+    ("slug", "content_family", "base_url"),
+    [
+        (
+            "censys-arc-research",
+            ContentFamily.EXPOSURE_RESEARCH,
+            "https://censys.com/blog/",
+        ),
+        (
+            "censys-rapid-response-advisories",
+            ContentFamily.PUBLIC_OSINT_ADVISORY,
+            "https://censys.com/advisory/",
+        ),
+    ],
+)
+def test_censys_sources_are_enabled_manual_json_imports(
+    slug: str,
+    content_family: ContentFamily,
+    base_url: str,
+) -> None:
+    source = get_source_definition(slug)
+
+    assert source.content_family is content_family
+    assert source.access_method is AccessMethod.MANUAL_CATALOGUE
+    assert source.allowed_hosts == ("censys.com",)
+    assert source.implementation_status is ImplementationStatus.IMPLEMENTED
+    assert source.enabled is True
+    assert source.structured is False
+    assert source.source_type == "json"
+    assert source.base_url == base_url
+    assert source.authentication_required is False
+    assert "local-file" in (source.rate_limit_notes or "")
 
 
 def test_gti_public_research_allows_only_public_research_host() -> None:
@@ -419,11 +453,21 @@ def test_configured_url_alone_does_not_activate_planned_source(
     assert "https://example.com/path" not in str(exc_info.value)
 
 
-def test_required_base_url_lookup_fails_safely_for_planned_source() -> None:
-    with pytest.raises(SourceRegistryError) as exc_info:
-        get_required_source_base_url("censys-arc-research")
-
-    assert "censys-arc-research" not in str(exc_info.value)
+@pytest.mark.parametrize(
+    ("slug", "base_url"),
+    [
+        ("censys-arc-research", "https://censys.com/blog/"),
+        (
+            "censys-rapid-response-advisories",
+            "https://censys.com/advisory/",
+        ),
+    ],
+)
+def test_required_base_url_lookup_supports_censys_manual_sources(
+    slug: str,
+    base_url: str,
+) -> None:
+    assert get_required_source_base_url(slug) == base_url
 
 
 def test_collector_url_constants_match_registry_base_urls() -> None:

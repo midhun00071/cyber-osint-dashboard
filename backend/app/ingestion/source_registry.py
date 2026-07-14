@@ -380,9 +380,6 @@ _IMPLEMENTED_DEFINITIONS = (
         base_url="https://cert.europa.eu/publications/security-advisories-rss",
         rate_limit_notes="Manual bounded requests to the approved CERT-EU RSS feed only.",
     ),
-)
-
-_PLANNED_DEFINITIONS = (
     SourceDefinition(
         slug="censys-arc-research",
         display_name="Censys ARC Research",
@@ -393,8 +390,13 @@ _PLANNED_DEFINITIONS = (
         allowed_hosts=("censys.com",),
         authentication_required=False,
         structured=False,
-        implementation_status=ImplementationStatus.PLANNED,
-        enabled=False,
+        implementation_status=ImplementationStatus.IMPLEMENTED,
+        enabled=True,
+        source_type="json",
+        base_url="https://censys.com/blog/",
+        rate_limit_notes=(
+            "Manual local-file metadata import only; no Censys network requests."
+        ),
     ),
     SourceDefinition(
         slug="censys-rapid-response-advisories",
@@ -406,9 +408,17 @@ _PLANNED_DEFINITIONS = (
         allowed_hosts=("censys.com",),
         authentication_required=False,
         structured=False,
-        implementation_status=ImplementationStatus.PLANNED,
-        enabled=False,
+        implementation_status=ImplementationStatus.IMPLEMENTED,
+        enabled=True,
+        source_type="json",
+        base_url="https://censys.com/advisory/",
+        rate_limit_notes=(
+            "Manual local-file metadata import only; no Censys network requests."
+        ),
     ),
+)
+
+_PLANNED_DEFINITIONS = (
     SourceDefinition(
         slug="google-threat-intelligence-public-research",
         display_name="Google Threat Intelligence Public Research",

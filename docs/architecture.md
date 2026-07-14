@@ -38,10 +38,11 @@ approved public OSINT source
 ```
 
 Current implemented source workflows are manual-only NVD CVE ingestion, FIRST
-EPSS enrichment for existing CVEs, CISA KEV enrichment for existing CVEs, and
-CERT-EU Security Advisories RSS ingestion. These workflows are not connected to
-application startup, a scheduler, background workers, public write endpoints, or
-frontend-triggered ingestion.
+EPSS enrichment for existing CVEs, CISA KEV enrichment for existing CVEs,
+CERT-EU Security Advisories RSS ingestion, and local-file Censys publication
+metadata import. These workflows are not connected to application startup, a
+scheduler, background workers, public write endpoints, or frontend-triggered
+ingestion.
 
 P9-02 adds a static source registry inside the backend ingestion layer. It is a
 developer-controlled code registry for safe non-secret source metadata,
@@ -77,6 +78,19 @@ timestamps are validated as aware datetimes and normalized to UTC. Publication
 URLs reject raw controls before parsing and reject exact normalized credential,
 token, password, signature, and cloud signed-URL query aliases while preserving
 ordinary safe query parameters and stripping tracking parameters.
+
+P9-04 adds an offline adapter above that pipeline for a strict, bounded,
+operator-supplied structured JSON catalogue. The upstream Censys pages remain
+unstructured public publication content. The selected registry source fixes the
+item type and literal URL path family: Censys ARC `/blog/` pages become
+`threat_report` items, while Rapid Response `/advisory/` pages become
+`security_advisory` items. Percent-escaped paths and path parameters are not
+accepted. The local-file boundary rejects UNC/network and Windows device
+namespaces before traversal. The adapter derives source-family-separated
+identifiers from canonical URL hashes and retains only plain-text
+author/category metadata. It reads no website pages and uses no Censys API,
+credentials, exposure data, host data, certificates, scan results, search, or
+rescan operation.
 
 ## UAE Relevance Classification
 
@@ -137,15 +151,16 @@ not overwritten by automatic rules, including their existing confidence values.
 
 ## Proposed Source-Expansion Architecture
 
-The following roadmap is proposed source-expansion architecture only. It is not
-implemented, and it does not approve live collection from Censys, Anomali,
-VirusTotal / Google Threat Intelligence, Recorded Future, Mandiant / Google
-Security, or IBM X-Force.
+The following roadmap covers remaining source-expansion architecture. It does
+not approve live collection from Censys, Anomali, VirusTotal / Google Threat
+Intelligence, Recorded Future, Mandiant / Google Security, or IBM X-Force. The
+only implemented Censys behavior is the P9-04 offline publication-metadata
+import described above.
 
 1. Source assessment
 2. Source registry (P9-02 metadata foundation implemented)
 3. Common publication pipeline (P9-03 foundation implemented)
-4. Public research adapters
+4. Censys public research adapter (P9-04 implemented)
 5. Indicator model
 6. IOC extraction and relationships
 7. Generic STIX/TAXII importer
@@ -164,12 +179,14 @@ sanitized audit records, and read-only public API exposure. Public publication
 ingestion and structured API enrichment must remain separate architecture
 families.
 
-P9-02 planned registry entries for Censys, Google Threat Intelligence,
-Mandiant, Anomali, and IBM X-Force remain disabled metadata only. They do not
-authorize collection, licensing, API access, scraping, IOC extraction, or
-storage of upstream report bodies. Public publication hosts and developer
-documentation hosts are treated as separate source families; documentation
-hosts are not automatically allowed for public threat-research definitions.
+The Censys ARC and Rapid Response registry definitions are enabled only for the
+P9-04 manual local-file importer. Planned registry entries for Google Threat
+Intelligence, Mandiant, Anomali, and IBM X-Force remain disabled metadata only.
+No registry entry authorizes licensing, API access, scraping, IOC extraction,
+or storage of upstream report bodies. Public publication hosts and developer
+documentation hosts are separate source families; documentation hosts are not
+automatically allowed for public threat-research definitions. P9-05 remains
+not started.
 
 ## Current Status
 

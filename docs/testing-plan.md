@@ -102,6 +102,22 @@ rejection, sanitized UTF-8 failures, type-aware duplicate-identifier conflict
 wording, CERT-EU RSS adapter integration, and regression coverage for the
 existing manual RSS normalizer, service, and CLI behavior.
 
+Implemented P9-04 backend coverage adds fully offline tests for strict Censys
+local-file parsing, the versioned seven-field publication schema, duplicate JSON
+keys, UTF-8 and 1 MiB file limits, nesting and 100-record bounds, exact source
+slugs, 20-item author/category limits, plain-text metadata, timezone-aware
+timestamps, exact `censys.com` host and source-family paths, URL credential,
+port, fragment, query, control, Unicode, percent-escape, and path-parameter
+rejection, tracking removal, stable source-separated URL-derived identifiers,
+pre-traversal UNC/device-namespace rejection, registry-derived item types,
+create, unchanged, update, and cross-type identity behavior, caller-owned
+transactions, identical in-file duplicate audit accounting, conflicting
+duplicate protection, sanitized CLI audits, mixed-record continuation, and
+whole-run rollback on database failures. Regression coverage includes the
+common publication pipeline, source registry, and existing RSS service and CLI.
+All fixtures are synthetic; the tests perform no Censys or other network
+request.
+
 ## Frontend Testing
 
 Planned frontend tests:

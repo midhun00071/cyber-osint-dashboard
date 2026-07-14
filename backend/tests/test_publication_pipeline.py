@@ -11,6 +11,11 @@ from sqlalchemy.sql import operators
 
 from app.ingestion.normalizers.rss import normalize_rss_feed
 from app.ingestion import publication_pipeline
+from app.ingestion.adapters.censys_publications import (
+    CENSYS_ARC_RESEARCH_SLUG,
+    CENSYS_RAPID_RESPONSE_SLUG,
+    adapt_censys_publication,
+)
 from app.ingestion.publication_pipeline import (
     MAX_PUBLICATION_EXTERNAL_ID_LENGTH,
     MAX_PUBLICATION_TITLE_LENGTH,
@@ -441,13 +446,107 @@ def test_similar_noncredential_query_keys_remain_allowed() -> None:
     [
         "nvd",
         "cisa-kev",
-        "censys-arc-research",
+        "google-threat-intelligence-public-research",
         "missing-source",
     ],
 )
 def test_non_publication_or_unimplemented_sources_fail_closed(source_slug: str) -> None:
     with pytest.raises(PublicationSourceError):
         normalize_publication_candidate(candidate(source_slug=source_slug))
+
+
+def censys_record(
+    *,
+    title: str = "Censys ARC Research",
+    url: str = "https://censys.com/blog/arc-research/",
+    summary: str = "Safe public research summary.",
+) -> dict[str, object]:
+    return {
+        "title": title,
+        "url": url,
+        "summary": summary,
+        "published_at": "2026-07-01T12:00:00Z",
+        "modified_at": None,
+        "authors": ["Censys Research"],
+        "categories": ["Research"],
+    }
+
+
+@pytest.mark.parametrize(
+    ("source_slug", "url", "expected_item_type"),
+    [
+        (
+            CENSYS_ARC_RESEARCH_SLUG,
+            "https://censys.com/blog/arc-research/",
+            "threat_report",
+        ),
+        (
+            CENSYS_RAPID_RESPONSE_SLUG,
+            "https://censys.com/advisory/cve-example/",
+            "security_advisory",
+        ),
+    ],
+)
+def test_censys_candidates_create_registry_derived_item_types(
+    source_slug: str,
+    url: str,
+    expected_item_type: str,
+) -> None:
+    session = FakeSession()
+    pipeline = PublicationPipeline(session)
+
+    result = pipeline.persist(
+        adapt_censys_publication(source_slug, censys_record(url=url)),
+        observed_at=OBSERVED_AT,
+    )
+
+    assert result.outcome == "created"
+    assert session.items[0].item_type == expected_item_type
+    assert session.commits == 0
+    assert session.rollbacks == 0
+
+
+def test_censys_repeated_import_is_unchanged_then_safe_change_updates() -> None:
+    session = FakeSession()
+    pipeline = PublicationPipeline(session)
+    original = adapt_censys_publication(CENSYS_ARC_RESEARCH_SLUG, censys_record())
+
+    assert pipeline.persist(original, observed_at=OBSERVED_AT).outcome == "created"
+    assert pipeline.persist(original, observed_at=OBSERVED_AT).outcome == "unchanged"
+    updated = adapt_censys_publication(
+        CENSYS_ARC_RESEARCH_SLUG,
+        censys_record(summary="Updated safe public research summary."),
+    )
+    assert pipeline.persist(updated, observed_at=OBSERVED_AT).outcome == "updated"
+    assert session.commits == 0
+    assert session.rollbacks == 0
+
+
+def test_censys_cross_type_title_identity_fails_safely() -> None:
+    session = FakeSession()
+    pipeline = PublicationPipeline(session)
+    title = "Shared Censys Publication Title"
+
+    research = adapt_censys_publication(
+        CENSYS_ARC_RESEARCH_SLUG,
+        censys_record(title=title),
+    )
+    advisory = adapt_censys_publication(
+        CENSYS_RAPID_RESPONSE_SLUG,
+        censys_record(
+            title=title,
+            url="https://censys.com/advisory/cve-example/",
+        ),
+    )
+
+    assert pipeline.persist(research, observed_at=OBSERVED_AT).outcome == "created"
+    result = pipeline.persist(advisory, observed_at=OBSERVED_AT)
+
+    assert result.outcome == "failed"
+    assert "identity signals conflict" in (result.message or "")
+    assert len(session.items) == 1
+    assert session.commits == 0
+    assert session.rollbacks == 0
 
 
 def test_pipeline_does_not_expose_normalized_persistence_bypass() -> None:

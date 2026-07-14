@@ -52,6 +52,8 @@ Current focus:
 - Manual, bounded FIRST EPSS enrichment for existing CVEs
 - Manual, bounded CISA KEV enrichment for existing CVEs
 - Manual, bounded CERT-EU Security Advisories RSS ingestion
+- Manual, bounded local-JSON import for Censys ARC research and Rapid Response
+  publication metadata
 - Developer-controlled source registry metadata for implemented sources and
   disabled planned public-source families
 - Common publication pipeline for validating and persisting approved
@@ -78,18 +80,19 @@ Current focus:
 
 The local development environment, backend foundation, database schema, and
 initial frontend shell are implemented. NVD ingestion, FIRST EPSS enrichment,
-CISA KEV enrichment, and CERT-EU RSS ingestion remain manual-only: they are not
-scheduled and are not connected to FastAPI startup, API routes, or the frontend
-dashboard.
+CISA KEV enrichment, CERT-EU RSS ingestion, and Censys publication metadata
+import remain manual-only: they are not scheduled and are not connected to
+FastAPI startup, API routes, or the frontend dashboard.
 
 ### Source registry foundation
 
 P9-02 adds an immutable backend source registry for safe source metadata,
 canonical source slugs, implementation status, and developer-controlled host
-allow-lists. The registry marks NVD, FIRST EPSS, CISA KEV, and CERT-EU Security
-Advisories as enabled implemented sources. Future public research and advisory
-families for Censys, Google Threat Intelligence, Mandiant, Anomali, and IBM
-X-Force are registered only as disabled planned metadata.
+allow-lists. The registry marks NVD, FIRST EPSS, CISA KEV, CERT-EU Security
+Advisories, and the two manual Censys publication families as enabled
+implemented sources. Future public research and advisory families for Google
+Threat Intelligence, Mandiant, Anomali, and IBM X-Force remain disabled planned
+metadata.
 
 Registry entries do not grant authorization, licensing, API access, or
 collection approval. No public source-management API, scheduler, startup
@@ -126,6 +129,14 @@ CERT-EU RSS ingestion now uses this shared persistence path through its
 existing manual service facade. P9-03 does not add new collectors, new vendor
 adapters, scheduling, API-triggered ingestion, database migrations, frontend
 changes, article-body fetching, or live network behavior.
+
+P9-04 adds a source-specific local-file adapter for operator-prepared metadata
+about official Censys ARC research and Rapid Response pages. Those upstream
+public pages remain unstructured publication content; only the operator-supplied
+import catalogue is strict structured JSON. Every accepted record enters through
+the same common publication pipeline. This does not add Censys website crawling
+or scraping, a Censys API integration, account or API key configuration,
+exposure/host/certificate/scan data, search, or rescan capability.
 
 ## Security Principles
 
@@ -217,6 +228,32 @@ This command runs only when explicitly invoked. It is locked to the approved
 normalized advisory metadata as `security_advisory` intelligence items, records
 sanitized audit outcomes through the common publication pipeline, and does not
 fetch article bodies or arbitrary RSS sources.
+
+### Manual Censys publication import
+
+From the `backend` directory, an operator can import a bounded local JSON file:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.ingestion.censys_publications_cli `
+    --file C:\path\to\censys-publications.json
+```
+
+The UTF-8 file is limited to 1 MiB and 100 publication records. It must contain
+exactly `schema_version`, `source_slug`, and `publications`; each publication
+must contain exactly `title`, `url`, `summary`, `published_at`, `modified_at`,
+`authors`, and `categories`. Author and category lists are each limited to 20
+plain-text values. The source slug must select either ARC research under
+`https://censys.com/blog/` or Rapid Response advisories under
+`https://censys.com/advisory/`. The input must use an ordinary local path;
+UNC/network and Windows device-namespace paths are rejected before traversal.
+Catalogue URLs must use the literal approved publication path, without percent
+escapes or path parameters.
+
+Publication metadata preparation and page verification happen outside this
+application. The command reads only the supplied regular local file, performs
+no Censys network request, and records sanitized audit outcomes. No scheduler,
+background worker, public ingestion endpoint, Censys account, or API key is
+used.
 
 ### Read-only intelligence API
 
