@@ -106,3 +106,28 @@ If the command fails, verify that `APP_ENV` is `development` or `test`, the
 database settings are present for the current execution environment, and the
 migration has been applied. Do not paste real database URLs, passwords, tokens,
 or stack traces into issues or reports.
+
+## Manual Google TI and Mandiant Publication Ingestion
+
+P9-05 adds an explicitly invoked metadata-only RSS command:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.ingestion.google_threat_publications_cli `
+    --max-records 25
+```
+
+It uses the fixed official Google Cloud Threat Intelligence RSS feed and has no
+arbitrary URL or credential option. The collection host is
+`feeds.feedburner.com`; stored publication URLs must be exact
+`cloud.google.com/blog/topics/threat-intelligence/` article URLs. Feed entries
+are routed only by exact authoritative author: `Google Threat Intelligence
+Group` or `Mandiant`. The command does not fetch article bodies, scrape pages,
+ingest developer documentation, call GTI/VirusTotal APIs, submit or retrieve
+files or malware samples, extract IOCs, schedule work, run at startup, or expose
+public ingestion endpoints.
+Stored summaries come only from feed `summary` or `description` values. Feed
+`content`, article bodies, attachments, media links, downloadable reports, and
+PDFs are ignored. Known-owner validation failures are audited only on that
+source run; entries without an approved authoritative owner produce sanitized
+shared-feed error evidence on both logical runs without counting as source-owned
+fetched or failed records.

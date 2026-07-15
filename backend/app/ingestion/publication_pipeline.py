@@ -25,7 +25,7 @@ from app.ingestion.source_registry import (
     SourceDefinition,
     SourceRegistryError,
     get_source_definition,
-    source_allows_hostname,
+    source_allows_publication_hostname,
 )
 from app.ingestion.services.article_identity_service import (
     ARTICLE_IDENTITY_CONFLICT_MESSAGE,
@@ -685,7 +685,7 @@ def canonicalize_publication_url(source_slug: str, value: object) -> str:
         raise PublicationCandidateError("The publication URL must not contain credentials.")
     if port not in (None, 443):
         raise PublicationCandidateError("The publication URL uses an unexpected port.")
-    if not source_allows_hostname(source_slug, host):
+    if not source_allows_publication_hostname(source_slug, host):
         raise PublicationCandidateError("The publication URL host is not approved.")
     if host.endswith("."):
         host = host[:-1]

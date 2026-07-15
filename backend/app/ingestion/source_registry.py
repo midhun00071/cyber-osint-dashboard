@@ -65,6 +65,7 @@ class SourceDefinition:
     enabled: bool
     source_type: str | None = None
     base_url: str | None = None
+    canonical_publication_hosts: tuple[str, ...] | None = None
     rate_limit_notes: str | None = None
 
 
@@ -120,6 +121,17 @@ def source_allows_hostname(slug: str, hostname: str) -> bool:
     except SourceRegistryError:
         return False
     return candidate in source.allowed_hosts
+
+
+def source_allows_publication_hostname(slug: str, hostname: str) -> bool:
+    """Return whether a source allows the exact canonical publication hostname."""
+
+    source = get_source_definition(slug)
+    try:
+        candidate = _normalize_allowed_host(hostname)
+    except SourceRegistryError:
+        return False
+    return candidate in _publication_hosts_for_source(source)
 
 
 def get_required_source_base_url(slug: str) -> str:
@@ -182,6 +194,14 @@ def validate_source_definition(definition: SourceDefinition) -> SourceDefinition
         raise SourceRegistryError("Duplicate allowed host entry.")
     source_type = _optional_text(definition.source_type, "source_type")
     base_url = _optional_text(definition.base_url, "base_url")
+    canonical_publication_hosts = (
+        None
+        if definition.canonical_publication_hosts is None
+        else tuple(
+            _normalize_allowed_host(host)
+            for host in definition.canonical_publication_hosts
+        )
+    )
     rate_limit_notes = _optional_text(definition.rate_limit_notes, "rate_limit_notes")
     if enabled and implementation_status is not ImplementationStatus.IMPLEMENTED:
         raise SourceRegistryError("Only implemented sources may be enabled.")
@@ -193,6 +213,13 @@ def validate_source_definition(definition: SourceDefinition) -> SourceDefinition
         raise SourceRegistryError("Unsupported source type.")
     if base_url is not None:
         _validate_base_url(base_url, allowed_hosts)
+    if canonical_publication_hosts is not None:
+        if not canonical_publication_hosts:
+            raise SourceRegistryError(
+                "Canonical publication hosts must not be empty."
+            )
+        if len(set(canonical_publication_hosts)) != len(canonical_publication_hosts):
+            raise SourceRegistryError("Duplicate canonical publication host entry.")
 
     return replace(
         definition,
@@ -209,8 +236,13 @@ def validate_source_definition(definition: SourceDefinition) -> SourceDefinition
         enabled=enabled,
         source_type=source_type,
         base_url=base_url,
+        canonical_publication_hosts=canonical_publication_hosts,
         rate_limit_notes=rate_limit_notes,
     )
+
+
+def _publication_hosts_for_source(source: SourceDefinition) -> tuple[str, ...]:
+    return source.canonical_publication_hosts or source.allowed_hosts
 
 
 def _normalize_slug(slug: str) -> str:
@@ -416,21 +448,25 @@ _IMPLEMENTED_DEFINITIONS = (
             "Manual local-file metadata import only; no Censys network requests."
         ),
     ),
-)
-
-_PLANNED_DEFINITIONS = (
     SourceDefinition(
         slug="google-threat-intelligence-public-research",
         display_name="Google Threat Intelligence Public Research",
         vendor="Google Threat Intelligence",
         source_family="Public threat research",
         content_family=ContentFamily.THREAT_RESEARCH,
-        access_method=AccessMethod.MANUAL_CATALOGUE,
-        allowed_hosts=("cloud.google.com",),
+        access_method=AccessMethod.PUBLIC_FEED,
+        allowed_hosts=("feeds.feedburner.com",),
         authentication_required=False,
-        structured=False,
-        implementation_status=ImplementationStatus.PLANNED,
-        enabled=False,
+        structured=True,
+        implementation_status=ImplementationStatus.IMPLEMENTED,
+        enabled=True,
+        source_type="rss",
+        base_url="https://feeds.feedburner.com/threatintelligence/pvexyqv7v0v",
+        canonical_publication_hosts=("cloud.google.com",),
+        rate_limit_notes=(
+            "Manual bounded requests to the official shared Google Cloud Threat "
+            "Intelligence RSS feed only; article bodies are not fetched."
+        ),
     ),
     SourceDefinition(
         slug="mandiant-public-threat-research",
@@ -438,13 +474,23 @@ _PLANNED_DEFINITIONS = (
         vendor="Mandiant / Google Security",
         source_family="Mandiant threat research",
         content_family=ContentFamily.THREAT_RESEARCH,
-        access_method=AccessMethod.MANUAL_CATALOGUE,
-        allowed_hosts=("cloud.google.com",),
+        access_method=AccessMethod.PUBLIC_FEED,
+        allowed_hosts=("feeds.feedburner.com",),
         authentication_required=False,
-        structured=False,
-        implementation_status=ImplementationStatus.PLANNED,
-        enabled=False,
+        structured=True,
+        implementation_status=ImplementationStatus.IMPLEMENTED,
+        enabled=True,
+        source_type="rss",
+        base_url="https://feeds.feedburner.com/threatintelligence/pvexyqv7v0v",
+        canonical_publication_hosts=("cloud.google.com",),
+        rate_limit_notes=(
+            "Manual bounded requests to the official shared Google Cloud Threat "
+            "Intelligence RSS feed only; article bodies are not fetched."
+        ),
     ),
+)
+
+_PLANNED_DEFINITIONS = (
     SourceDefinition(
         slug="anomali-cyber-watch",
         display_name="Anomali Cyber Watch",

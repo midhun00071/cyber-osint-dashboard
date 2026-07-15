@@ -40,7 +40,8 @@ approved public OSINT source
 Current implemented source workflows are manual-only NVD CVE ingestion, FIRST
 EPSS enrichment for existing CVEs, CISA KEV enrichment for existing CVEs,
 CERT-EU Security Advisories RSS ingestion, and local-file Censys publication
-metadata import. These workflows are not connected to application startup, a
+metadata import, plus manual Google TI/Mandiant shared-RSS publication metadata
+ingestion. These workflows are not connected to application startup, a
 scheduler, background workers, public write endpoints, or frontend-triggered
 ingestion.
 
@@ -91,6 +92,26 @@ identifiers from canonical URL hashes and retains only plain-text
 author/category metadata. It reads no website pages and uses no Censys API,
 credentials, exposure data, host data, certificates, scan results, search, or
 rescan operation.
+
+P9-05 adds a manual shared-feed adapter for the fixed official Google Cloud
+Threat Intelligence RSS feed. The registry now separates collection hosts from
+canonical publication hosts: the collector may fetch only the exact FeedBurner
+RSS host, while persisted publication URLs must use exact host
+`cloud.google.com` and literal path prefix `/blog/topics/threat-intelligence/`.
+Author ownership is source-specific and exact: `Google Threat Intelligence
+Group` maps to `google-threat-intelligence-public-research`, and `Mandiant`
+maps to `mandiant-public-threat-research`. The adapter emits only safe
+`PublicationCandidate` metadata and leaves all persistence, duplicate handling,
+item-type derivation, and database mutation to the common publication pipeline.
+Stored summaries are taken only from feed `summary` or `description` fields;
+feed `content`, article bodies, attachments, media links, reports, and PDFs are
+ignored. Known-owner validation failures are attributed only to the resolved
+source run. Entries that cannot be attributed to an approved author are kept out
+of source-owned fetched/failed counters and recorded as sanitized shared-feed
+error evidence on both logical runs. The adapter does not fetch article bodies,
+scrape HTML, ingest developer documentation, use GTI/VirusTotal APIs, use
+credentials, extract IOCs, download reports, submit or retrieve files/samples,
+schedule work, run at startup, or expose public ingestion routes.
 
 ## UAE Relevance Classification
 
@@ -152,23 +173,25 @@ not overwritten by automatic rules, including their existing confidence values.
 ## Proposed Source-Expansion Architecture
 
 The following roadmap covers remaining source-expansion architecture. It does
-not approve live collection from Censys, Anomali, VirusTotal / Google Threat
-Intelligence, Recorded Future, Mandiant / Google Security, or IBM X-Force. The
-only implemented Censys behavior is the P9-04 offline publication-metadata
-import described above.
+not approve live collection from Censys, Anomali, Recorded Future, IBM X-Force,
+or structured VirusTotal / Google Threat Intelligence API families. The only
+implemented Censys behavior is the P9-04 offline publication-metadata import,
+and the only implemented Google TI/Mandiant behavior is the P9-05 bounded
+manual shared-RSS publication metadata adapter described above.
 
 1. Source assessment
 2. Source registry (P9-02 metadata foundation implemented)
 3. Common publication pipeline (P9-03 foundation implemented)
 4. Censys public research adapter (P9-04 implemented)
-5. Indicator model
-6. IOC extraction and relationships
-7. Generic STIX/TAXII importer
-8. Threat entity model
-9. Censys exposure enrichment
-10. Commercial API assessment
-11. Threat-intelligence frontend views
-12. Full integration/security review
+5. Google TI/Mandiant public publication RSS adapter (P9-05 implemented)
+6. Indicator model
+7. IOC extraction and relationships
+8. Generic STIX/TAXII importer
+9. Threat entity model
+10. Censys exposure enrichment
+11. Commercial API assessment
+12. Threat-intelligence frontend views
+13. Full integration/security review
 
 Source expansion must follow [source-integration-policy.md](source-integration-policy.md)
 and the vendor family decisions in
@@ -180,13 +203,15 @@ ingestion and structured API enrichment must remain separate architecture
 families.
 
 The Censys ARC and Rapid Response registry definitions are enabled only for the
-P9-04 manual local-file importer. Planned registry entries for Google Threat
-Intelligence, Mandiant, Anomali, and IBM X-Force remain disabled metadata only.
-No registry entry authorizes licensing, API access, scraping, IOC extraction,
-or storage of upstream report bodies. Public publication hosts and developer
-documentation hosts are separate source families; documentation hosts are not
-automatically allowed for public threat-research definitions. P9-05 remains
-not started.
+P9-04 manual local-file importer. Google Threat Intelligence and Mandiant public
+threat-research definitions are enabled only for the P9-05 manual shared RSS
+publication adapter. Planned registry entries for Anomali and IBM X-Force remain
+disabled metadata only. No registry entry authorizes licensing, API access,
+scraping, IOC extraction, or storage of upstream report bodies. Public
+publication hosts and developer documentation hosts are separate source
+families; documentation hosts are not automatically allowed for public
+threat-research definitions. P9-05 is implemented as metadata-only RSS
+publication ingestion.
 
 ## Current Status
 

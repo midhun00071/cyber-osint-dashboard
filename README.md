@@ -54,6 +54,8 @@ Current focus:
 - Manual, bounded CERT-EU Security Advisories RSS ingestion
 - Manual, bounded local-JSON import for Censys ARC research and Rapid Response
   publication metadata
+- Manual, bounded Google Cloud Threat Intelligence RSS ingestion for public
+  Google Threat Intelligence Group and Mandiant publication metadata
 - Developer-controlled source registry metadata for implemented sources and
   disabled planned public-source families
 - Common publication pipeline for validating and persisting approved
@@ -89,10 +91,10 @@ FastAPI startup, API routes, or the frontend dashboard.
 P9-02 adds an immutable backend source registry for safe source metadata,
 canonical source slugs, implementation status, and developer-controlled host
 allow-lists. The registry marks NVD, FIRST EPSS, CISA KEV, CERT-EU Security
-Advisories, and the two manual Censys publication families as enabled
-implemented sources. Future public research and advisory families for Google
-Threat Intelligence, Mandiant, Anomali, and IBM X-Force remain disabled planned
-metadata.
+Advisories, the two manual Censys publication families, and the two Google
+Threat Intelligence/Mandiant public RSS publication families as enabled
+implemented sources. Future public research and advisory families for Anomali
+and IBM X-Force remain disabled planned metadata.
 
 Registry entries do not grant authorization, licensing, API access, or
 collection approval. No public source-management API, scheduler, startup
@@ -137,6 +139,19 @@ import catalogue is strict structured JSON. Every accepted record enters through
 the same common publication pipeline. This does not add Censys website crawling
 or scraping, a Censys API integration, account or API key configuration,
 exposure/host/certificate/scan data, search, or rescan capability.
+
+P9-05 adds a manual shared-feed adapter for the official Google Cloud Threat
+Intelligence RSS feed at
+`https://feeds.feedburner.com/threatintelligence/pvexyqv7v0v`. Entries are
+persisted only when the authoritative feed author is exactly `Google Threat
+Intelligence Group` or `Mandiant`; those authors map to separate source slugs
+and source-separated identifiers. The collector validates only the exact
+FeedBurner collection host, while stored publication URLs must use exact host
+`cloud.google.com` and path `/blog/topics/threat-intelligence/...`. The command
+stores metadata only and does not fetch article bodies, scrape pages, ingest
+developer documentation, use Google Threat Intelligence or VirusTotal APIs, use
+credentials, submit or retrieve files/samples, extract IOCs, schedule work, run
+at startup, or expose a public ingestion endpoint.
 
 ## Security Principles
 
@@ -254,6 +269,32 @@ application. The command reads only the supplied regular local file, performs
 no Censys network request, and records sanitized audit outcomes. No scheduler,
 background worker, public ingestion endpoint, Censys account, or API key is
 used.
+
+### Manual Google TI and Mandiant publication ingestion
+
+From the `backend` directory, a developer can fetch and store a bounded set of
+official public Google Threat Intelligence topic RSS entries:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.ingestion.google_threat_publications_cli `
+    --max-records 25
+```
+
+The command is manual-only and uses the fixed official RSS feed. It has no URL
+argument and uses no credentials. Entries are accepted only when the normalized
+author is exactly `Google Threat Intelligence Group` or `Mandiant`; ownership is
+not inferred from titles, categories, product names, report links, or article
+text. Stored records are `threat_report` metadata with exact
+`cloud.google.com/blog/topics/threat-intelligence/` publication URLs. Article
+bodies, downloadable reports, PDFs, malware samples, observables, and IOCs are
+not fetched or stored.
+Only feed `summary` or `description` values may become stored summaries; feed
+`content`, article bodies, attachments, media links, and report downloads are
+ignored. If an otherwise owned entry fails validation, the failure is audited
+only under that resolved source. If an entry cannot be attributed to an approved
+author, the command records sanitized shared-feed error evidence on both
+logical runs without incrementing either source's fetched or failed record
+counters.
 
 ### Read-only intelligence API
 

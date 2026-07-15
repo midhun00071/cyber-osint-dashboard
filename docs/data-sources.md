@@ -129,6 +129,40 @@ percent escapes or path parameters, and no residual non-tracking query string.
 All accepted records pass through the P9-03 common publication pipeline and
 produce sanitized ingestion audit records.
 
+## Google TI and Mandiant Public Publications
+
+Approved manual shared-feed families:
+
+- `google-threat-intelligence-public-research`: official Google Cloud Threat
+  Intelligence topic RSS entries authored exactly by `Google Threat Intelligence
+  Group`, stored as `threat_report` items.
+- `mandiant-public-threat-research`: official Google Cloud Threat Intelligence
+  topic RSS entries authored exactly by `Mandiant`, stored as `threat_report`
+  items.
+
+P9-05 implements a manual-only bounded collector for the fixed official RSS feed:
+`https://feeds.feedburner.com/threatintelligence/pvexyqv7v0v`. The collection
+host is exactly `feeds.feedburner.com`; canonical stored publication URLs must
+use exact host `cloud.google.com` and literal path prefix
+`/blog/topics/threat-intelligence/`.
+
+The adapter stores metadata only: title, canonical URL, short feed-provided
+`summary` or `description`, feed timestamps, bounded author/category metadata,
+and a safe feed ID when available. Feed `content`, article bodies, attachments,
+media links, downloadable reports, and PDFs are ignored. It does not scrape
+Google Cloud HTML, use search-engine results, ingest developer documentation,
+call Google Threat Intelligence or VirusTotal APIs, use credentials, submit or
+retrieve files or malware samples, extract IOCs, schedule work, run at startup,
+or expose a public ingestion endpoint. Source ownership is based only on the
+exact authoritative feed author and is never inferred from titles, categories,
+product names, report links, threat names, or article text.
+
+Known-owner validation failures are counted and audited only on the resolved
+source run. Unassigned shared-feed entries are not described as Google TI or
+Mandiant publications and are not counted as source-owned fetched or failed
+records; the command records sanitized shared-feed error evidence on both
+logical runs and includes the aggregate unassigned count in each safe summary.
+
 ## Safety Notes
 
 - Do not download malware samples.
@@ -140,23 +174,25 @@ produce sanitized ingestion audit records.
 ## Current Status
 
 NVD CVE ingestion, FIRST EPSS enrichment, CISA KEV enrichment, CERT-EU Security
-Advisories RSS ingestion, and Censys local-file publication metadata import are
-implemented as manual-only backend workflows with sanitized audit records.
+Advisories RSS ingestion, Censys local-file publication metadata import, and
+Google TI/Mandiant shared-RSS publication metadata ingestion are implemented as
+manual-only backend workflows with sanitized audit records.
 Other candidate sources still require explicit approval before ingestion is
 implemented.
 
 P9-02 adds a static backend source registry for developer-controlled metadata
 only. The implemented entries for NVD, FIRST EPSS, CISA KEV, CERT-EU Security
-Advisories, and the two Censys manual-catalogue families preserve canonical
-slugs and manual ingestion behavior. The registry also records disabled planned
-metadata for selected future public-source families, including Google Threat
-Intelligence, Mandiant, Anomali, and IBM X-Force.
+Advisories, the two Censys manual-catalogue families, and the two Google
+TI/Mandiant public RSS publication families preserve canonical slugs and manual
+ingestion behavior. The registry also records disabled planned metadata for
+selected future public-source families, including Anomali and IBM X-Force.
 
 P9-03 adds a common publication pipeline for source adapters that already have
 safe parsed publication candidates. CERT-EU RSS now uses this shared
 persistence path. The pipeline does not approve or fetch new vendors; planned
 source registry entries remain disabled until a later task explicitly approves
-and implements an adapter. Adapters cannot supply arbitrary normalized source
+and implements an adapter. P9-05 enables only the Google TI and Mandiant public
+RSS publication source definitions. Adapters cannot supply arbitrary normalized source
 definitions, and publication item type is derived from the registered content
 family rather than adapter input.
 
@@ -188,13 +224,14 @@ only:
 - Mandiant / Google Security
 - IBM X-Force
 
-Only Censys's bounded manual publication-metadata catalogue is implemented from
+Only Censys's bounded manual publication-metadata catalogue and the bounded
+Google TI/Mandiant public RSS publication-metadata adapter are implemented from
 this proposed group; no live Censys collection exists. The assessment separates
 public publication metadata, manual catalogue candidates, developer reference
 material, standardized STIX/TAXII concepts, and authorized structured API
 enrichment. Any future implementation must complete source onboarding,
 security review, and current access/licensing verification before live
-collection or enrichment is added. P9-05 remains not started.
+collection or enrichment is added beyond the approved P9-05 shared RSS feed.
 
 Planning references:
 

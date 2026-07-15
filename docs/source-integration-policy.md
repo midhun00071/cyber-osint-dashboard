@@ -21,12 +21,17 @@ Allowed use:
 
 - ingest safe publication metadata from fixed, developer-controlled, approved sources;
 - store normalized title, summary, source URL, publication timestamps, source identity, and safe tags;
+- keep shared feed collection hosts separate from canonical publication hosts
+  when a provider publishes through a feed service;
 - cite source attribution clearly;
 - use manual-only ingestion unless scheduling is explicitly approved later.
 
 Restrictions:
 
 - do not scrape restricted pages;
+- do not infer publication ownership from titles, article text, product names,
+  categories, or report links when the approved source requires exact feed
+  author ownership;
 - do not mirror full reports or PDFs unless permission is explicitly verified;
 - do not assume indicator reuse or redistribution rights;
 - do not expose raw upstream payloads through public APIs.

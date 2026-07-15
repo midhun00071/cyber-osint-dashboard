@@ -13,6 +13,10 @@ from app.ingestion.collectors.cisa_kev_client import (
 from app.ingestion.collectors.epss_client import FIRST_EPSS_API_URL
 from app.ingestion.collectors.nvd_client import NVD_CVE_API_URL
 from app.ingestion.collectors.rss_client import CERT_EU_ALLOWED_HOST, CERT_EU_FEED_URL
+from app.ingestion.collectors.google_threat_intelligence_rss_client import (
+    GOOGLE_THREAT_INTELLIGENCE_ALLOWED_HOST,
+    GOOGLE_THREAT_INTELLIGENCE_FEED_URL,
+)
 from app.ingestion.services.cisa_kev_ingestion_service import CISA_KEV_SOURCE_SLUG
 from app.ingestion.services.epss_enrichment_service import EPSS_SOURCE_SLUG
 from app.ingestion.services.nvd_ingestion_service import NVD_SOURCE_BASE_URL, NVD_SOURCE_SLUG
@@ -31,6 +35,7 @@ from app.ingestion.source_registry import (
     list_source_definitions,
     list_source_definitions_by_vendor,
     source_allows_hostname,
+    source_allows_publication_hostname,
     validate_source_definition,
 )
 
@@ -42,10 +47,10 @@ IMPLEMENTED_SLUGS = {
     "cert-eu-security-advisories",
     "censys-arc-research",
     "censys-rapid-response-advisories",
-}
-PLANNED_PUBLIC_SLUGS = {
     "google-threat-intelligence-public-research",
     "mandiant-public-threat-research",
+}
+PLANNED_PUBLIC_SLUGS = {
     "anomali-cyber-watch",
     "ibm-x-force-public-research",
     "ibm-x-force-public-osint-advisories",
@@ -198,14 +203,46 @@ def test_censys_sources_are_enabled_manual_json_imports(
     assert "local-file" in (source.rate_limit_notes or "")
 
 
-def test_gti_public_research_allows_only_public_research_host() -> None:
+@pytest.mark.parametrize(
+    "slug",
+    [
+        "google-threat-intelligence-public-research",
+        "mandiant-public-threat-research",
+    ],
+)
+def test_google_threat_sources_separate_collection_and_publication_hosts(
+    slug: str,
+) -> None:
+    source = get_source_definition(slug)
+
+    assert source.content_family is ContentFamily.THREAT_RESEARCH
+    assert source.access_method is AccessMethod.PUBLIC_FEED
+    assert source.source_type == "rss"
+    assert source.base_url == GOOGLE_THREAT_INTELLIGENCE_FEED_URL
+    assert source.allowed_hosts == ("feeds.feedburner.com",)
+    assert source.canonical_publication_hosts == ("cloud.google.com",)
+    assert source.implementation_status is ImplementationStatus.IMPLEMENTED
+    assert source.enabled is True
+    assert source.authentication_required is False
+    assert "article bodies are not fetched" in (source.rate_limit_notes or "")
+    assert source_allows_hostname(slug, "feeds.feedburner.com") is True
+    assert source_allows_hostname(slug, "cloud.google.com") is False
+    assert source_allows_publication_hostname(slug, "cloud.google.com") is True
+    assert source_allows_publication_hostname(slug, "feeds.feedburner.com") is False
+    assert source_allows_publication_hostname(slug, "gtidocs.virustotal.com") is False
+    assert source_allows_publication_hostname(slug, "cloud.google.com.evil.example") is False
+    assert source_allows_publication_hostname(slug, "evil-cloud.google.com") is False
+
+
+def test_gti_public_research_collection_host_does_not_allow_publication_host() -> None:
     slug = "google-threat-intelligence-public-research"
 
-    assert source_allows_hostname(slug, "cloud.google.com") is True
+    assert source_allows_hostname(slug, "feeds.feedburner.com") is True
+    assert source_allows_hostname(slug, "cloud.google.com") is False
     assert source_allows_hostname(slug, "gtidocs.virustotal.com") is False
     assert source_allows_hostname(slug, "google.com") is False
-    assert source_allows_hostname(slug, "cloud.google.com.evil.example") is False
-    assert source_allows_hostname(slug, "evil-cloud.google.com") is False
+    assert source_allows_hostname(slug, "feeds.feedburner.com.evil.example") is False
+    assert source_allows_hostname(slug, "evil-feeds.feedburner.com") is False
 
 
 def test_implemented_source_definitions_exist_with_existing_slugs() -> None:
@@ -477,6 +514,12 @@ def test_collector_url_constants_match_registry_base_urls() -> None:
     assert CERT_EU_FEED_URL == get_required_source_base_url(
         "cert-eu-security-advisories"
     )
+    assert GOOGLE_THREAT_INTELLIGENCE_FEED_URL == get_required_source_base_url(
+        "google-threat-intelligence-public-research"
+    )
+    assert GOOGLE_THREAT_INTELLIGENCE_FEED_URL == get_required_source_base_url(
+        "mandiant-public-threat-research"
+    )
     assert NVD_CVE_API_URL == "https://services.nvd.nist.gov/rest/json/cves/2.0"
     assert FIRST_EPSS_API_URL == "https://api.first.org/data/v1/epss"
     assert CISA_KEV_CATALOG_URL == (
@@ -485,6 +528,9 @@ def test_collector_url_constants_match_registry_base_urls() -> None:
     )
     assert CERT_EU_FEED_URL == (
         "https://cert.europa.eu/publications/security-advisories-rss"
+    )
+    assert GOOGLE_THREAT_INTELLIGENCE_FEED_URL == (
+        "https://feeds.feedburner.com/threatintelligence/pvexyqv7v0v"
     )
 
 
@@ -515,3 +561,36 @@ def test_existing_collector_host_constants_come_from_registry() -> None:
     assert CERT_EU_ALLOWED_HOST == get_source_definition(
         "cert-eu-security-advisories"
     ).allowed_hosts[0]
+    assert GOOGLE_THREAT_INTELLIGENCE_ALLOWED_HOST == get_source_definition(
+        "google-threat-intelligence-public-research"
+    ).allowed_hosts[0]
+
+
+def test_publication_host_falls_back_to_allowed_hosts_for_existing_sources() -> None:
+    assert source_allows_publication_hostname("nvd", "services.nvd.nist.gov") is True
+    assert source_allows_publication_hostname("censys-arc-research", "censys.com") is True
+    assert source_allows_publication_hostname("censys-arc-research", "docs.censys.com") is False
+
+
+def test_canonical_publication_hosts_are_immutable_and_normalized() -> None:
+    definition = validate_source_definition(
+        replace(
+            valid_definition(),
+            allowed_hosts=("feeds.example.com",),
+            canonical_publication_hosts=("PUBLIC.EXAMPLE.COM.",),
+        )
+    )
+
+    assert definition.canonical_publication_hosts == ("public.example.com",)
+    with pytest.raises(FrozenInstanceError):
+        definition.canonical_publication_hosts = ("changed.example",)  # type: ignore[misc]
+
+
+def test_invalid_canonical_publication_hosts_are_rejected() -> None:
+    with pytest.raises(SourceRegistryError):
+        validate_source_definition(
+            replace(
+                valid_definition(),
+                canonical_publication_hosts=("192.0.2.10",),
+            )
+        )

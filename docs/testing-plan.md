@@ -118,6 +118,24 @@ common publication pipeline, source registry, and existing RSS service and CLI.
 All fixtures are synthetic; the tests perform no Censys or other network
 request.
 
+Implemented P9-05 backend coverage adds fully offline tests for the Google
+TI/Mandiant shared RSS publication integration: registry collection-host versus
+canonical-publication-host separation, exact FeedBurner collection host checks,
+exact `cloud.google.com` publication host checks, mocked HTTP redirects and
+response bounds, XML content-type validation, exact GTIG-versus-Mandiant author
+routing, unknown/conflicting author rejection, FeedBurner original-link handling,
+canonical path-family rejection, tracking removal, signed/credential query
+rejection, missing/octet-stream content-type rejection, summary/description-only
+storage, ignored feed content/media links, encoded or malformed markup handling,
+required identity length rejection, Unicode/control handling, UTC timestamp
+normalization, source-separated URL-derived identifiers, known-owner validation
+failure attribution, unassigned shared-feed audit evidence, capped-feed
+summaries, duplicate and update accounting through the common publication
+pipeline, caller-owned final transaction behavior, rollback on database or
+commit failure, session/client closure, and sanitized CLI/audit output. All
+fixtures are synthetic; the tests perform no Google, FeedBurner, Mandiant,
+VirusTotal, or other live network request.
+
 ## Frontend Testing
 
 Planned frontend tests:

@@ -233,20 +233,26 @@ def install_threat_sources(monkeypatch: pytest.MonkeyPatch) -> None:
         SECOND_THREAT_SOURCE_SLUG: threat_source(SECOND_THREAT_SOURCE_SLUG),
     }
     original_get_source_definition = publication_pipeline.get_source_definition
-    original_source_allows_hostname = publication_pipeline.source_allows_hostname
+    original_source_allows_publication_hostname = (
+        publication_pipeline.source_allows_publication_hostname
+    )
 
     def fake_get_source_definition(slug: str):
         if slug in sources:
             return sources[slug]
         return original_get_source_definition(slug)
 
-    def fake_source_allows_hostname(slug: str, hostname: str) -> bool:
+    def fake_source_allows_publication_hostname(slug: str, hostname: str) -> bool:
         if slug in sources:
             return hostname.rstrip(".").lower() == THREAT_SOURCE_HOST
-        return original_source_allows_hostname(slug, hostname)
+        return original_source_allows_publication_hostname(slug, hostname)
 
     monkeypatch.setattr(publication_pipeline, "get_source_definition", fake_get_source_definition)
-    monkeypatch.setattr(publication_pipeline, "source_allows_hostname", fake_source_allows_hostname)
+    monkeypatch.setattr(
+        publication_pipeline,
+        "source_allows_publication_hostname",
+        fake_source_allows_publication_hostname,
+    )
 
 
 def threat_candidate(
@@ -446,13 +452,19 @@ def test_similar_noncredential_query_keys_remain_allowed() -> None:
     [
         "nvd",
         "cisa-kev",
-        "google-threat-intelligence-public-research",
         "missing-source",
     ],
 )
 def test_non_publication_or_unimplemented_sources_fail_closed(source_slug: str) -> None:
     with pytest.raises(PublicationSourceError):
         normalize_publication_candidate(candidate(source_slug=source_slug))
+
+
+def test_google_threat_publication_source_rejects_wrong_publication_host() -> None:
+    with pytest.raises(PublicationCandidateError, match="host"):
+        normalize_publication_candidate(
+            candidate(source_slug="google-threat-intelligence-public-research")
+        )
 
 
 def censys_record(
