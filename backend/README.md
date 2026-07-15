@@ -131,3 +131,22 @@ PDFs are ignored. Known-owner validation failures are audited only on that
 source run; entries without an approved authoritative owner produce sanitized
 shared-feed error evidence on both logical runs without counting as source-owned
 fetched or failed records.
+
+## Manual Anomali Cyber Watch Publication Ingestion
+
+P9-06 adds an explicitly invoked local-file metadata command:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.ingestion.anomali_publications_cli `
+    --file C:\path\to\anomali-cyber-watch.json
+```
+
+The strict versioned JSON catalogue is limited to 1 MiB, 100 publications, and
+the fixed `anomali-cyber-watch` source. URLs must use exact host
+`www.anomali.com` and literal path prefix `/blog/anomali-cyber-watch-`; titles
+must use exact prefix `Anomali Cyber Watch:`. Only operator-prepared plain-text
+metadata enters the common publication pipeline. The command makes no Anomali
+network request and does not ingest article bodies, embedded stories, IOCs,
+ThreatStream links or objects, reports, PDFs, media, downloads, general Anomali
+blog content, commercial feeds, APIs, STIX/TAXII, or STAXX. It is not connected
+to startup, scheduling, background workers, or a public endpoint.

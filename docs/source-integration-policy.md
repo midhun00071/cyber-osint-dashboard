@@ -97,6 +97,11 @@ Restrictions:
 
 - do not imply the dashboard has ingested or licensed full structured data;
 - do not store credentials, registration artifacts, or private download URLs.
+- source-specific implemented catalogues must use fixed developer-controlled
+  source, host, path, title, schema, size, record-count, and plain-text bounds;
+- a manual catalogue approval does not authorize website requests, scraping,
+  RSS discovery, article-body storage, IOC extraction, report/PDF download, or
+  commercial API/feed access.
 
 ### E. Developer Reference Only
 

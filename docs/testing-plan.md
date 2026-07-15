@@ -136,6 +136,21 @@ commit failure, session/client closure, and sanitized CLI/audit output. All
 fixtures are synthetic; the tests perform no Google, FeedBurner, Mandiant,
 VirusTotal, or other live network request.
 
+Implemented P9-06 backend coverage adds fully offline tests for the strict
+Anomali Cyber Watch local catalogue: exact versioned document and seven-field
+record schemas, duplicate JSON keys and non-standard constants, UTF-8/BOM,
+1 MiB, depth, and 100-record bounds, immutable parsed values, UNC/device/pipe,
+symlink/reparse, regular-file, descriptor identity, growth, and closure checks,
+exact Cyber Watch title and URL families, tracking and trailing-slash identity
+normalization, plain-text and encoded-markup rejection, UTC timestamp ordering,
+bounded stable author/category deduplication, source-separated SHA-256 identity,
+registry-derived `threat_report` type, create/update/unchanged outcomes,
+source-record-free identical/conflicting duplicate audits, mixed-record
+continuation, zero-record success, sanitized failures, protected clocks,
+caller-owned final commit, and whole-run rollback on database failures. All
+fixtures are synthetic; no Anomali, ThreatStream, RSS, website, API, report,
+PDF, media, download, or other network request is made.
+
 ## Frontend Testing
 
 Planned frontend tests:

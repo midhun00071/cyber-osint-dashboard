@@ -21,6 +21,7 @@ from app.ingestion.services.cisa_kev_ingestion_service import CISA_KEV_SOURCE_SL
 from app.ingestion.services.epss_enrichment_service import EPSS_SOURCE_SLUG
 from app.ingestion.services.nvd_ingestion_service import NVD_SOURCE_BASE_URL, NVD_SOURCE_SLUG
 from app.ingestion.services.rss_ingestion_service import RSS_SOURCE_SLUG
+from app.ingestion.publication_pipeline import publication_item_type_for_content_family
 from app.ingestion.source_registry import (
     AccessMethod,
     ContentFamily,
@@ -47,11 +48,11 @@ IMPLEMENTED_SLUGS = {
     "cert-eu-security-advisories",
     "censys-arc-research",
     "censys-rapid-response-advisories",
+    "anomali-cyber-watch",
     "google-threat-intelligence-public-research",
     "mandiant-public-threat-research",
 }
 PLANNED_PUBLIC_SLUGS = {
-    "anomali-cyber-watch",
     "ibm-x-force-public-research",
     "ibm-x-force-public-osint-advisories",
 }
@@ -201,6 +202,58 @@ def test_censys_sources_are_enabled_manual_json_imports(
     assert source.base_url == base_url
     assert source.authentication_required is False
     assert "local-file" in (source.rate_limit_notes or "")
+
+
+def test_anomali_cyber_watch_is_exact_enabled_manual_catalogue_source() -> None:
+    source = get_source_definition("anomali-cyber-watch")
+
+    assert source.display_name == "Anomali Cyber Watch"
+    assert source.vendor == "Anomali"
+    assert source.source_family == "Cyber Watch"
+    assert source.content_family is ContentFamily.THREAT_RESEARCH
+    assert source.access_method is AccessMethod.MANUAL_CATALOGUE
+    assert source.allowed_hosts == ("www.anomali.com",)
+    assert source.authentication_required is False
+    assert source.structured is False
+    assert source.implementation_status is ImplementationStatus.IMPLEMENTED
+    assert source.enabled is True
+    assert source.source_type == "json"
+    assert source.base_url == "https://www.anomali.com/blog/"
+    assert "local-file" in (source.rate_limit_notes or "")
+    assert "no Anomali network requests" in (source.rate_limit_notes or "")
+    assert publication_item_type_for_content_family(source.content_family) == (
+        "threat_report"
+    )
+
+
+@pytest.mark.parametrize(
+    ("hostname", "expected"),
+    [
+        ("www.anomali.com", True),
+        ("anomali.com", False),
+        ("blog.anomali.com", False),
+        ("www.anomali.com.evil.example", False),
+        ("evil-anomali.com", False),
+        ("www.anomali.com:443", False),
+        ("user@www.anomali.com", False),
+    ],
+)
+def test_anomali_registry_host_enforcement(hostname: str, expected: bool) -> None:
+    assert source_allows_hostname("anomali-cyber-watch", hostname) is expected
+    assert (
+        source_allows_publication_hostname("anomali-cyber-watch", hostname)
+        is expected
+    )
+
+
+def test_ibm_x_force_sources_remain_planned_and_disabled() -> None:
+    for slug in (
+        "ibm-x-force-public-research",
+        "ibm-x-force-public-osint-advisories",
+    ):
+        source = get_source_definition(slug)
+        assert source.implementation_status is ImplementationStatus.PLANNED
+        assert source.enabled is False
 
 
 @pytest.mark.parametrize(

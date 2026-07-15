@@ -56,6 +56,7 @@ Current focus:
   publication metadata
 - Manual, bounded Google Cloud Threat Intelligence RSS ingestion for public
   Google Threat Intelligence Group and Mandiant publication metadata
+- Manual, bounded local-JSON import for Anomali Cyber Watch publication metadata
 - Developer-controlled source registry metadata for implemented sources and
   disabled planned public-source families
 - Common publication pipeline for validating and persisting approved
@@ -91,10 +92,11 @@ FastAPI startup, API routes, or the frontend dashboard.
 P9-02 adds an immutable backend source registry for safe source metadata,
 canonical source slugs, implementation status, and developer-controlled host
 allow-lists. The registry marks NVD, FIRST EPSS, CISA KEV, CERT-EU Security
-Advisories, the two manual Censys publication families, and the two Google
-Threat Intelligence/Mandiant public RSS publication families as enabled
-implemented sources. Future public research and advisory families for Anomali
-and IBM X-Force remain disabled planned metadata.
+Advisories, the two manual Censys publication families, the two Google
+Threat Intelligence/Mandiant public RSS publication families, and the Anomali
+Cyber Watch manual catalogue as enabled implemented sources. Other Anomali
+families and the IBM X-Force public-source families remain unapproved or
+disabled planned metadata.
 
 Registry entries do not grant authorization, licensing, API access, or
 collection approval. No public source-management API, scheduler, startup
@@ -152,6 +154,15 @@ stores metadata only and does not fetch article bodies, scrape pages, ingest
 developer documentation, use Google Threat Intelligence or VirusTotal APIs, use
 credentials, submit or retrieve files/samples, extract IOCs, schedule work, run
 at startup, or expose a public ingestion endpoint.
+
+P9-06 adds a manual local-JSON catalogue for operator-prepared metadata about
+the official Anomali Cyber Watch publication series only. Accepted URLs use
+exact host `www.anomali.com` and literal path family
+`/blog/anomali-cyber-watch-`; titles use exact prefix `Anomali Cyber Watch:`.
+The application performs no Anomali network requests and does not fetch article
+bodies, embedded third-party stories, IOCs, ThreatStream objects, reports,
+PDFs, media, or downloads. General Anomali blog content, commercial feeds and
+APIs, STIX/TAXII, and STAXX are not implemented.
 
 ## Security Principles
 
@@ -295,6 +306,22 @@ only under that resolved source. If an entry cannot be attributed to an approved
 author, the command records sanitized shared-feed error evidence on both
 logical runs without incrementing either source's fetched or failed record
 counters.
+
+### Manual Anomali Cyber Watch publication import
+
+From the `backend` directory, an operator can import a bounded local JSON file:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.ingestion.anomali_publications_cli `
+    --file C:\path\to\anomali-cyber-watch.json
+```
+
+The command accepts only schema version 1 for source slug
+`anomali-cyber-watch`, with at most 100 exact seven-field records in a 1 MiB
+UTF-8 file. Metadata must be operator-prepared plain text. Authors and
+categories are bounded optional metadata and never establish source ownership.
+Execution is manual only: there is no Anomali HTTP collector, RSS endpoint,
+scraper, scheduler, startup hook, background worker, or public ingestion route.
 
 ### Read-only intelligence API
 

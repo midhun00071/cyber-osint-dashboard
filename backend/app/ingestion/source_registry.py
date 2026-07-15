@@ -449,6 +449,24 @@ _IMPLEMENTED_DEFINITIONS = (
         ),
     ),
     SourceDefinition(
+        slug="anomali-cyber-watch",
+        display_name="Anomali Cyber Watch",
+        vendor="Anomali",
+        source_family="Cyber Watch",
+        content_family=ContentFamily.THREAT_RESEARCH,
+        access_method=AccessMethod.MANUAL_CATALOGUE,
+        allowed_hosts=("www.anomali.com",),
+        authentication_required=False,
+        structured=False,
+        implementation_status=ImplementationStatus.IMPLEMENTED,
+        enabled=True,
+        source_type="json",
+        base_url="https://www.anomali.com/blog/",
+        rate_limit_notes=(
+            "Manual local-file metadata import only; no Anomali network requests."
+        ),
+    ),
+    SourceDefinition(
         slug="google-threat-intelligence-public-research",
         display_name="Google Threat Intelligence Public Research",
         vendor="Google Threat Intelligence",
@@ -491,19 +509,6 @@ _IMPLEMENTED_DEFINITIONS = (
 )
 
 _PLANNED_DEFINITIONS = (
-    SourceDefinition(
-        slug="anomali-cyber-watch",
-        display_name="Anomali Cyber Watch",
-        vendor="Anomali",
-        source_family="Cyber Watch",
-        content_family=ContentFamily.THREAT_RESEARCH,
-        access_method=AccessMethod.MANUAL_CATALOGUE,
-        allowed_hosts=("www.anomali.com",),
-        authentication_required=False,
-        structured=False,
-        implementation_status=ImplementationStatus.PLANNED,
-        enabled=False,
-    ),
     SourceDefinition(
         slug="ibm-x-force-public-research",
         display_name="IBM X-Force Public Research",

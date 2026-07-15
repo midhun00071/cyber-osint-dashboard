@@ -163,6 +163,31 @@ Mandiant publications and are not counted as source-owned fetched or failed
 records; the command records sanitized shared-feed error evidence on both
 logical runs and includes the aggregate unassigned count in each safe summary.
 
+## Anomali Cyber Watch Publications
+
+Approved manual catalogue family:
+
+- `anomali-cyber-watch`: official Cyber Watch publication pages on exact host
+  `www.anomali.com`, stored as `threat_report` items.
+
+P9-06 implements only an operator-triggered local JSON metadata catalogue. The
+file is strict UTF-8 JSON limited to 1 MiB and 100 seven-field publications.
+Every title must start exactly with `Anomali Cyber Watch:` and contain
+publication-specific text. Every canonical URL must use literal path family
+`/blog/anomali-cyber-watch-` with a non-empty article slug. Tracking parameters
+may be removed; other query strings, encoded paths, credentials, fragments,
+path parameters, alternate hosts, and general blog paths are rejected.
+
+Only operator-prepared plain-text title, summary, timestamps, authors, and
+categories are accepted. Article bodies and embedded third-party stories are
+not fetched or stored. IOCs, observables, hashes, domains, IPs, external story
+links, ThreatStream objects, reports, PDFs, media, attachments, samples, and
+downloads are not extracted or ingested. The command performs no Anomali
+network request and has no RSS, scraper, API, credentials, scheduler, startup
+hook, background worker, or public ingestion endpoint. General Anomali public
+research, ThreatStream, commercial feeds/APIs, STIX/TAXII, and STAXX remain
+unimplemented or excluded according to their recorded decisions.
+
 ## Safety Notes
 
 - Do not download malware samples.
@@ -174,25 +199,27 @@ logical runs and includes the aggregate unassigned count in each safe summary.
 ## Current Status
 
 NVD CVE ingestion, FIRST EPSS enrichment, CISA KEV enrichment, CERT-EU Security
-Advisories RSS ingestion, Censys local-file publication metadata import, and
-Google TI/Mandiant shared-RSS publication metadata ingestion are implemented as
+Advisories RSS ingestion, Censys and Anomali local-file publication metadata
+imports, and Google TI/Mandiant shared-RSS publication metadata ingestion are
+implemented as
 manual-only backend workflows with sanitized audit records.
 Other candidate sources still require explicit approval before ingestion is
 implemented.
 
 P9-02 adds a static backend source registry for developer-controlled metadata
 only. The implemented entries for NVD, FIRST EPSS, CISA KEV, CERT-EU Security
-Advisories, the two Censys manual-catalogue families, and the two Google
-TI/Mandiant public RSS publication families preserve canonical slugs and manual
-ingestion behavior. The registry also records disabled planned metadata for
-selected future public-source families, including Anomali and IBM X-Force.
+Advisories, the two Censys manual-catalogue families, the Anomali Cyber Watch
+manual catalogue, and the two Google TI/Mandiant public RSS publication
+families preserve canonical slugs and manual ingestion behavior. The registry
+also records disabled planned metadata for IBM X-Force public-source families.
 
 P9-03 adds a common publication pipeline for source adapters that already have
 safe parsed publication candidates. CERT-EU RSS now uses this shared
 persistence path. The pipeline does not approve or fetch new vendors; planned
 source registry entries remain disabled until a later task explicitly approves
 and implements an adapter. P9-05 enables only the Google TI and Mandiant public
-RSS publication source definitions. Adapters cannot supply arbitrary normalized source
+RSS publication source definitions; P9-06 enables only Anomali Cyber Watch for
+manual local-file metadata. Adapters cannot supply arbitrary normalized source
 definitions, and publication item type is derived from the registered content
 family rather than adapter input.
 
@@ -224,14 +251,16 @@ only:
 - Mandiant / Google Security
 - IBM X-Force
 
-Only Censys's bounded manual publication-metadata catalogue and the bounded
-Google TI/Mandiant public RSS publication-metadata adapter are implemented from
-this proposed group; no live Censys collection exists. The assessment separates
+Only Censys's and Anomali Cyber Watch's bounded manual publication-metadata
+catalogues and the bounded Google TI/Mandiant public RSS publication-metadata
+adapter are implemented from this proposed group; no live Censys or Anomali
+collection exists. The assessment separates
 public publication metadata, manual catalogue candidates, developer reference
 material, standardized STIX/TAXII concepts, and authorized structured API
 enrichment. Any future implementation must complete source onboarding,
 security review, and current access/licensing verification before live
-collection or enrichment is added beyond the approved P9-05 shared RSS feed.
+collection or enrichment is added beyond the approved P9-05 shared RSS feed and
+P9-06 offline Cyber Watch catalogue.
 
 Planning references:
 
