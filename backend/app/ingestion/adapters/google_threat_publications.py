@@ -48,6 +48,36 @@ _AUTHOR_TO_SOURCE_SLUG = {
     MANDIANT_AUTHOR_NAME: MANDIANT_THREAT_RESEARCH_SOURCE_SLUG,
 }
 
+_SKIPPED_CONTENT_TAGS = frozenset(
+    {"script", "style", "iframe", "object", "embed", "svg", "math"}
+)
+_NON_VOID_SKIPPED_CONTENT_TAGS = frozenset(
+    {"script", "style", "iframe", "object"}
+)
+_START_TAG_CONTENT = re.compile(
+    r"""
+    (?P<name>[A-Za-z][A-Za-z0-9:_-]*)
+    (?:
+        \s+
+        [^\s\"'`=<>/]+
+        (?:
+            \s*=\s*
+            (?:\"[^\"]*\"|'[^']*'|[^\s\"'`=<>]+)
+        )?
+    )*
+    \s*(?P<self_closing>/)?\s*
+    \Z
+    """,
+    re.VERBOSE,
+)
+_END_TAG_CONTENT = re.compile(
+    r"\s*/\s*(?P<name>[A-Za-z][A-Za-z0-9:_-]*)\s*\Z"
+)
+_DECLARATION_CONTENT = re.compile(
+    r"(?:DOCTYPE\s+[^<>]+|\[CDATA\[[^<>]*\]\])\Z",
+    re.IGNORECASE,
+)
+
 
 class GoogleThreatPublicationError(ValueError):
     """The Google/Mandiant publication feed could not be processed safely."""
@@ -444,9 +474,15 @@ def _optional_text(value: object, maximum_length: int) -> str | None:
 
 def _plain_text(value: str) -> str:
     value = _unescape_repeated(value)
+    _validate_markup_before_parsing(value)
     parser = _PlainTextParser()
-    parser.feed(value)
-    parser.close()
+    try:
+        parser.feed(value)
+        parser.close()
+    except (AssertionError, ValueError) as exc:
+        raise GoogleThreatPublicationRecordError(
+            "The Google Threat publication text contains unsupported markup."
+        ) from exc
     text = re.sub(r"\s+", " ", _unescape_repeated(parser.text)).strip()
     if _contains_residual_markup(text):
         raise GoogleThreatPublicationRecordError(
@@ -469,6 +505,104 @@ def _contains_residual_markup(value: str) -> bool:
     return bool(re.search(r"<\s*/?\s*[A-Za-z][^>]*>|<\s*[/!?]?\s*[A-Za-z]", value))
 
 
+def _validate_markup_before_parsing(value: str) -> None:
+    """Reject malformed tag-like input before HTMLParser can discard it."""
+
+    active_tags: list[str] = []
+    position = 0
+    while position < len(value):
+        opening = value.find("<", position)
+        if opening == -1:
+            break
+
+        if value.startswith("<!--", opening):
+            closing = value.find("-->", opening + 4)
+            if closing == -1 or "--" in value[opening + 4 : closing]:
+                _raise_unsupported_markup()
+            position = closing + 3
+            continue
+
+        if value.startswith("<?", opening):
+            closing = value.find("?>", opening + 2)
+            if closing == -1 or not value[opening + 2 : closing].strip():
+                _raise_unsupported_markup()
+            position = closing + 2
+            continue
+
+        if value.startswith("<!", opening):
+            closing = _find_tag_end(value, opening + 2)
+            if closing is None or not _DECLARATION_CONTENT.fullmatch(
+                value[opening + 2 : closing]
+            ):
+                _raise_unsupported_markup()
+            position = closing + 1
+            continue
+
+        prefix = value[opening + 1 : opening + 2]
+        closing_name = value[opening + 2 :].lstrip() if prefix == "/" else ""
+        is_start_tag = prefix.isascii() and prefix.isalpha()
+        is_end_tag = bool(
+            closing_name
+            and closing_name[0].isascii()
+            and closing_name[0].isalpha()
+        )
+        if not is_start_tag and not is_end_tag:
+            position = opening + 1
+            continue
+
+        closing = _find_tag_end(value, opening + 1)
+        if closing is None:
+            _raise_unsupported_markup()
+        content = value[opening + 1 : closing]
+
+        if content.startswith("/"):
+            match = _END_TAG_CONTENT.fullmatch(content)
+            if match is None:
+                _raise_unsupported_markup()
+            tag = match.group("name").lower()
+            if tag in _SKIPPED_CONTENT_TAGS:
+                if not active_tags or active_tags[-1] != tag:
+                    _raise_unsupported_markup()
+                active_tags.pop()
+        else:
+            match = _START_TAG_CONTENT.fullmatch(content)
+            if match is None:
+                _raise_unsupported_markup()
+            tag = match.group("name").lower()
+            is_self_closing = match.group("self_closing") is not None
+            if tag in _NON_VOID_SKIPPED_CONTENT_TAGS and is_self_closing:
+                _raise_unsupported_markup()
+            if tag in _SKIPPED_CONTENT_TAGS and not is_self_closing:
+                active_tags.append(tag)
+        position = closing + 1
+
+    if active_tags:
+        _raise_unsupported_markup()
+
+
+def _find_tag_end(value: str, position: int) -> int | None:
+    quote: str | None = None
+    for index in range(position, len(value)):
+        character = value[index]
+        if quote is not None:
+            if character == quote:
+                quote = None
+            continue
+        if character in {'"', "'"}:
+            quote = character
+        elif character == "<":
+            return None
+        elif character == ">":
+            return index
+    return None
+
+
+def _raise_unsupported_markup() -> None:
+    raise GoogleThreatPublicationRecordError(
+        "The Google Threat publication text contains unsupported markup."
+    )
+
+
 def _validate_safe_text(value: str) -> None:
     if any(
         ord(character) < 0x20
@@ -489,17 +623,45 @@ class _PlainTextParser(HTMLParser):
 
     @property
     def text(self) -> str:
-        return " ".join(self._parts)
+        return "".join(self._parts)
 
     def handle_starttag(self, tag: str, attrs: object) -> None:
         del attrs
-        if tag.lower() in {"script", "style", "iframe", "object", "embed"}:
+        if tag.lower() in _SKIPPED_CONTENT_TAGS:
+            if not self._skip_depth:
+                self._parts.append(" ")
             self._skip_depth += 1
+        elif not self._skip_depth:
+            self._parts.append(" ")
 
     def handle_endtag(self, tag: str) -> None:
-        if tag.lower() in {"script", "style", "iframe", "object", "embed"} and self._skip_depth:
+        if tag.lower() in _SKIPPED_CONTENT_TAGS and self._skip_depth:
             self._skip_depth -= 1
+            if not self._skip_depth:
+                self._parts.append(" ")
+        elif not self._skip_depth:
+            self._parts.append(" ")
 
     def handle_data(self, data: str) -> None:
         if not self._skip_depth:
             self._parts.append(data)
+
+    def handle_comment(self, data: str) -> None:
+        del data
+        if not self._skip_depth:
+            self._parts.append(" ")
+
+    def handle_decl(self, decl: str) -> None:
+        del decl
+        if not self._skip_depth:
+            self._parts.append(" ")
+
+    def unknown_decl(self, data: str) -> None:
+        del data
+        if not self._skip_depth:
+            self._parts.append(" ")
+
+    def handle_pi(self, data: str) -> None:
+        del data
+        if not self._skip_depth:
+            self._parts.append(" ")

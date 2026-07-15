@@ -327,6 +327,144 @@ def test_encoded_or_malformed_markup_is_removed_or_rejected_safely() -> None:
         adapt_google_threat_publication(entry(title="Safe &lt;script"))
 
 
+@pytest.mark.parametrize(
+    ("summary", "expected"),
+    [
+        ("&lt;p&gt;Safe&lt;/p&gt;", "Safe"),
+        ("&lt;script&gt;secret()&lt;/script&gt;Safe", "Safe"),
+        ("1 < 2", "1 < 2"),
+        ("version <= 3", "version <= 3"),
+        ("A > B", "A > B"),
+        ("Plain text without markup", "Plain text without markup"),
+        ("<p><strong>Safe formatting</strong></p>", "Safe formatting"),
+    ],
+)
+def test_plain_text_accepts_complete_markup_and_comparisons(
+    summary: str,
+    expected: str,
+) -> None:
+    candidate = adapt_google_threat_publication(entry(summary=summary))
+
+    assert candidate.summary == expected
+
+
+def test_active_and_non_text_markup_is_removed_completely() -> None:
+    candidate = adapt_google_threat_publication(
+        entry(
+            summary=(
+                "Before<!-- comment --><style>.secret{display:none}</style>"
+                "<iframe>iframe secret</iframe><object>object secret</object>"
+                '<embed src="secret"/><svg><text>svg secret</text></svg>'
+                "<math><mi>math secret</mi></math><?feed safe?>"
+                "<!DOCTYPE html>After"
+            )
+        )
+    )
+
+    assert candidate.summary == "Before After"
+    assert "secret" not in candidate.summary
+
+
+@pytest.mark.parametrize(
+    "summary",
+    [
+        "<script/>secret()",
+        "<script />secret()",
+        "<SCRIPT/>secret()",
+        "<script / >secret()",
+        '<script src="x"/>token=secret',
+        "<style/>body{display:none}",
+        '<style type="text/css"/>password=secret',
+        "<iframe/>fallback secret",
+        "<iframe sandbox/>fallback secret",
+        "<object/>fallback secret",
+        '<object data="secret"/>fallback secret',
+        "&lt;script/&gt;secret()",
+        "&lt;style/&gt;body{display:none}",
+        "&lt;iframe/&gt;fallback secret",
+        "&lt;object/&gt;fallback secret",
+        "&amp;lt;script/&amp;gt;secret()",
+        "&amp;amp;lt;style/&amp;amp;gt;body{display:none}",
+    ],
+)
+def test_self_closing_non_void_active_containers_are_rejected_without_disclosure(
+    summary: str,
+) -> None:
+    with pytest.raises(GoogleThreatPublicationRecordError) as exc_info:
+        adapt_google_threat_publication(entry(summary=summary))
+
+    message = str(exc_info.value)
+    assert summary not in message
+    assert "secret" not in message.lower()
+    assert "token" not in message.lower()
+    assert "password" not in message.lower()
+
+
+@pytest.mark.parametrize(
+    "summary",
+    [
+        "<script>secret()</script>Safe",
+        "<style>body{display:none}</style>Safe",
+        "<iframe>fallback secret</iframe>Safe",
+        "<object>fallback secret</object>Safe",
+        "<iframe><object>nested secret</object></iframe>Safe",
+    ],
+)
+def test_paired_active_containers_are_removed_safely(summary: str) -> None:
+    candidate = adapt_google_threat_publication(entry(summary=summary))
+
+    assert candidate.summary == "Safe"
+
+
+@pytest.mark.parametrize(
+    "summary",
+    [
+        "Before<br/>After",
+        "Before<hr />After",
+        'Before<embed src="ignored"/>After',
+        "Before<svg/>After",
+        "Before<math/>After",
+    ],
+)
+def test_safe_self_closing_markup_behavior_is_preserved(summary: str) -> None:
+    candidate = adapt_google_threat_publication(entry(summary=summary))
+
+    assert candidate.summary == "Before After"
+
+
+@pytest.mark.parametrize(
+    "malformed_text",
+    [
+        "Safe &lt;script",
+        "Safe &lt;/script",
+        "Safe &lt;p",
+        "Safe &lt;div class=&quot;x&quot;",
+        "Safe <script",
+        "Safe </script",
+        "Safe <p",
+        'Safe <div class="x"',
+        "Safe &amp;lt;script",
+        "Safe &amp;amp;lt;div class=&amp;quot;x&amp;quot;",
+        "Safe <script>api_key=super-secret",
+        'Safe <iframe src="token=super-secret"',
+        "Safe <!-- token=super-secret",
+        "Safe <!DOCTYPE token=super-secret",
+        "Safe <?target token=super-secret",
+        "Safe text then <strong data-token='super-secret'",
+    ],
+)
+def test_malformed_markup_is_rejected_without_disclosure(
+    malformed_text: str,
+) -> None:
+    with pytest.raises(GoogleThreatPublicationRecordError) as exc_info:
+        adapt_google_threat_publication(entry(title=malformed_text))
+
+    message = str(exc_info.value)
+    assert malformed_text not in message
+    assert "secret" not in message.lower()
+    assert "token" not in message.lower()
+
+
 def test_summary_uses_only_summary_or_description_not_feed_content() -> None:
     data = entry(summary="")
     data["description"] = ""
