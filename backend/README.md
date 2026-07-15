@@ -150,3 +150,22 @@ network request and does not ingest article bodies, embedded stories, IOCs,
 ThreatStream links or objects, reports, PDFs, media, downloads, general Anomali
 blog content, commercial feeds, APIs, STIX/TAXII, or STAXX. It is not connected
 to startup, scheduling, background workers, or a public endpoint.
+
+## Manual IBM X-Force Publication Ingestion
+
+P9-07 adds one explicit command for two document-owned, strictly separate local
+catalogue sources:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.ingestion.ibm_x_force_publications_cli `
+    --file C:\path\to\ibm-x-force-publications.json
+```
+
+Research metadata accepts only exact `www.ibm.com/think/x-force/<slug>` article
+URLs. Public OSINT advisory metadata accepts only exact
+`exchange.xforce.ibmcloud.com/osint/guid%3A<32-hex>` URLs. The JSON document,
+not a CLI option, owns the fixed source slug. Both catalogues are metadata-only,
+1 MiB/100-record bounded, and manually invoked. No IBM website or Exchange
+request, scraper, guest browser, IBMid login, API credential, indicator or
+reputation lookup, report/PDF download, STIX/TAXII import, scheduler, startup
+hook, worker, or public upload route is added.

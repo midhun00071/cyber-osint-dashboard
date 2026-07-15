@@ -188,6 +188,28 @@ hook, background worker, or public ingestion endpoint. General Anomali public
 research, ThreatStream, commercial feeds/APIs, STIX/TAXII, and STAXX remain
 unimplemented or excluded according to their recorded decisions.
 
+## IBM X-Force Public Publications
+
+P9-07 implements two source-separated manual metadata catalogues:
+
+- `ibm-x-force-public-research`: exact
+  `https://www.ibm.com/think/x-force/<lower-kebab-slug>` articles, stored as
+  `threat_report` items.
+- `ibm-x-force-public-osint-advisories`: exact
+  `https://exchange.xforce.ibmcloud.com/osint/guid%3A<32-lowercase-hex>` pages,
+  stored as `security_advisory` items.
+
+Each versioned UTF-8 JSON document names exactly one source and contains at most
+100 exact seven-field metadata records in 1 MiB. The OSINT GUID separator and
+hex case are canonicalized without following the URL. Only plain-text title,
+summary, timestamps, authors, and categories are accepted.
+
+No IBM or X-Force Exchange network request is made. Guest-readable pages do not
+authorize scraping, bulk collection, API access, IBMid automation, indicators,
+reputation data, collections, comments, structured threat objects, paid-tier
+data, Threat Intelligence Index/report/PDF/attachment downloads, or STIX/TAXII.
+The general X-Force Exchange platform is not marked implemented.
+
 ## Safety Notes
 
 - Do not download malware samples.
@@ -199,8 +221,9 @@ unimplemented or excluded according to their recorded decisions.
 ## Current Status
 
 NVD CVE ingestion, FIRST EPSS enrichment, CISA KEV enrichment, CERT-EU Security
-Advisories RSS ingestion, Censys and Anomali local-file publication metadata
-imports, and Google TI/Mandiant shared-RSS publication metadata ingestion are
+Advisories RSS ingestion, Censys, Anomali, and IBM X-Force local-file
+publication metadata imports, and Google TI/Mandiant shared-RSS publication
+metadata ingestion are
 implemented as
 manual-only backend workflows with sanitized audit records.
 Other candidate sources still require explicit approval before ingestion is
@@ -209,9 +232,9 @@ implemented.
 P9-02 adds a static backend source registry for developer-controlled metadata
 only. The implemented entries for NVD, FIRST EPSS, CISA KEV, CERT-EU Security
 Advisories, the two Censys manual-catalogue families, the Anomali Cyber Watch
-manual catalogue, and the two Google TI/Mandiant public RSS publication
-families preserve canonical slugs and manual ingestion behavior. The registry
-also records disabled planned metadata for IBM X-Force public-source families.
+manual catalogue, both IBM X-Force manual catalogue families, and the two
+Google TI/Mandiant public RSS publication families preserve canonical slugs and
+manual ingestion behavior.
 
 P9-03 adds a common publication pipeline for source adapters that already have
 safe parsed publication candidates. CERT-EU RSS now uses this shared
@@ -219,7 +242,8 @@ persistence path. The pipeline does not approve or fetch new vendors; planned
 source registry entries remain disabled until a later task explicitly approves
 and implements an adapter. P9-05 enables only the Google TI and Mandiant public
 RSS publication source definitions; P9-06 enables only Anomali Cyber Watch for
-manual local-file metadata. Adapters cannot supply arbitrary normalized source
+manual local-file metadata; P9-07 enables only the two exact IBM X-Force manual
+metadata families. Adapters cannot supply arbitrary normalized source
 definitions, and publication item type is derived from the registered content
 family rather than adapter input.
 

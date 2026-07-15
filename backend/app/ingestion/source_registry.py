@@ -467,6 +467,43 @@ _IMPLEMENTED_DEFINITIONS = (
         ),
     ),
     SourceDefinition(
+        slug="ibm-x-force-public-research",
+        display_name="IBM X-Force Public Research",
+        vendor="IBM X-Force",
+        source_family="X-Force research",
+        content_family=ContentFamily.THREAT_RESEARCH,
+        access_method=AccessMethod.MANUAL_CATALOGUE,
+        allowed_hosts=("www.ibm.com",),
+        authentication_required=False,
+        structured=False,
+        implementation_status=ImplementationStatus.IMPLEMENTED,
+        enabled=True,
+        source_type="json",
+        base_url="https://www.ibm.com/think/x-force/",
+        rate_limit_notes=(
+            "Manual local-file metadata import only; no IBM network requests."
+        ),
+    ),
+    SourceDefinition(
+        slug="ibm-x-force-public-osint-advisories",
+        display_name="IBM X-Force Public OSINT Advisories",
+        vendor="IBM X-Force",
+        source_family="Public OSINT advisories",
+        content_family=ContentFamily.PUBLIC_OSINT_ADVISORY,
+        access_method=AccessMethod.MANUAL_CATALOGUE,
+        allowed_hosts=("exchange.xforce.ibmcloud.com",),
+        authentication_required=False,
+        structured=False,
+        implementation_status=ImplementationStatus.IMPLEMENTED,
+        enabled=True,
+        source_type="json",
+        base_url="https://exchange.xforce.ibmcloud.com/osint/",
+        rate_limit_notes=(
+            "Manual local-file metadata import only; no X-Force Exchange network "
+            "requests, login, guest automation, or API access."
+        ),
+    ),
+    SourceDefinition(
         slug="google-threat-intelligence-public-research",
         display_name="Google Threat Intelligence Public Research",
         vendor="Google Threat Intelligence",
@@ -508,33 +545,6 @@ _IMPLEMENTED_DEFINITIONS = (
     ),
 )
 
-_PLANNED_DEFINITIONS = (
-    SourceDefinition(
-        slug="ibm-x-force-public-research",
-        display_name="IBM X-Force Public Research",
-        vendor="IBM X-Force",
-        source_family="X-Force research",
-        content_family=ContentFamily.THREAT_RESEARCH,
-        access_method=AccessMethod.MANUAL_CATALOGUE,
-        allowed_hosts=("www.ibm.com",),
-        authentication_required=False,
-        structured=False,
-        implementation_status=ImplementationStatus.PLANNED,
-        enabled=False,
-    ),
-    SourceDefinition(
-        slug="ibm-x-force-public-osint-advisories",
-        display_name="IBM X-Force Public OSINT Advisories",
-        vendor="IBM X-Force",
-        source_family="Public OSINT advisories",
-        content_family=ContentFamily.PUBLIC_OSINT_ADVISORY,
-        access_method=AccessMethod.MANUAL_CATALOGUE,
-        allowed_hosts=("www.ibm.com", "exchange.xforce.ibmcloud.com"),
-        authentication_required=False,
-        structured=False,
-        implementation_status=ImplementationStatus.PLANNED,
-        enabled=False,
-    ),
-)
+_PLANNED_DEFINITIONS: tuple[SourceDefinition, ...] = ()
 
 _REGISTRY = build_source_registry(_IMPLEMENTED_DEFINITIONS + _PLANNED_DEFINITIONS)

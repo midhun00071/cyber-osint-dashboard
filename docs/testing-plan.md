@@ -151,6 +151,20 @@ caller-owned final commit, and whole-run rollback on database failures. All
 fixtures are synthetic; no Anomali, ThreatStream, RSS, website, API, report,
 PDF, media, download, or other network request is made.
 
+Implemented P9-07 backend coverage adds fully offline tests for two strict IBM
+X-Force local catalogues: exact document/source separation, immutable policies,
+UTF-8/BOM, duplicate-key, constant, depth, 1 MiB, 100-record, UNC/device/pipe,
+symlink/reparse, descriptor identity/growth/closure, and regular-file bounds;
+exact IBM Think `/think/x-force/<slug>` research URLs; exact Exchange
+`/osint/guid%3A<32-hex>` advisory URLs; tracking, slash, separator, host,
+credential, and query rejection; plain-text/entity/Unicode/list/timestamp
+validation; source-separated SHA-256 identity; pipeline-derived item types;
+duplicate/conflict audit accounting; mixed/empty runs; nested transactions;
+final commit, rollback, and close failure handling; and sanitized CLI output.
+All fixtures are synthetic. No IBM website, X-Force Exchange, API, login,
+guest-browser, report/PDF, indicator/reputation, STIX/TAXII, or external network
+request occurs.
+
 ## Frontend Testing
 
 Planned frontend tests:

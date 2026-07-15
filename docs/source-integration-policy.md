@@ -102,6 +102,10 @@ Restrictions:
 - a manual catalogue approval does not authorize website requests, scraping,
   RSS discovery, article-body storage, IOC extraction, report/PDF download, or
   commercial API/feed access.
+- the implemented IBM X-Force manual catalogues authorize only operator-provided
+  metadata for exact public research and OSINT advisory URL families; they do
+  not authorize IBMid or guest automation, Exchange APIs, indicators,
+  reputation data, paid tiers, report downloads, or STIX/TAXII.
 
 ### E. Developer Reference Only
 

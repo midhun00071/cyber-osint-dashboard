@@ -192,6 +192,9 @@ implemented Censys behavior is the P9-04 offline publication-metadata import,
 the only implemented Google TI/Mandiant behavior is the P9-05 bounded manual
 shared-RSS publication metadata adapter, and the only implemented Anomali
 behavior is the P9-06 offline Cyber Watch metadata catalogue described above.
+P9-07 implements only two source-separated IBM X-Force local metadata
+catalogues; it does not implement IBM network collection or the general X-Force
+Exchange platform.
 
 1. Source assessment
 2. Source registry (P9-02 metadata foundation implemented)
@@ -199,14 +202,15 @@ behavior is the P9-06 offline Cyber Watch metadata catalogue described above.
 4. Censys public research adapter (P9-04 implemented)
 5. Google TI/Mandiant public publication RSS adapter (P9-05 implemented)
 6. Anomali Cyber Watch manual publication catalogue (P9-06 implemented)
-7. Indicator model
-8. IOC extraction and relationships
-9. Generic STIX/TAXII importer
-10. Threat entity model
-11. Censys exposure enrichment
-12. Commercial API assessment
-13. Threat-intelligence frontend views
-14. Full integration/security review
+7. IBM X-Force research and OSINT advisory catalogues (P9-07 implemented)
+8. Indicator model
+9. IOC extraction and relationships
+10. Generic STIX/TAXII importer
+11. Threat entity model
+12. Censys exposure enrichment
+13. Commercial API assessment
+14. Threat-intelligence frontend views
+15. Full integration/security review
 
 Source expansion must follow [source-integration-policy.md](source-integration-policy.md)
 and the vendor family decisions in
@@ -222,12 +226,17 @@ P9-04 manual local-file importer. Google Threat Intelligence and Mandiant public
 threat-research definitions are enabled only for the P9-05 manual shared RSS
 publication adapter. The Anomali Cyber Watch definition is enabled only for the
 P9-06 manual local-file catalogue; other Anomali families are not implemented.
-Planned IBM X-Force entries remain disabled metadata only. No registry entry authorizes licensing, API access,
+The two IBM X-Force definitions are enabled only for P9-07 manual local-file
+metadata: exact IBM Think X-Force research pages and exact Exchange public OSINT
+advisory GUID pages. The general Exchange platform remains unimplemented. No
+registry entry authorizes licensing, API access,
 scraping, IOC extraction, or storage of upstream report bodies. Public
 publication hosts and developer documentation hosts are separate source
 families; documentation hosts are not automatically allowed for public
 threat-research definitions. P9-05 is implemented as metadata-only RSS
-publication ingestion, and P9-06 does not approve live Anomali collection.
+publication ingestion, P9-06 does not approve live Anomali collection, and
+P9-07 does not approve IBM scraping, IBMid/guest automation, report downloads,
+indicator/reputation ingestion, paid tiers, or STIX/TAXII.
 
 ## Current Status
 

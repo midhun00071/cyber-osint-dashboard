@@ -49,13 +49,12 @@ IMPLEMENTED_SLUGS = {
     "censys-arc-research",
     "censys-rapid-response-advisories",
     "anomali-cyber-watch",
+    "ibm-x-force-public-research",
+    "ibm-x-force-public-osint-advisories",
     "google-threat-intelligence-public-research",
     "mandiant-public-threat-research",
 }
-PLANNED_PUBLIC_SLUGS = {
-    "ibm-x-force-public-research",
-    "ibm-x-force-public-osint-advisories",
-}
+PLANNED_PUBLIC_SLUGS: set[str] = set()
 
 
 def valid_definition(slug: str = "example-source") -> SourceDefinition:
@@ -246,14 +245,81 @@ def test_anomali_registry_host_enforcement(hostname: str, expected: bool) -> Non
     )
 
 
-def test_ibm_x_force_sources_remain_planned_and_disabled() -> None:
-    for slug in (
-        "ibm-x-force-public-research",
-        "ibm-x-force-public-osint-advisories",
-    ):
-        source = get_source_definition(slug)
-        assert source.implementation_status is ImplementationStatus.PLANNED
-        assert source.enabled is False
+@pytest.mark.parametrize(
+    ("slug", "content_family", "host", "base_url", "item_type"),
+    [
+        (
+            "ibm-x-force-public-research",
+            ContentFamily.THREAT_RESEARCH,
+            "www.ibm.com",
+            "https://www.ibm.com/think/x-force/",
+            "threat_report",
+        ),
+        (
+            "ibm-x-force-public-osint-advisories",
+            ContentFamily.PUBLIC_OSINT_ADVISORY,
+            "exchange.xforce.ibmcloud.com",
+            "https://exchange.xforce.ibmcloud.com/osint/",
+            "security_advisory",
+        ),
+    ],
+)
+def test_ibm_x_force_sources_are_exact_enabled_manual_catalogues(
+    slug: str,
+    content_family: ContentFamily,
+    host: str,
+    base_url: str,
+    item_type: str,
+) -> None:
+    source = get_source_definition(slug)
+
+    assert source.vendor == "IBM X-Force"
+    assert source.content_family is content_family
+    assert source.access_method is AccessMethod.MANUAL_CATALOGUE
+    assert source.allowed_hosts == (host,)
+    assert source.authentication_required is False
+    assert source.structured is False
+    assert source.implementation_status is ImplementationStatus.IMPLEMENTED
+    assert source.enabled is True
+    assert source.source_type == "json"
+    assert source.base_url == base_url
+    assert "local-file" in (source.rate_limit_notes or "")
+    assert publication_item_type_for_content_family(content_family) == item_type
+
+
+@pytest.mark.parametrize(
+    ("slug", "hostname", "expected"),
+    [
+        ("ibm-x-force-public-research", "www.ibm.com", True),
+        ("ibm-x-force-public-research", "ibm.com", False),
+        ("ibm-x-force-public-research", "research.ibm.com", False),
+        ("ibm-x-force-public-research", "www.ibm.com.evil.example", False),
+        (
+            "ibm-x-force-public-osint-advisories",
+            "exchange.xforce.ibmcloud.com",
+            True,
+        ),
+        ("ibm-x-force-public-osint-advisories", "www.ibm.com", False),
+        ("ibm-x-force-public-osint-advisories", "ibmcloud.com", False),
+        (
+            "ibm-x-force-public-osint-advisories",
+            "api.xforce.ibmcloud.com",
+            False,
+        ),
+        (
+            "ibm-x-force-public-osint-advisories",
+            "exchange.xforce.ibmcloud.com.evil.example",
+            False,
+        ),
+    ],
+)
+def test_ibm_x_force_registry_uses_exact_hosts(
+    slug: str,
+    hostname: str,
+    expected: bool,
+) -> None:
+    assert source_allows_hostname(slug, hostname) is expected
+    assert source_allows_publication_hostname(slug, hostname) is expected
 
 
 @pytest.mark.parametrize(
