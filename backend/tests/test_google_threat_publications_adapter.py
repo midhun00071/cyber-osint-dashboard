@@ -317,6 +317,70 @@ def test_title_required_and_text_controls_are_rejected() -> None:
         adapt_google_threat_publication(entry(title="T" * 501))
 
 
+@pytest.mark.parametrize(
+    ("summary", "expected"),
+    [
+        ("Before\tAfter", "Before After"),
+        ("Before\nAfter", "Before After"),
+        ("Before\rAfter", "Before After"),
+        ("Before\t\t\n\n\r\rAfter", "Before After"),
+    ],
+    ids=["tab", "line-feed", "carriage-return", "mixed-runs"],
+)
+def test_xml_whitespace_in_summary_is_accepted_and_collapsed(
+    summary: str,
+    expected: str,
+) -> None:
+    candidate = adapt_google_threat_publication(entry(summary=summary))
+
+    assert candidate.summary == expected
+
+
+def test_xml_whitespace_in_title_is_accepted_and_collapsed() -> None:
+    candidate = adapt_google_threat_publication(
+        entry(title="Google\t\n\rThreat Intelligence report")
+    )
+
+    assert candidate.canonical_title == "Google Threat Intelligence report"
+
+
+@pytest.mark.parametrize(
+    "prohibited_character",
+    ["\x00", "\x08", "\x0b", "\x0c", "\x1f", "\x7f", "\ud800"],
+    ids=[
+        "null",
+        "backspace",
+        "vertical-tab",
+        "form-feed",
+        "unit-separator",
+        "del",
+        "surrogate",
+    ],
+)
+def test_prohibited_text_characters_remain_rejected_without_disclosure(
+    prohibited_character: str,
+) -> None:
+    private_source_text = f"private{prohibited_character}source"
+
+    with pytest.raises(GoogleThreatPublicationRecordError) as exc_info:
+        adapt_google_threat_publication(entry(summary=private_source_text))
+
+    assert exc_info.type is GoogleThreatPublicationRecordError
+    assert private_source_text not in str(exc_info.value)
+    assert "private" not in str(exc_info.value).lower()
+
+
+def test_xml_whitespace_does_not_mask_a_prohibited_control_character() -> None:
+    private_source_text = "safe\t\n\rprivate\x0bsource"
+
+    with pytest.raises(GoogleThreatPublicationRecordError) as exc_info:
+        adapt_google_threat_publication(entry(summary=private_source_text))
+
+    assert exc_info.type is GoogleThreatPublicationRecordError
+    assert private_source_text not in str(exc_info.value)
+    assert "private" not in str(exc_info.value).lower()
+
+
 def test_encoded_or_malformed_markup_is_removed_or_rejected_safely() -> None:
     candidate = adapt_google_threat_publication(
         entry(summary="&lt;p&gt;Safe&lt;/p&gt;&lt;script&gt;secret()&lt;/script&gt;")

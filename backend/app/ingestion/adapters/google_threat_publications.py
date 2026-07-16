@@ -77,6 +77,7 @@ _DECLARATION_CONTENT = re.compile(
     r"(?:DOCTYPE\s+[^<>]+|\[CDATA\[[^<>]*\]\])\Z",
     re.IGNORECASE,
 )
+_XML_WHITESPACE_CODEPOINTS = frozenset({0x09, 0x0A, 0x0D})
 
 
 class GoogleThreatPublicationError(ValueError):
@@ -604,15 +605,19 @@ def _raise_unsupported_markup() -> None:
 
 
 def _validate_safe_text(value: str) -> None:
-    if any(
-        ord(character) < 0x20
-        or ord(character) == 0x7F
-        or 0xD800 <= ord(character) <= 0xDFFF
-        for character in value
-    ):
+    if any(_is_unsupported_text_character(character) for character in value):
         raise GoogleThreatPublicationRecordError(
             "The Google Threat publication text contains unsupported characters."
         )
+
+
+def _is_unsupported_text_character(character: str) -> bool:
+    codepoint = ord(character)
+    return (
+        (codepoint < 0x20 and codepoint not in _XML_WHITESPACE_CODEPOINTS)
+        or codepoint == 0x7F
+        or 0xD800 <= codepoint <= 0xDFFF
+    )
 
 
 class _PlainTextParser(HTMLParser):
