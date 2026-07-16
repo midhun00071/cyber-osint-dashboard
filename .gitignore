@@ -86,3 +86,6 @@ temp/
 
 # TypeScript incremental build cache
 *.tsbuildinfo
+
+# Next.js generated TypeScript declarations
+frontend/next-env.d.ts
