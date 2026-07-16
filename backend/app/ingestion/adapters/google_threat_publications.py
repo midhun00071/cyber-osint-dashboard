@@ -385,7 +385,7 @@ def _canonical_google_threat_url(source_slug: str, values: list[object]) -> str:
 
 def _entry_summary(entry: dict[str, Any]) -> str | None:
     for key in ("summary", "description"):
-        text = _optional_text(entry.get(key), MAX_PUBLICATION_SUMMARY_LENGTH)
+        text = _optional_summary_text(entry.get(key))
         if text:
             return text
     return None
@@ -471,6 +471,15 @@ def _optional_text(value: object, maximum_length: int) -> str | None:
         )
     _validate_safe_text(text)
     return text or None
+
+
+def _optional_summary_text(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    _validate_safe_text(value)
+    text = _plain_text(value)
+    _validate_safe_text(text)
+    return text[:MAX_PUBLICATION_SUMMARY_LENGTH] or None
 
 
 def _plain_text(value: str) -> str:

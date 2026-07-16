@@ -19,7 +19,11 @@ from app.ingestion.adapters.google_threat_publications import (
     derive_google_threat_external_id,
     parse_google_threat_feed_entries,
 )
-from app.ingestion.publication_pipeline import PublicationCandidateError
+from app.ingestion.publication_pipeline import (
+    MAX_PUBLICATION_SUMMARY_LENGTH,
+    MAX_PUBLICATION_TITLE_LENGTH,
+    PublicationCandidateError,
+)
 
 
 def entry(
@@ -379,6 +383,65 @@ def test_xml_whitespace_does_not_mask_a_prohibited_control_character() -> None:
     assert exc_info.type is GoogleThreatPublicationRecordError
     assert private_source_text not in str(exc_info.value)
     assert "private" not in str(exc_info.value).lower()
+
+
+def test_oversized_normalized_summary_is_truncated_to_shared_limit() -> None:
+    normalized_summary = "A" * (MAX_PUBLICATION_SUMMARY_LENGTH + 25)
+
+    candidate = adapt_google_threat_publication(entry(summary=normalized_summary))
+
+    assert candidate.summary == normalized_summary[:MAX_PUBLICATION_SUMMARY_LENGTH]
+    assert len(candidate.summary) == MAX_PUBLICATION_SUMMARY_LENGTH
+
+
+def test_summary_truncation_follows_markup_and_whitespace_normalization() -> None:
+    first = "A" * (MAX_PUBLICATION_SUMMARY_LENGTH - 10)
+    summary = f"<p>{first}</p>\n\n\t<p>{'B' * 20}</p>"
+
+    candidate = adapt_google_threat_publication(entry(summary=summary))
+
+    assert candidate.summary == first + " " + ("B" * 9)
+    assert len(candidate.summary) == MAX_PUBLICATION_SUMMARY_LENGTH
+    assert "\n" not in candidate.summary
+    assert "\t" not in candidate.summary
+
+
+def test_malformed_markup_beyond_summary_limit_remains_rejected() -> None:
+    summary = "A" * MAX_PUBLICATION_SUMMARY_LENGTH + "Safe <strong"
+
+    with pytest.raises(GoogleThreatPublicationRecordError):
+        adapt_google_threat_publication(entry(summary=summary))
+
+
+def test_prohibited_character_beyond_summary_limit_remains_rejected() -> None:
+    summary = "A" * MAX_PUBLICATION_SUMMARY_LENGTH + "\x00"
+
+    with pytest.raises(GoogleThreatPublicationRecordError):
+        adapt_google_threat_publication(entry(summary=summary))
+
+
+def test_active_markup_beyond_summary_limit_remains_rejected() -> None:
+    summary = "A" * MAX_PUBLICATION_SUMMARY_LENGTH + "<script/>discarded"
+
+    with pytest.raises(GoogleThreatPublicationRecordError):
+        adapt_google_threat_publication(entry(summary=summary))
+
+
+def test_oversized_title_remains_rejected_without_truncation() -> None:
+    with pytest.raises(GoogleThreatPublicationRecordError):
+        adapt_google_threat_publication(
+            entry(title="T" * (MAX_PUBLICATION_TITLE_LENGTH + 1))
+        )
+
+
+def test_summary_precedence_and_description_fallback_remain_unchanged() -> None:
+    preferred = entry(summary="Preferred summary")
+    preferred["description"] = "Fallback description"
+    fallback = entry(summary="  ")
+    fallback["description"] = "Fallback description"
+
+    assert adapt_google_threat_publication(preferred).summary == "Preferred summary"
+    assert adapt_google_threat_publication(fallback).summary == "Fallback description"
 
 
 def test_encoded_or_malformed_markup_is_removed_or_rejected_safely() -> None:
