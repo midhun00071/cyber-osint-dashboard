@@ -24,7 +24,7 @@ GOOGLE_THREAT_INTELLIGENCE_ALLOWED_HOST = get_source_definition(
     GOOGLE_THREAT_INTELLIGENCE_SOURCE_SLUG
 ).allowed_hosts[0]
 DEFAULT_TIMEOUT = httpx.Timeout(20.0, connect=5.0, read=10.0, write=5.0, pool=5.0)
-MAX_RESPONSE_BYTES = 1024 * 1024
+MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 MAX_REDIRECTS = 3
 USER_AGENT = "AlphaDataCyberOSINT/1.0 (+defensive-google-threat-rss)"
 ACCEPT_HEADER = "application/rss+xml, application/atom+xml, application/xml, text/xml, */*;q=0.1"

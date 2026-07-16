@@ -23,6 +23,14 @@ from app.ingestion.collectors.google_threat_intelligence_rss_client import (
 RSS_BYTES = b"<?xml version='1.0'?><rss><channel><title>GTI</title></channel></rss>"
 
 
+class ChunkedByteStream(httpx.SyncByteStream):
+    def __init__(self, chunks: tuple[bytes, ...]) -> None:
+        self._chunks = chunks
+
+    def __iter__(self):
+        yield from self._chunks
+
+
 def client_for(handler) -> GoogleThreatIntelligenceRssClient:
     return GoogleThreatIntelligenceRssClient(
         http_client=httpx.Client(transport=httpx.MockTransport(handler))
@@ -58,6 +66,67 @@ def test_default_timeout_is_bounded() -> None:
         assert client._http_client.timeout == DEFAULT_TIMEOUT
     finally:
         client.close()
+
+
+def test_response_limit_is_exactly_two_mebibytes() -> None:
+    assert MAX_RESPONSE_BYTES == 2 * 1024 * 1024
+
+
+@pytest.mark.parametrize(
+    "size",
+    [len(RSS_BYTES), MAX_RESPONSE_BYTES - 1, MAX_RESPONSE_BYTES],
+)
+def test_responses_at_or_below_two_mebibytes_are_accepted(size: int) -> None:
+    response_bytes = b"x" * size
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        del request
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/rss+xml"},
+            content=response_bytes,
+        )
+
+    result = client_for(handler).fetch_publications()
+
+    assert result.feed_bytes == response_bytes
+    assert result.byte_count == size
+
+
+def test_response_one_byte_over_two_mebibytes_is_rejected_without_disclosure() -> None:
+    private_response_bytes = b"private-feed-content" + b"x" * (
+        MAX_RESPONSE_BYTES + 1 - len(b"private-feed-content")
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        del request
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/rss+xml"},
+            content=private_response_bytes,
+        )
+
+    with pytest.raises(GoogleThreatRssResponseTooLargeError) as exc_info:
+        client_for(handler).fetch_publications()
+
+    assert exc_info.type is GoogleThreatRssResponseTooLargeError
+    assert "private-feed-content" not in str(exc_info.value)
+
+
+def test_chunked_response_crossing_two_mebibytes_is_rejected() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        del request
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/rss+xml"},
+            stream=ChunkedByteStream((b"x" * MAX_RESPONSE_BYTES, b"overflow")),
+        )
+
+    with pytest.raises(GoogleThreatRssResponseTooLargeError) as exc_info:
+        client_for(handler).fetch_publications()
+
+    assert exc_info.type is GoogleThreatRssResponseTooLargeError
+    assert "overflow" not in str(exc_info.value)
 
 
 def test_same_feedburner_host_redirect_is_followed_safely() -> None:
