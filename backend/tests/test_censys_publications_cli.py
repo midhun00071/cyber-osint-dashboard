@@ -5,9 +5,11 @@ from datetime import UTC, datetime
 from io import StringIO
 from uuid import uuid4
 
+import pytest
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.ingestion import censys_publications_cli
+from app.ingestion.collectors import censys_publications_client
 from app.ingestion.adapters.censys_publications import (
     CENSYS_ARC_RESEARCH_SLUG,
     CensysPublicationDocument,
@@ -197,7 +199,9 @@ def test_mixed_batch_audits_failure_and_processes_later_record() -> None:
     assert session.commits == 1
     assert session.rollbacks == 0
     assert len([item for item in session.added if isinstance(item, IngestionRunRecord)]) == 3
-    assert len([item for item in session.added if isinstance(item, IngestionError)]) == 1
+    errors = [item for item in session.added if isinstance(item, IngestionError)]
+    assert len(errors) == 1
+    assert errors[0].error_type == "censys_publication_validation_error"
     assert "Status: partial" in stdout
     assert "local secret" not in stderr
 
@@ -216,11 +220,20 @@ def test_identical_file_duplicate_is_created_then_audited_as_unchanged() -> None
     assert run.records_skipped == 0
     assert run.records_failed == 0
     assert [audit.action for audit in audits] == ["created", "unchanged"]
-    assert len(pipeline.persist_calls) == 2
+    assert len(pipeline.persist_calls) == 1
     assert len(pipeline.intelligence_item_ids) == 1
-    assert session.nested_transactions == 2
+    assert session.nested_transactions == 1
     assert session.commits == 1
     assert session.rollbacks == 0
+    duplicate_audit = audits[1]
+    assert duplicate_audit.source_record is None
+    assert duplicate_audit.intelligence_item_id is None
+    assert duplicate_audit.safe_detail == (
+        "A duplicate Censys publication matched an earlier batch entry."
+    )
+    assert "https://" not in duplicate_audit.safe_detail
+    assert "same" not in duplicate_audit.safe_detail
+    assert not [item for item in session.added if isinstance(item, IngestionError)]
     assert "Unchanged: 1" in stdout
     assert stderr == ""
 
@@ -333,3 +346,278 @@ def test_cli_arguments_are_deterministic(monkeypatch, capsys) -> None:
     assert censys_publications_cli.main(["--file", "input.json"]) == 0
     assert censys_publications_cli.main([]) == 2
     assert "Invalid manual Censys import arguments." in capsys.readouterr().err
+
+
+def test_local_file_cli_delegates_to_shared_service_without_live_collector(
+    monkeypatch,
+) -> None:
+    collector_created = False
+    service_calls: list[dict[str, object]] = []
+    session = FakeSession()
+    pipeline = FakePipeline(session)
+    stdout = StringIO()
+
+    def forbidden_collector(*args, **kwargs):
+        del args, kwargs
+        nonlocal collector_created
+        collector_created = True
+        raise AssertionError("local import must not instantiate the live collector")
+
+    class CapturingService:
+        def __init__(self, created_session, *, pipeline_factory) -> None:
+            assert created_session is session
+            assert pipeline_factory(session) is pipeline
+
+        def ingest(self, **kwargs):
+            service_calls.append(kwargs)
+            run = IngestionRun(
+                public_id=uuid4(),
+                source_id=1,
+                trigger_type="manual",
+                status="succeeded",
+                started_at=NOW,
+                completed_at=NOW,
+                records_fetched=1,
+                records_created=1,
+                records_updated=0,
+                records_unchanged=0,
+                records_skipped=0,
+                records_failed=0,
+                error_count=0,
+                checkpoint_before=None,
+                checkpoint_after=None,
+                safe_summary="Safe local test run.",
+                created_at=NOW,
+            )
+            return type("Result", (), {"run": run})()
+
+    monkeypatch.setattr(
+        censys_publications_client,
+        "CensysPublicationsClient",
+        forbidden_collector,
+    )
+
+    exit_code = censys_publications_cli.run_import(
+        file_path="not-read.json",
+        clock=lambda: NOW,
+        loader=lambda _: CensysPublicationDocument(
+            CENSYS_ARC_RESEARCH_SLUG,
+            ("valid",),
+        ),
+        adapter=lambda source_slug, _: candidate(source_slug),
+        session_factory=lambda: session,  # type: ignore[arg-type]
+        pipeline_factory=lambda _: pipeline,  # type: ignore[arg-type]
+        service_factory=CapturingService,  # type: ignore[arg-type]
+        stdout=stdout,
+    )
+
+    assert exit_code == 0
+    assert collector_created is False
+    assert len(service_calls) == 1
+    assert service_calls[0]["source_slug"] == CENSYS_ARC_RESEARCH_SLUG
+    assert service_calls[0]["candidates"] == (candidate(CENSYS_ARC_RESEARCH_SLUG),)
+    assert session.closed is True
+
+
+def test_unexpected_loader_failure_is_sanitized_before_session_creation() -> None:
+    secret = "C:\\private\\catalogue.json token=secret"
+    stderr = StringIO()
+    session_requested = False
+
+    def session_factory():
+        nonlocal session_requested
+        session_requested = True
+        raise AssertionError("session must not be requested")
+
+    exit_code = censys_publications_cli.run_import(
+        file_path="not-read.json",
+        loader=lambda _: (_ for _ in ()).throw(RuntimeError(secret)),
+        session_factory=session_factory,
+        stderr=stderr,
+    )
+
+    assert exit_code == 1
+    assert session_requested is False
+    assert stderr.getvalue() == "Manual Censys local-file import failed safely.\n"
+    assert secret not in stderr.getvalue()
+
+
+@pytest.mark.parametrize(
+    "clock",
+    [
+        lambda: (_ for _ in ()).throw(RuntimeError("private clock detail")),
+        lambda: "2026-07-17T08:00:00Z",
+        lambda: datetime(2026, 7, 17, 8, 0),
+    ],
+)
+def test_invalid_or_failing_clock_is_sanitized_before_session_creation(
+    clock,
+) -> None:
+    stderr = StringIO()
+    session_requested = False
+
+    def session_factory():
+        nonlocal session_requested
+        session_requested = True
+        raise AssertionError("session must not be requested")
+
+    exit_code = censys_publications_cli.run_import(
+        file_path="not-read.json",
+        loader=lambda _: CensysPublicationDocument(
+            CENSYS_ARC_RESEARCH_SLUG,
+            (),
+        ),
+        clock=clock,
+        session_factory=session_factory,
+        stderr=stderr,
+    )
+
+    assert exit_code == 1
+    assert session_requested is False
+    assert stderr.getvalue() == (
+        "Manual Censys import requires a timezone-aware clock.\n"
+    )
+    assert "private" not in stderr.getvalue()
+
+
+def test_unexpected_adapter_failure_is_sanitized_before_session_creation() -> None:
+    secret = "private record payload https://private.example/"
+    stderr = StringIO()
+    session_requested = False
+
+    def session_factory():
+        nonlocal session_requested
+        session_requested = True
+        raise AssertionError("session must not be requested")
+
+    exit_code = censys_publications_cli.run_import(
+        file_path="not-read.json",
+        loader=lambda _: CensysPublicationDocument(
+            CENSYS_ARC_RESEARCH_SLUG,
+            ("private-record",),
+        ),
+        adapter=lambda *_: (_ for _ in ()).throw(RuntimeError(secret)),
+        session_factory=session_factory,
+        clock=lambda: NOW,
+        stderr=stderr,
+    )
+
+    assert exit_code == 1
+    assert session_requested is False
+    assert stderr.getvalue() == "Manual Censys import failed unexpectedly.\n"
+    assert secret not in stderr.getvalue()
+
+
+def test_local_session_close_failure_is_sanitized_without_false_rollback() -> None:
+    secret = "postgresql://private:password@host/database"
+
+    class CloseFailSession(FakeSession):
+        def close(self) -> None:
+            self.closed = True
+            raise RuntimeError(secret)
+
+    session = CloseFailSession()
+    exit_code, stdout, stderr, session, _ = run_fake(session=session)
+
+    assert exit_code == 1
+    assert session.closed is True
+    assert session.commits == 1
+    assert session.rollbacks == 0
+    assert stdout == ""
+    assert stderr == "Manual Censys import failed during a database operation.\n"
+    assert secret not in stderr
+
+
+@pytest.mark.parametrize("failure_point", ["loader", "clock", "adapter", "close"])
+def test_local_memory_error_propagates(failure_point: str) -> None:
+    memory_error = MemoryError(f"private {failure_point}")
+    session = FakeSession()
+    loader = lambda _: CensysPublicationDocument(  # noqa: E731
+        CENSYS_ARC_RESEARCH_SLUG,
+        ("valid",),
+    )
+    clock = lambda: NOW  # noqa: E731
+    adapter = lambda source_slug, _: candidate(source_slug)  # noqa: E731
+
+    if failure_point == "loader":
+        loader = lambda _: (_ for _ in ()).throw(memory_error)
+    elif failure_point == "clock":
+        clock = lambda: (_ for _ in ()).throw(memory_error)
+    elif failure_point == "adapter":
+        adapter = lambda *_: (_ for _ in ()).throw(memory_error)
+    else:
+        session.close = (  # type: ignore[method-assign]
+            lambda: (_ for _ in ()).throw(memory_error)
+        )
+
+    with pytest.raises(MemoryError) as exc_info:
+        censys_publications_cli.run_import(
+            file_path="not-read.json",
+            loader=loader,
+            clock=clock,
+            adapter=adapter,
+            session_factory=lambda: session,  # type: ignore[arg-type]
+            pipeline_factory=lambda _: FakePipeline(session),  # type: ignore[arg-type]
+            stderr=StringIO(),
+        )
+
+    assert exc_info.value is memory_error
+
+
+@pytest.mark.parametrize("failure_point", ["session_factory", "service_factory"])
+def test_local_session_and_service_creation_memory_error_propagates(
+    failure_point: str,
+) -> None:
+    memory_error = MemoryError(f"private {failure_point}")
+    session = FakeSession()
+
+    def session_factory():
+        if failure_point == "session_factory":
+            raise memory_error
+        return session
+
+    def service_factory(*args, **kwargs):
+        del args, kwargs
+        raise memory_error
+
+    with pytest.raises(MemoryError) as exc_info:
+        censys_publications_cli.run_import(
+            file_path="not-read.json",
+            loader=lambda _: CensysPublicationDocument(
+                CENSYS_ARC_RESEARCH_SLUG,
+                (),
+            ),
+            clock=lambda: NOW,
+            session_factory=session_factory,
+            service_factory=service_factory,
+            stderr=StringIO(),
+        )
+
+    assert exc_info.value is memory_error
+
+
+def test_local_cleanup_does_not_replace_active_memory_error() -> None:
+    primary_error = MemoryError("primary private service marker")
+
+    class CleanupFailSession(FakeSession):
+        def close(self) -> None:
+            raise RuntimeError("secondary private cleanup marker")
+
+    session = CleanupFailSession()
+
+    with pytest.raises(MemoryError) as exc_info:
+        censys_publications_cli.run_import(
+            file_path="not-read.json",
+            loader=lambda _: CensysPublicationDocument(
+                CENSYS_ARC_RESEARCH_SLUG,
+                (),
+            ),
+            clock=lambda: NOW,
+            session_factory=lambda: session,  # type: ignore[arg-type]
+            service_factory=lambda *args, **kwargs: (_ for _ in ()).throw(
+                primary_error
+            ),
+            stderr=StringIO(),
+        )
+
+    assert exc_info.value is primary_error
