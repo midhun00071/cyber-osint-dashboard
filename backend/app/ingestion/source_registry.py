@@ -427,7 +427,9 @@ _IMPLEMENTED_DEFINITIONS = (
         source_type="json",
         base_url="https://censys.com/blog/",
         rate_limit_notes=(
-            "Manual local-file metadata import only; no Censys network requests."
+            "Bounded manual live publication-metadata collection from the fixed "
+            "public discovery location with at least ten seconds between request "
+            "starts; reviewed local-file JSON import remains supported."
         ),
     ),
     SourceDefinition(
@@ -445,7 +447,9 @@ _IMPLEMENTED_DEFINITIONS = (
         source_type="json",
         base_url="https://censys.com/advisory/",
         rate_limit_notes=(
-            "Manual local-file metadata import only; no Censys network requests."
+            "Bounded manual live publication-metadata collection from the fixed "
+            "public discovery location with at least ten seconds between request "
+            "starts; reviewed local-file JSON import remains supported."
         ),
     ),
     SourceDefinition(

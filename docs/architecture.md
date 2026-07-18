@@ -39,10 +39,10 @@ approved public OSINT source
 
 Current implemented source workflows are manual-only NVD CVE ingestion, FIRST
 EPSS enrichment for existing CVEs, CISA KEV enrichment for existing CVEs,
-CERT-EU Security Advisories RSS ingestion, and local-file Censys publication
-metadata import, plus manual Google TI/Mandiant shared-RSS publication metadata
-ingestion and local-file Anomali Cyber Watch publication metadata import. These
-workflows are not connected to application startup, a
+CERT-EU Security Advisories RSS ingestion, bounded live and reviewed local-file
+Censys publication metadata ingestion, manual Google TI/Mandiant shared-RSS
+publication metadata ingestion, and local-file Anomali Cyber Watch publication
+metadata import. These workflows are not connected to application startup, a
 scheduler, background workers, public write endpoints, or frontend-triggered
 ingestion.
 
@@ -93,6 +93,18 @@ identifiers from canonical URL hashes and retains only plain-text
 author/category metadata. It reads no website pages and uses no Censys API,
 credentials, exposure data, host data, certificates, scan results, search, or
 rescan operation.
+
+The later Censys live integration adds an explicitly invoked bounded collector
+above the same adapter. A closed `arc` or `rapid-response` selector maps to a
+fixed approved public discovery page in code. The collector validates each
+discovery and publication request, bounds redirects, response size, content
+type, timeout, and pacing, and retains only normalized publication metadata.
+The shared Censys ingestion service owns safe run/error auditing and transaction
+handling before candidates enter the existing publication pipeline. It stores
+no raw HTML or JSON-LD and adds no arbitrary URL, scheduler, startup hook,
+background worker, frontend invocation, API credential, scanning, probing,
+search, or rescan capability. The P9-04 reviewed-file path remains supported as
+the local fallback.
 
 P9-05 adds a manual shared-feed adapter for the fixed official Google Cloud
 Threat Intelligence RSS feed. The registry now separates collection hosts from
@@ -186,20 +198,22 @@ not overwritten by automatic rules, including their existing confidence values.
 ## Proposed Source-Expansion Architecture
 
 The following roadmap covers remaining source-expansion architecture. It does
-not approve live collection from Censys, Anomali, Recorded Future, IBM X-Force,
-or structured VirusTotal / Google Threat Intelligence API families. The only
-implemented Censys behavior is the P9-04 offline publication-metadata import,
-the only implemented Google TI/Mandiant behavior is the P9-05 bounded manual
-shared-RSS publication metadata adapter, and the only implemented Anomali
-behavior is the P9-06 offline Cyber Watch metadata catalogue described above.
-P9-07 implements only two source-separated IBM X-Force local metadata
+not approve Censys platform/exposure collection, live collection from Anomali,
+Recorded Future, or IBM X-Force, or structured VirusTotal / Google Threat
+Intelligence API families. Implemented Censys behavior is limited to bounded
+manual live public-publication metadata collection and the P9-04 reviewed local
+fallback. The only implemented Google TI/Mandiant behavior is the P9-05 bounded
+manual shared-RSS publication metadata adapter, and the only implemented
+Anomali behavior is the P9-06 offline Cyber Watch metadata catalogue described
+above. P9-07 implements only two source-separated IBM X-Force local metadata
 catalogues; it does not implement IBM network collection or the general X-Force
 Exchange platform.
 
 1. Source assessment
 2. Source registry (P9-02 metadata foundation implemented)
 3. Common publication pipeline (P9-03 foundation implemented)
-4. Censys public research adapter (P9-04 implemented)
+4. Censys public research adapter, bounded live collector, and shared service
+   (implemented; reviewed local-file fallback retained)
 5. Google TI/Mandiant public publication RSS adapter (P9-05 implemented)
 6. Anomali Cyber Watch manual publication catalogue (P9-06 implemented)
 7. IBM X-Force research and OSINT advisory catalogues (P9-07 implemented)
@@ -222,10 +236,11 @@ ingestion and structured API enrichment must remain separate architecture
 families.
 
 The Censys ARC and Rapid Response registry definitions are enabled only for the
-P9-04 manual local-file importer. Google Threat Intelligence and Mandiant public
-threat-research definitions are enabled only for the P9-05 manual shared RSS
-publication adapter. The Anomali Cyber Watch definition is enabled only for the
-P9-06 manual local-file catalogue; other Anomali families are not implemented.
+bounded manual live collector and P9-04 reviewed local-file importer. Google
+Threat Intelligence and Mandiant public threat-research definitions are enabled
+only for the P9-05 manual shared RSS publication adapter. The Anomali Cyber
+Watch definition is enabled only for the P9-06 manual local-file catalogue;
+other Anomali families are not implemented.
 The two IBM X-Force definitions are enabled only for P9-07 manual local-file
 metadata: exact IBM Think X-Force research pages and exact Exchange public OSINT
 advisory GUID pages. The general Exchange platform remains unimplemented. No

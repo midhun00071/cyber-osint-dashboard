@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError, replace
+from dataclasses import FrozenInstanceError, fields, replace
 from types import MappingProxyType
 
 import pytest
@@ -184,7 +184,7 @@ def test_censys_publication_sources_allow_only_exact_canonical_host(slug: str) -
         ),
     ],
 )
-def test_censys_sources_are_enabled_manual_json_imports(
+def test_censys_sources_support_bounded_live_and_manual_json_imports(
     slug: str,
     content_family: ContentFamily,
     base_url: str,
@@ -200,7 +200,60 @@ def test_censys_sources_are_enabled_manual_json_imports(
     assert source.source_type == "json"
     assert source.base_url == base_url
     assert source.authentication_required is False
-    assert "local-file" in (source.rate_limit_notes or "")
+    notes = source.rate_limit_notes or ""
+    assert "Bounded manual live" in notes
+    assert "fixed public discovery location" in notes
+    assert "at least ten seconds between request starts" in notes
+    assert "local-file JSON import remains supported" in notes
+
+
+def test_censys_registry_metadata_remains_distinct_and_safe() -> None:
+    arc = get_source_definition("censys-arc-research")
+    rapid_response = get_source_definition("censys-rapid-response-advisories")
+
+    assert arc != rapid_response
+    assert arc.slug != rapid_response.slug
+    assert arc.source_family != rapid_response.source_family
+    assert arc.content_family is not rapid_response.content_family
+    assert arc.base_url != rapid_response.base_url
+
+    serialized = " ".join(
+        str(value)
+        for source in (arc, rapid_response)
+        for value in (
+            source.display_name,
+            source.vendor,
+            source.source_family,
+            source.allowed_hosts,
+            source.base_url,
+            source.rate_limit_notes,
+        )
+    ).casefold()
+    assert "api_key=" not in serialized
+    assert "password=" not in serialized
+    assert "secret=" not in serialized
+    assert "token=" not in serialized
+    assert "arbitrary url" not in serialized
+    assert "scheduler" not in serialized
+    assert "worker" not in serialized
+    assert "startup ingestion" not in serialized
+
+    registry_fields = {field.name for field in fields(SourceDefinition)}
+    assert registry_fields.isdisjoint(
+        {
+            "api_key",
+            "credential",
+            "password",
+            "secret",
+            "token",
+            "url",
+            "arbitrary_url",
+            "discovery_url",
+            "scheduler",
+            "worker",
+            "startup_ingestion",
+        }
+    )
 
 
 def test_anomali_cyber_watch_is_exact_enabled_manual_catalogue_source() -> None:

@@ -110,24 +110,29 @@ Approved manual metadata families:
 - `censys-rapid-response-advisories`: official
   `https://censys.com/advisory/` pages, stored as `security_advisory` items.
 
-P9-04 implements only an offline, operator-triggered import of a strict local
-structured JSON catalogue. The upstream source pages are unstructured public
-publication content; the JSON `source_type` describes only the operator-supplied
-catalogue format. The application does not visit, crawl, or scrape Censys pages
-and does not use a Censys API, account, or API key. Publication fetching and
-metadata preparation are external/manual. Exposure records, hosts,
+The manual live collector accepts only the closed selectors `arc` and
+`rapid-response`. Each maps to a fixed public discovery location in code; no
+arbitrary URL input is available. Requests have bounded redirects, timeouts,
+response sizes, HTML content types, and at least ten seconds between request
+starts. Only normalized publication metadata is persisted through the existing
+Censys adapter, shared ingestion service, and P9-03 common publication pipeline.
+Raw HTML and JSON-LD are not stored. The collector is not a general crawler and
+does not use a Censys API, account, or API key.
+
+The P9-04 reviewed local-file fallback remains supported. Its strict UTF-8 JSON
+input is limited to 1 MiB, 100 publications, 20 authors per publication, and 20
+categories per publication. Only fixed schema fields and plain-text metadata
+are accepted. The file must be reached through an ordinary local path without
+symlink or reparse-point components; UNC/network and Windows device-namespace
+forms are rejected before traversal. URLs must use exact host `censys.com`, the
+selected source's literal path family without percent escapes or path
+parameters, and no residual non-tracking query string.
+
+Both workflows are explicitly invoked and deduplicate through the same
+publication pipeline. There is no scheduler, startup hook, background worker,
+frontend invocation, or public ingestion endpoint. Exposure records, hosts,
 certificates, DNS data, scan results, search results, and rescan capability are
 not imported.
-
-Input is strict UTF-8 JSON limited to 1 MiB, 100 publications, 20 authors per
-publication, and 20 categories per publication. Only the fixed schema fields
-and plain-text metadata are accepted. The file must be reached through an
-ordinary local path without symlink or reparse-point components; UNC/network
-and Windows device-namespace forms are rejected before traversal. URLs must use
-exact host `censys.com`, the selected source's literal path family without
-percent escapes or path parameters, and no residual non-tracking query string.
-All accepted records pass through the P9-03 common publication pipeline and
-produce sanitized ingestion audit records.
 
 ## Google TI and Mandiant Public Publications
 
@@ -221,20 +226,19 @@ The general X-Force Exchange platform is not marked implemented.
 ## Current Status
 
 NVD CVE ingestion, FIRST EPSS enrichment, CISA KEV enrichment, CERT-EU Security
-Advisories RSS ingestion, Censys, Anomali, and IBM X-Force local-file
-publication metadata imports, and Google TI/Mandiant shared-RSS publication
-metadata ingestion are
-implemented as
-manual-only backend workflows with sanitized audit records.
+Advisories RSS ingestion, Censys bounded live publication collection and local
+fallback, Anomali and IBM X-Force local-file imports, and Google TI/Mandiant
+shared-RSS publication ingestion are implemented as manual-only backend
+workflows with sanitized audit records.
 Other candidate sources still require explicit approval before ingestion is
 implemented.
 
 P9-02 adds a static backend source registry for developer-controlled metadata
 only. The implemented entries for NVD, FIRST EPSS, CISA KEV, CERT-EU Security
-Advisories, the two Censys manual-catalogue families, the Anomali Cyber Watch
-manual catalogue, both IBM X-Force manual catalogue families, and the two
-Google TI/Mandiant public RSS publication families preserve canonical slugs and
-manual ingestion behavior.
+Advisories, the two source-separated Censys publication families, the Anomali
+Cyber Watch manual catalogue, both IBM X-Force manual catalogue families, and
+the two Google TI/Mandiant public RSS publication families preserve canonical
+slugs and manual ingestion behavior.
 
 P9-03 adds a common publication pipeline for source adapters that already have
 safe parsed publication candidates. CERT-EU RSS now uses this shared
@@ -275,16 +279,15 @@ only:
 - Mandiant / Google Security
 - IBM X-Force
 
-Only Censys's and Anomali Cyber Watch's bounded manual publication-metadata
-catalogues and the bounded Google TI/Mandiant public RSS publication-metadata
-adapter are implemented from this proposed group; no live Censys or Anomali
-collection exists. The assessment separates
-public publication metadata, manual catalogue candidates, developer reference
-material, standardized STIX/TAXII concepts, and authorized structured API
-enrichment. Any future implementation must complete source onboarding,
-security review, and current access/licensing verification before live
-collection or enrichment is added beyond the approved P9-05 shared RSS feed and
-P9-06 offline Cyber Watch catalogue.
+Censys bounded manual live publication-metadata collection and its reviewed
+local-file fallback, the Anomali Cyber Watch manual catalogue, the two IBM
+X-Force manual catalogues, and the bounded Google TI/Mandiant public RSS adapter
+are implemented from this proposed group. No live Anomali or IBM collection is
+implemented. The assessment separates public publication metadata, manual
+catalogue candidates, developer reference material, standardized STIX/TAXII
+concepts, and authorized structured API enrichment. Any future implementation
+still requires source onboarding, security review, and current access/licensing
+verification.
 
 Planning references:
 

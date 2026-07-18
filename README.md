@@ -52,8 +52,8 @@ Current focus:
 - Manual, bounded FIRST EPSS enrichment for existing CVEs
 - Manual, bounded CISA KEV enrichment for existing CVEs
 - Manual, bounded CERT-EU Security Advisories RSS ingestion
-- Manual, bounded local-JSON import for Censys ARC research and Rapid Response
-  publication metadata
+- Manual, bounded live collection and reviewed local-JSON fallback for Censys
+  ARC research and Rapid Response publication metadata
 - Manual, bounded Google Cloud Threat Intelligence RSS ingestion for public
   Google Threat Intelligence Group and Mandiant publication metadata
 - Manual, bounded local-JSON import for Anomali Cyber Watch publication metadata
@@ -86,7 +86,7 @@ Current focus:
 The local development environment, backend foundation, database schema, and
 initial frontend shell are implemented. NVD ingestion, FIRST EPSS enrichment,
 CISA KEV enrichment, CERT-EU RSS ingestion, and Censys publication metadata
-import remain manual-only: they are not scheduled and are not connected to
+ingestion remain manual-only: they are not scheduled and are not connected to
 FastAPI startup, API routes, or the frontend dashboard.
 
 ### Source registry foundation
@@ -103,8 +103,8 @@ Anomali and IBM X-Force families remain unapproved.
 
 Registry entries do not grant authorization, licensing, API access, or
 collection approval. No public source-management API, scheduler, startup
-ingestion, frontend workflow, or new vendor collector was added. Existing
-source ingestion remains manual-only.
+ingestion, or frontend ingestion workflow is installed. Source ingestion
+remains manual-only.
 
 ### Common publication pipeline
 
@@ -141,9 +141,11 @@ P9-04 adds a source-specific local-file adapter for operator-prepared metadata
 about official Censys ARC research and Rapid Response pages. Those upstream
 public pages remain unstructured publication content; only the operator-supplied
 import catalogue is strict structured JSON. Every accepted record enters through
-the same common publication pipeline. This does not add Censys website crawling
-or scraping, a Censys API integration, account or API key configuration,
-exposure/host/certificate/scan data, search, or rescan capability.
+the same common publication pipeline. The later bounded live collector uses only
+two fixed public discovery locations and reuses this adapter and pipeline. It
+does not add general Censys crawling or scraping, a Censys API integration,
+account or API key configuration, exposure/host/certificate/scan data, search,
+or rescan capability.
 
 P9-05 adds a manual shared-feed adapter for the official Google Cloud Threat
 Intelligence RSS feed at
@@ -266,31 +268,114 @@ normalized advisory metadata as `security_advisory` intelligence items, records
 sanitized audit outcomes through the common publication pipeline, and does not
 fetch article bodies or arbitrary RSS sources.
 
-### Manual Censys publication import
+### Manual Censys publication ingestion
 
-From the `backend` directory, an operator can import a bounded local JSON file:
+The Censys live collector is network- and database-active but manual-only. From
+the `backend` directory, use one of these Windows PowerShell commands for the
+two supported and source-separated publication families:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.ingestion.censys_publications_live_cli `
+    --source arc `
+    --max-records 5
+
+.\.venv\Scripts\python.exe -m app.ingestion.censys_publications_live_cli `
+    --source rapid-response `
+    --max-records 5
+```
+
+`--source` is required and accepts only `arc` or `rapid-response`.
+`--max-records` defaults to 5 and its valid range is 1 through 20. No arbitrary
+URL is accepted: the discovery locations are fixed in code, and discovered
+publication links must remain in the selected approved Censys path family. The
+collector bounds redirects, response sizes, accepted HTML content types, and
+request pacing. It allows no more than three redirects, reads at most 2 MiB per
+response, and enforces at least ten seconds between request starts.
+
+The collector retrieves publication metadata only. Raw HTML or JSON-LD is not
+stored. Normalized allow-listed metadata enters the existing Censys adapter and
+shared ingestion service, then the common publication pipeline and database.
+Safe partial failures are audited without URLs, raw exception details, response
+content, or headers. Rerunning a command deduplicates through the existing
+publication pipeline; existing manually imported catalogue records do not need
+to be deleted.
+
+The implemented path is:
+
+```text
+manual command
+    -> fixed approved Censys discovery page
+    -> secure bounded collector
+    -> existing Censys adapter
+    -> shared Censys ingestion service
+    -> existing publication pipeline
+    -> database and safe ingestion audit records
+```
+
+Before live ingestion:
+
+1. Activate the backend virtual environment with
+   `.\.venv\Scripts\Activate.ps1`.
+2. Confirm the approved environment configuration provides the database
+   settings; do not place a database URL or credentials in the command.
+3. Confirm Alembic migrations are current with the repository's approved
+   migration checks.
+4. Run only one manual Censys collection at a time. Start with
+   `--max-records 1` or `--max-records 5`.
+5. Expect at least ten seconds between request starts. Even a small run can take
+   several minutes, so do not interrupt it unless necessary.
+6. Review the safe run summary, then inspect stored application records through
+   approved read-only API or database tooling.
+
+A successful ARC run prints only an allow-listed summary in this format:
+
+```text
+Manual Censys live ingestion completed.
+Source: censys-arc-research
+Run ID: <run-uuid>
+Status: succeeded
+Fetched: 5
+Created: 0
+Updated: 0
+Unchanged: 5
+Skipped: 0
+Failed: 0
+Capped: false
+```
+
+The summary never prints publication URLs, titles, source external IDs,
+internal database IDs, raw exceptions, HTTP headers, or response content.
+Invalid arguments fail before collection with exit code 2. Discovery-level
+failure occurs before database-session creation. A run may store valid
+publications when another page fails; mixed success and failure produces a
+`partial` run, while all-page failure produces a `failed` run. Controlled
+collection, partial, failed, and database-error outcomes return exit code 1;
+database failures are rolled back and console errors remain sanitized. A fully
+successful run returns exit code 0. System-level interruptions propagate and
+are not converted into false success.
+
+The reviewed local-file fallback remains available when live collection is not
+appropriate:
 
 ```powershell
 .\.venv\Scripts\python.exe -m app.ingestion.censys_publications_cli `
-    --file C:\path\to\censys-publications.json
+    --file <reviewed-local-json-file>
 ```
 
-The UTF-8 file is limited to 1 MiB and 100 publication records. It must contain
-exactly `schema_version`, `source_slug`, and `publications`; each publication
-must contain exactly `title`, `url`, `summary`, `published_at`, `modified_at`,
-`authors`, and `categories`. Author and category lists are each limited to 20
-plain-text values. The source slug must select either ARC research under
-`https://censys.com/blog/` or Rapid Response advisories under
-`https://censys.com/advisory/`. The input must use an ordinary local path;
+The local file must be reviewed and conform to the existing strict Censys
+catalogue schema. It is UTF-8 JSON limited to 1 MiB and 100 publication records,
+with exactly `schema_version`, `source_slug`, and `publications` at the document
+level and the existing exact publication fields. Author and category lists are
+each limited to 20 plain-text values. The input must use an ordinary local path;
 UNC/network and Windows device-namespace paths are rejected before traversal.
-Catalogue URLs must use the literal approved publication path, without percent
-escapes or path parameters.
+This fallback reads only the supplied regular file and makes no Censys network
+request.
 
-Publication metadata preparation and page verification happen outside this
-application. The command reads only the supplied regular local file, performs
-no Censys network request, and records sanitized audit outcomes. No scheduler,
-background worker, public ingestion endpoint, Censys account, or API key is
-used.
+No scheduler, recurring background job, startup ingestion, public ingestion
+endpoint, or automatic frontend invocation is installed. The feature collects
+defensive public research publication metadata only; it must not be used to
+scan, probe, search, or rescan internet assets and does not use a Censys account,
+API key, or scanning API.
 
 ### Manual Google TI and Mandiant publication ingestion
 
