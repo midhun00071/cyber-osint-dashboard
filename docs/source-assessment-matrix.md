@@ -2,15 +2,15 @@
 
 ## Purpose
 
-This document began as planning documentation for multi-vendor cybersecurity intelligence expansion and now also records implementation decisions completed under P9-04, P9-05, P9-06, P9-07, and the subsequent bounded Censys live-publication integration. The matrix does not by itself authorize any additional future integration, credentials, collectors, APIs, or scheduler behavior.
+This document began as planning documentation for multi-vendor cybersecurity intelligence expansion and now also records implementation decisions completed under P9-04, P9-05, P9-06, P9-07, and the subsequent bounded Censys and Anomali live-publication integrations. The matrix does not by itself authorize any additional future integration, credentials, collectors, APIs, or scheduler behavior.
 
-Implemented sources include NVD, FIRST EPSS, CISA KEV, CERT-EU Security Advisories, the two Censys publication sources with bounded manual live collection and reviewed local-catalogue fallback, the Anomali Cyber Watch manual catalogue, the Google TI/Mandiant shared RSS publication sources, and the two exact IBM X-Force local publication-metadata families. Other Censys platform/exposure capabilities, IBM Exchange surfaces, reports, collections, APIs, IOCs, reputation data, and other future vendor integrations remain unapproved; future source work must follow [source-integration-policy.md](source-integration-policy.md), preserve defensive scope, and complete current access/licensing verification before implementation.
+Implemented sources include NVD, FIRST EPSS, CISA KEV, CERT-EU Security Advisories, the two Censys publication sources with bounded manual live collection and reviewed local-catalogue fallback, Anomali Cyber Watch with bounded manual live collection and reviewed local-catalogue fallback, the Google TI/Mandiant shared RSS publication sources, and the two exact IBM X-Force local publication-metadata families. Other Anomali families, Censys platform/exposure capabilities, IBM Exchange surfaces, reports, collections, APIs, IOCs, reputation data, and other future vendor integrations remain unapproved; future source work must follow [source-integration-policy.md](source-integration-policy.md), preserve defensive scope, and complete current access/licensing verification before implementation.
 
 ## Decision Values
 
 | Decision | Meaning |
 |---|---|
-| `implement_now` | Records implemented bounded public-publication collectors, currently the two Censys families and the P9-05 Google TI/Mandiant families; it does not approve additional integrations. |
+| `implement_now` | Records implemented bounded public-publication collectors, currently the two Censys families, Anomali Cyber Watch, and the P9-05 Google TI/Mandiant families; it does not approve additional integrations. |
 | `future_api` | Candidate for future authorized structured API or standards-based integration after access, licensing, terms, and security review. |
 | `manual_catalogue` | Suitable for manually curated metadata or analyst reference records where automatic ingestion is not appropriate or not yet verified. |
 | `developer_reference_only` | Useful for architecture, API, protocol, or integration design, but not an intelligence feed. |
@@ -37,7 +37,7 @@ Implemented sources include NVD, FIRST EPSS, CISA KEV, CERT-EU Security Advisori
 | Censys | Collections | Curated sets or saved research groupings | Public or gated | Structured or semi-structured | May be required | API availability requires current access/licensing verification | Not verified in current project documentation | Low to medium | Low | Grouped hosts, indicators, topics, descriptions | Irregular | Rights and automation need verification | Manual catalogue or authorized API only | Useful when curated defensively | Medium | `manual_catalogue` |
 | Censys | Investigation/related-infrastructure capabilities | Relationship and investigation tooling | Gated | Structured | Required | API availability requires current access/licensing verification | Not RSS | Medium conceptually | None | Related infrastructure, pivots, relationships | On demand | Do not enable arbitrary pivoting against targets; avoid active/intrusive workflows | Future analyst-only authorized enrichment, bounded to existing records | High but sensitive | Later | `future_api` |
 | Censys | Developer documentation/reference material | API and platform documentation | Public or gated | Structured documentation | May be required | Documentation only; not an intelligence feed | Not applicable | Low | None | Endpoint concepts, schemas, auth models | Updated as product changes | Must not imply entitlement or implementation | Developer reference for future API design | Useful for planning | Low | `developer_reference_only` |
-| Anomali | Cyber Watch | Official Cyber Watch publication metadata | Public pages represented by local operator catalogue | Manual structured JSON over unstructured publications | None | Not treated as API source | No live feed approved; P9-06 performs no network requests | None for current task | None; reports/PDFs are not fetched | Plain-text title, canonical URL, summary, timestamps, bounded authors/categories | Operator-maintained/manual | Article bodies, embedded stories, IOCs, ThreatStream objects, reports, PDFs, media, and downloads are excluded | Implemented P9-06 exact-host/path/title local metadata catalogue only | Useful current-awareness source | Implemented | `manual_catalogue` |
+| Anomali | Cyber Watch | Official Cyber Watch publication metadata | Public official pages plus reviewed local operator catalogue | Unstructured HTML normalized to metadata, with manual structured JSON fallback | None | Not treated as API source | Fixed public discovery page for manually triggered collection; controlled response on 19 July 2026 returned HTML with no deterministic main region or approved links; observed HTTP 200 | None for current task | None; reports/PDFs are not fetched | Plain-text title, canonical URL, summary, timestamps, bounded authors/categories | Operator-triggered/manual | Live collector rejects IOC-like selected metadata and does not parse article-body prose; local catalogue review must exclude article text, IOCs, observables, raw response material, and downloads because the adapter is not a comprehensive automatic IOC detector | Implemented bounded manual live metadata collection from one fixed URL plus reviewed, operator-prepared local JSON fallback; fallback is currently operational | Useful current-awareness source | Implemented | `implement_now` |
 | Anomali | Public threat research | Research posts and analysis | Public | Unstructured | None for public reading | Not treated as API source | Not verified in current project documentation | Medium if indicators are published | Medium | Threat actors, campaigns, malware names, indicators if safely published | Periodic | Do not assume permission to extract/reuse indicators | Catalogue metadata; defer IOC extraction until legal/security review | Useful analysis source | Medium | `manual_catalogue` |
 | Anomali | Threat bulletins | Bulletins and advisories | Public or gated | Semi-structured/unstructured | May be required | Not treated as API source | Not verified in current project documentation | Medium | Medium | Bulletin metadata, threat topics, possible IOCs | Event-driven | Access and redistribution require review | Manual catalogue or approved publication adapter only | Useful | Medium | `manual_catalogue` |
 | Anomali | Reports/resources | Whitepapers and resources | Public or gated | Unstructured/PDF | May require registration | No project-verified report API | Not verified in current project documentation | Low to medium | High | Report title, topic, date, link | Periodic | Registration and download terms require review | Manual report metadata only | Useful background context | Low | `manual_catalogue` |
@@ -107,6 +107,24 @@ Implemented sources include NVD, FIRST EPSS, CISA KEV, CERT-EU Security Advisori
 
 ### Anomali
 
+- The bounded Cyber Watch live collector is manual-only, accepts no arbitrary
+  URL, does not parse article-body prose, and retains publication metadata only.
+  It rejects selected title, summary, author, and category metadata containing
+  IOC-like URLs, IP addresses, domains, hashes, internationalized domains, or
+  common defanged forms before adapter invocation.
+- The local workflow accepts a reviewed, operator-prepared seven-field catalogue.
+  Its adapter is not a comprehensive automatic IOC detector; operators and
+  reviewers must exclude article-body text, IOCs and observables, indicator
+  hashes/IP addresses/domains, raw HTML, HTTP headers and cookies, attachments,
+  media, PDFs, downloads, and malware samples. The verified five-record
+  catalogue was reviewed and contained safe metadata.
+- During controlled validation on 19 July 2026, the fixed discovery page
+  returned HTML with no deterministic main-content region and no approved Cyber
+  Watch article links. Discovery failed safely before an article request was
+  issued and before database-session creation, and no live records were
+  persisted. The request was not rejected with HTTP 403; the observed response
+  status was HTTP 200. The reviewed local JSON fallback remains the currently
+  operational method.
 - STAXX must not become a project dependency because it is unsupported.
 - A future generic STIX/TAXII importer is preferred over an Anomali-specific STIX parser.
 - ThreatStream, feeds, and TAXII access require current access/licensing verification before implementation.
@@ -214,8 +232,8 @@ use `requires current access/licensing verification`.
 
 | Decision | Source families |
 |---|---|
-| `implement_now` | Censys ARC and Rapid Response metadata from fixed approved discovery pages through bounded manual live collection, plus Google Threat Intelligence and Mandiant public publication metadata from the official shared Google Cloud Threat Intelligence RSS feed. |
+| `implement_now` | Censys ARC and Rapid Response metadata from fixed approved discovery pages, Anomali Cyber Watch metadata from its fixed official discovery page, and Google Threat Intelligence and Mandiant public publication metadata from the official shared Google Cloud Threat Intelligence RSS feed. All collection is bounded and manual-only. |
 | `future_api` | Censys platform/host/web/certificate/history/Active DNS/threat-data/enrichment capabilities; Anomali ThreatStream, feeds, STIX/TAXII; VirusTotal/Google TI observable indicator/API families; Recorded Future structured commercial/API families; Mandiant/Google TI structured threat-object API families; IBM X-Force structured exchange/reputation/indicator/API families. |
-| `manual_catalogue` | Retained reviewed Censys local-file fallback, implemented Anomali Cyber Watch and the two exact P9-07 IBM X-Force local publication-metadata families, plus other public or gated resources that remain manual candidates where automatic ingestion is not approved. IBM reports, the Threat Intelligence Index, and public collections remain candidates and are not implemented by P9-07. |
+| `manual_catalogue` | Retained reviewed Censys local-file fallback and the reviewed Anomali Cyber Watch local-file fallback, the two exact P9-07 IBM X-Force local publication-metadata families, plus other public or gated resources that remain manual candidates where automatic ingestion is not approved. IBM reports, the Threat Intelligence Index, and public collections remain candidates and are not implemented by P9-07. |
 | `developer_reference_only` | Developer documentation, API guides, case studies, webinars/events, high-level integration references, GTI Threat Profiles as analyst monitoring/filtering design concepts, and non-feed educational resources. |
 | `exclude` | Unsupported STAXX dependency, malware sample retrieval, malware detonation, automated VirusTotal file submission/uploading, active Internet scanning, Censys rescans, arbitrary target probing, Recorded Future scraping, arbitrary URL ingestion, and offensive tooling. |

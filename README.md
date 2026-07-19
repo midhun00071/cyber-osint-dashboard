@@ -56,7 +56,8 @@ Current focus:
   ARC research and Rapid Response publication metadata
 - Manual, bounded Google Cloud Threat Intelligence RSS ingestion for public
   Google Threat Intelligence Group and Mandiant publication metadata
-- Manual, bounded local-JSON import for Anomali Cyber Watch publication metadata
+- Manual, bounded live collection and reviewed local-JSON fallback for Anomali
+  Cyber Watch publication metadata
 - Manual, bounded local-JSON imports for separate IBM X-Force public research
   and public OSINT advisory metadata families
 - Developer-controlled source registry metadata for implemented sources and
@@ -85,9 +86,10 @@ Current focus:
 
 The local development environment, backend foundation, database schema, and
 initial frontend shell are implemented. NVD ingestion, FIRST EPSS enrichment,
-CISA KEV enrichment, CERT-EU RSS ingestion, and Censys publication metadata
-ingestion remain manual-only: they are not scheduled and are not connected to
-FastAPI startup, API routes, or the frontend dashboard.
+CISA KEV enrichment, CERT-EU RSS ingestion, Censys publication metadata
+ingestion, and both Anomali publication workflows remain manual-only: they are
+not scheduled and are not connected to FastAPI startup, background ingestion,
+API routes, or the frontend dashboard.
 
 ### Source registry foundation
 
@@ -96,8 +98,8 @@ canonical source slugs, implementation status, and developer-controlled host
 allow-lists. The registry marks NVD, FIRST EPSS, CISA KEV, CERT-EU Security
 Advisories, the two manual Censys publication families, the two Google
 Threat Intelligence/Mandiant public RSS publication families, and the Anomali
-Cyber Watch manual catalogue as enabled implemented sources. P9-07 also enables
-only the `ibm-x-force-public-research` and
+Cyber Watch live-and-fallback definition as enabled implemented sources. P9-07
+also enables only the `ibm-x-force-public-research` and
 `ibm-x-force-public-osint-advisories` manual catalogue definitions. Other
 Anomali and IBM X-Force families remain unapproved.
 
@@ -160,14 +162,17 @@ developer documentation, use Google Threat Intelligence or VirusTotal APIs, use
 credentials, submit or retrieve files/samples, extract IOCs, schedule work, run
 at startup, or expose a public ingestion endpoint.
 
-P9-06 adds a manual local-JSON catalogue for operator-prepared metadata about
-the official Anomali Cyber Watch publication series only. Accepted URLs use
-exact host `www.anomali.com` and literal path family
-`/blog/anomali-cyber-watch-`; titles use exact prefix `Anomali Cyber Watch:`.
-The application performs no Anomali network requests and does not fetch article
-bodies, embedded third-party stories, IOCs, ThreatStream objects, reports,
-PDFs, media, or downloads. General Anomali blog content, commercial feeds and
-APIs, STIX/TAXII, and STAXX are not implemented.
+P9-06 provides the reviewed local-JSON catalogue for operator-prepared metadata
+about the official Anomali Cyber Watch series. The local adapter validates the
+strict schema, bounds, source identity, timestamps, and plain-text fields, while
+catalogue review ensures that prohibited article content and indicators are not
+supplied. A later secure collector adds manual-only live metadata collection
+from the single fixed discovery URL `https://www.anomali.com/blog`. It accepts no
+arbitrary URL, restricts requests to exact HTTPS host `www.anomali.com` and
+article path family `/blog/anomali-cyber-watch-`, does not parse article-body
+prose, and rejects IOC-like selected metadata before adapter invocation. General
+Anomali content, ThreatStream, commercial feeds/APIs, STIX/TAXII, and STAXX are
+not implemented.
 
 P9-07 adds two separate manual local-JSON catalogues for IBM X-Force metadata.
 Research records require exact `www.ibm.com/think/x-force/<lower-kebab-slug>`
@@ -403,21 +408,66 @@ author, the command records sanitized shared-feed error evidence on both
 logical runs without incrementing either source's fetched or failed record
 counters.
 
-### Manual Anomali Cyber Watch publication import
+### Manual Anomali Cyber Watch publication ingestion
 
-From the `backend` directory, an operator can import a bounded local JSON file:
+From the `backend` directory, an operator can run the secure live collector:
 
 ```powershell
-.\.venv\Scripts\python.exe -m app.ingestion.anomali_publications_cli `
+.\.venv\Scripts\python.exe `
+    -m app.ingestion.anomali_publications_live_cli `
+    --max-records 5
+```
+
+This command is manually triggered only. `--max-records` defaults to 5 and its
+supported range is 1 through 20. The collector requests only the fixed discovery
+URL `https://www.anomali.com/blog`; it accepts no arbitrary URL. Discovery and
+article requests require HTTPS, exact host `www.anomali.com`, and the literal
+Cyber Watch article path `/blog/anomali-cyber-watch-...`. Redirects are followed
+only after explicit validation. Requests are not automatically retried, start at
+least ten seconds apart, and have bounded timeouts and response sizes.
+
+The live collector extracts bounded publication metadata only and does not parse
+article-body prose. It screens selected title, summary, author, and category
+metadata for IOC-like URLs, IP addresses, domains, hashes, internationalized
+domains, and common defanged forms; unsafe metadata is rejected before adapter
+invocation. Raw HTML, HTTP headers, cookies, attachments, media, PDFs, downloads,
+and malware samples are not persisted by live collection.
+
+Collection completes before a database session is opened. If collection
+succeeds, persistence is atomic and safely audited through the existing
+publication pipeline. Console output uses allow-listed summaries; raw HTTP and
+database errors are not exposed.
+
+The currently operational method is the reviewed local JSON fallback:
+
+```powershell
+.\.venv\Scripts\python.exe `
+    -m app.ingestion.anomali_publications_cli `
     --file C:\path\to\anomali-cyber-watch.json
 ```
 
-The command accepts only schema version 1 for source slug
+The local command accepts only schema version 1 for source slug
 `anomali-cyber-watch`, with at most 100 exact seven-field records in a 1 MiB
-UTF-8 file. Metadata must be operator-prepared plain text. Authors and
-categories are bounded optional metadata and never establish source ownership.
-Execution is manual only: there is no Anomali HTTP collector, RSS endpoint,
-scraper, scheduler, startup hook, background worker, or public ingestion route.
+UTF-8 file. It validates the title family, canonical URL identity, timestamps,
+plain-text bounds, authors, and categories. The input must be reviewed,
+operator-prepared publication metadata only. Operators and reviewers must
+exclude article-body text; IOCs and observables; hashes, IP addresses, and
+domains used as indicators; raw HTML; HTTP headers and cookies; and attachments,
+media, PDFs, downloads, or malware samples. The local adapter is not a
+comprehensive automatic IOC detector. The verified five-record catalogue was
+reviewed and contained safe metadata. There is no scheduler, recurring
+background job, startup ingestion, public ingestion API, or frontend trigger.
+
+Manual live Anomali Cyber Watch collection is implemented and validated
+offline. During a controlled live smoke test on 19 July 2026, the fixed official
+blog page returned HTML with no deterministic main-content region and no
+approved Cyber Watch article links. Discovery therefore failed safely before an
+article request was issued and before database-session creation; no ingestion
+run was created and no live records were persisted. The request was not rejected
+with HTTP 403; the observed response status was HTTP 200. The reviewed safe local
+JSON catalogue was then imported successfully for source
+`anomali-cyber-watch`: 5 records were fetched, created, and linked. Reviewed
+local JSON ingestion remains the currently supported operational method.
 
 ### Manual IBM X-Force publication import
 

@@ -134,22 +134,66 @@ fetched or failed records.
 
 ## Manual Anomali Cyber Watch Publication Ingestion
 
-P9-06 adds an explicitly invoked local-file metadata command:
+Run the live collector from the `backend` directory:
 
 ```powershell
-.\.venv\Scripts\python.exe -m app.ingestion.anomali_publications_cli `
+.\.venv\Scripts\python.exe `
+    -m app.ingestion.anomali_publications_live_cli `
+    --max-records 5
+```
+
+The live command is manually triggered only. The supported `--max-records`
+range is 1 through 20. The collector requests one fixed discovery URL,
+`https://www.anomali.com/blog`, and accepts no arbitrary URL. It requires HTTPS
+and exact host `www.anomali.com`; article requests must also use the literal
+`/blog/anomali-cyber-watch-...` path family. Redirects are explicitly validated.
+There are no automatic retries, request starts are paced at least ten seconds
+apart, and timeouts and response sizes are bounded.
+
+The live collector does not parse article-body prose. It extracts bounded
+publication metadata only and screens selected title, summary, author, and
+category metadata for IOC-like URLs, IP addresses, domains, hashes,
+internationalized domains, and common defanged forms. Unsafe metadata is
+rejected before adapter invocation. Live collection does not persist raw HTML,
+HTTP headers, cookies, attachments, media, PDFs, downloads, or malware samples.
+
+Collection completes before a database session is opened. Successful
+persistence is atomic and safely audited, while console messages do not expose
+raw HTTP or database errors.
+
+The reviewed local JSON fallback is the currently operational method:
+
+```powershell
+.\.venv\Scripts\python.exe `
+    -m app.ingestion.anomali_publications_cli `
     --file C:\path\to\anomali-cyber-watch.json
 ```
 
-The strict versioned JSON catalogue is limited to 1 MiB, 100 publications, and
+The strict versioned local catalogue is limited to 1 MiB, 100 publications, and
 the fixed `anomali-cyber-watch` source. URLs must use exact host
 `www.anomali.com` and literal path prefix `/blog/anomali-cyber-watch-`; titles
-must use exact prefix `Anomali Cyber Watch:`. Only operator-prepared plain-text
-metadata enters the common publication pipeline. The command makes no Anomali
-network request and does not ingest article bodies, embedded stories, IOCs,
-ThreatStream links or objects, reports, PDFs, media, downloads, general Anomali
-blog content, commercial feeds, APIs, STIX/TAXII, or STAXX. It is not connected
-to startup, scheduling, background workers, or a public endpoint.
+must use exact prefix `Anomali Cyber Watch:`. The adapter also validates
+timestamps, plain-text bounds, authors, and categories. The input must be
+reviewed, operator-prepared publication metadata only. Operators and reviewers
+must exclude article-body text; IOCs and observables; hashes, IP addresses, and
+domains used as indicators; raw HTML; HTTP headers and cookies; and attachments,
+media, PDFs, downloads, or malware samples. The local adapter is not a
+comprehensive automatic IOC detector. The verified five-record catalogue was
+reviewed and contained safe metadata.
+
+Neither workflow implements ThreatStream, commercial feeds/APIs, STIX/TAXII, or
+STAXX. There is no scheduler, startup ingestion, background ingestion, API
+trigger, or frontend trigger.
+
+Manual live collection is implemented and validated offline. During the
+controlled smoke test on 19 July 2026, the fixed official discovery page
+returned HTML with no deterministic main-content region and no approved Cyber
+Watch article links. Discovery failed safely before an article request was
+issued and before database-session creation; no ingestion run was created and no
+live records were persisted. The request was not rejected with HTTP 403; the
+observed response status was HTTP 200. The reviewed safe local JSON fallback
+then imported 5 records for `anomali-cyber-watch`: 5 were created and linked, and
+the run succeeded.
 
 ## Manual IBM X-Force Publication Ingestion
 

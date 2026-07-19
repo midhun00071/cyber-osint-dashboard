@@ -465,9 +465,14 @@ _IMPLEMENTED_DEFINITIONS = (
         implementation_status=ImplementationStatus.IMPLEMENTED,
         enabled=True,
         source_type="json",
-        base_url="https://www.anomali.com/blog/",
+        base_url="https://www.anomali.com/blog",
         rate_limit_notes=(
-            "Manual local-file metadata import only; no Anomali network requests."
+            "Manual-only live publication-metadata collection from one fixed public "
+            "discovery page, with at least ten seconds between request starts and "
+            "a maximum of 20 records; reviewed local-file JSON fallback remains "
+            "supported. The controlled 19 July 2026 HTTP 200 response contained no "
+            "deterministic main-content region or approved Cyber Watch article "
+            "links, so discovery failed safely before database-session creation."
         ),
     ),
     SourceDefinition(

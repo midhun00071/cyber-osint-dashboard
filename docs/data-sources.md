@@ -170,28 +170,59 @@ logical runs and includes the aggregate unassigned count in each safe summary.
 
 ## Anomali Cyber Watch Publications
 
-Approved manual catalogue family:
+Approved manual live and reviewed catalogue family:
 
 - `anomali-cyber-watch`: official Cyber Watch publication pages on exact host
   `www.anomali.com`, stored as `threat_report` items.
 
-P9-06 implements only an operator-triggered local JSON metadata catalogue. The
-file is strict UTF-8 JSON limited to 1 MiB and 100 seven-field publications.
+The manual live collector accepts only `max_records` from 1 through 20. It
+requests the one fixed discovery URL `https://www.anomali.com/blog` and accepts
+no arbitrary URL. Discovery and article requests must use HTTPS and exact host
+`www.anomali.com`; article URLs must use literal path family
+`/blog/anomali-cyber-watch-`. Redirects receive explicit validation, there are no
+automatic retries, request starts are at least ten seconds apart, and timeouts
+and response sizes are bounded. Collection completes before a database session
+is opened. Successful persistence is atomic and safely audited, and raw HTTP and
+database errors are not exposed. The collector does not parse article-body
+prose. It extracts bounded publication metadata and screens selected title,
+summary, author, and category fields for IOC-like URLs, IP addresses, domains,
+hashes, internationalized domains, and common defanged forms. Unsafe metadata is
+rejected before adapter invocation. Raw HTML, HTTP headers, cookies, attachments,
+media, PDFs, downloads, and malware samples are not persisted by live
+collection.
+
+The P9-06 reviewed local JSON fallback remains supported and is the currently
+operational method. Its reviewed, operator-prepared file is strict UTF-8 JSON
+limited to 1 MiB and 100 seven-field publications.
+
 Every title must start exactly with `Anomali Cyber Watch:` and contain
 publication-specific text. Every canonical URL must use literal path family
 `/blog/anomali-cyber-watch-` with a non-empty article slug. Tracking parameters
 may be removed; other query strings, encoded paths, credentials, fragments,
 path parameters, alternate hosts, and general blog paths are rejected.
 
-Only operator-prepared plain-text title, summary, timestamps, authors, and
-categories are accepted. Article bodies and embedded third-party stories are
-not fetched or stored. IOCs, observables, hashes, domains, IPs, external story
-links, ThreatStream objects, reports, PDFs, media, attachments, samples, and
-downloads are not extracted or ingested. The command performs no Anomali
-network request and has no RSS, scraper, API, credentials, scheduler, startup
-hook, background worker, or public ingestion endpoint. General Anomali public
-research, ThreatStream, commercial feeds/APIs, STIX/TAXII, and STAXX remain
-unimplemented or excluded according to their recorded decisions.
+The adapter validates the schema, file and record bounds, title family,
+canonical URL identity, timestamps, and bounded plain-text title, summary,
+author, and category values. It is not a comprehensive automatic IOC detector.
+Reviewed catalogues must contain publication metadata only. Operators and
+reviewers must exclude article-body text; IOCs and observables; hashes, IP
+addresses, and domains used as indicators; raw HTML; HTTP headers and cookies;
+and attachments, media, PDFs, downloads, or malware samples. The verified
+five-record catalogue was reviewed and contained safe metadata. There is no RSS,
+credential, scheduler, startup hook, background ingestion, public ingestion API,
+or frontend trigger. General Anomali public research, ThreatStream, commercial
+feeds/APIs, STIX/TAXII, and STAXX remain unimplemented or excluded according to
+their recorded decisions.
+
+Manual live collection is implemented and validated offline. During a
+controlled live smoke test on 19 July 2026, the fixed official blog page returned
+HTML with no deterministic main-content region and no approved Cyber Watch
+article links. Discovery therefore failed safely before an article request was
+issued and before database-session creation. No ingestion run was created and no
+live records were persisted. The request was not rejected with HTTP 403; the
+observed response status was HTTP 200. The reviewed safe local JSON fallback then
+completed successfully for source `anomali-cyber-watch`: 5 records were fetched,
+created, and linked.
 
 ## IBM X-Force Public Publications
 
@@ -227,7 +258,8 @@ The general X-Force Exchange platform is not marked implemented.
 
 NVD CVE ingestion, FIRST EPSS enrichment, CISA KEV enrichment, CERT-EU Security
 Advisories RSS ingestion, Censys bounded live publication collection and local
-fallback, Anomali and IBM X-Force local-file imports, and Google TI/Mandiant
+fallback, Anomali bounded live collection and local fallback, IBM X-Force
+local-file imports, and Google TI/Mandiant
 shared-RSS publication ingestion are implemented as manual-only backend
 workflows with sanitized audit records.
 Other candidate sources still require explicit approval before ingestion is
@@ -236,18 +268,19 @@ implemented.
 P9-02 adds a static backend source registry for developer-controlled metadata
 only. The implemented entries for NVD, FIRST EPSS, CISA KEV, CERT-EU Security
 Advisories, the two source-separated Censys publication families, the Anomali
-Cyber Watch manual catalogue, both IBM X-Force manual catalogue families, and
-the two Google TI/Mandiant public RSS publication families preserve canonical
-slugs and manual ingestion behavior.
+Cyber Watch live-and-fallback source, both IBM X-Force manual catalogue
+families, and the two Google TI/Mandiant public RSS publication families
+preserve canonical slugs and manual ingestion behavior.
 
 P9-03 adds a common publication pipeline for source adapters that already have
 safe parsed publication candidates. CERT-EU RSS now uses this shared
 persistence path. The pipeline does not approve or fetch new vendors; planned
 source registry entries remain disabled until a later task explicitly approves
 and implements an adapter. P9-05 enables only the Google TI and Mandiant public
-RSS publication source definitions; P9-06 enables only Anomali Cyber Watch for
-manual local-file metadata; P9-07 enables only the two exact IBM X-Force manual
-metadata families. Adapters cannot supply arbitrary normalized source
+RSS publication source definitions; Anomali Cyber Watch is enabled only for its
+bounded manual live collector and reviewed local-file metadata fallback; P9-07
+enables only the two exact IBM X-Force manual metadata families. Adapters cannot
+supply arbitrary normalized source
 definitions, and publication item type is derived from the registered content
 family rather than adapter input.
 
@@ -280,12 +313,14 @@ only:
 - IBM X-Force
 
 Censys bounded manual live publication-metadata collection and its reviewed
-local-file fallback, the Anomali Cyber Watch manual catalogue, the two IBM
-X-Force manual catalogues, and the bounded Google TI/Mandiant public RSS adapter
-are implemented from this proposed group. No live Anomali or IBM collection is
-implemented. The assessment separates public publication metadata, manual
-catalogue candidates, developer reference material, standardized STIX/TAXII
-concepts, and authorized structured API enrichment. Any future implementation
+local-file fallback, Anomali Cyber Watch bounded manual live collection and its
+reviewed local fallback, the two IBM X-Force manual catalogues, and the bounded
+Google TI/Mandiant public RSS adapter
+are implemented from this proposed group. No live IBM collection or live
+collection from other Anomali families is implemented. The assessment separates
+public publication metadata, manual catalogue candidates, developer reference
+material, standardized STIX/TAXII concepts, and authorized structured API
+enrichment. Any future implementation
 still requires source onboarding, security review, and current access/licensing
 verification.
 

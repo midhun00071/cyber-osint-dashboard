@@ -41,10 +41,10 @@ Current implemented source workflows are manual-only NVD CVE ingestion, FIRST
 EPSS enrichment for existing CVEs, CISA KEV enrichment for existing CVEs,
 CERT-EU Security Advisories RSS ingestion, bounded live and reviewed local-file
 Censys publication metadata ingestion, manual Google TI/Mandiant shared-RSS
-publication metadata ingestion, and local-file Anomali Cyber Watch publication
-metadata import. These workflows are not connected to application startup, a
-scheduler, background workers, public write endpoints, or frontend-triggered
-ingestion.
+publication metadata ingestion, and bounded live plus reviewed local-file
+Anomali Cyber Watch publication metadata ingestion. These workflows are not
+connected to application startup, a scheduler, background workers, public write
+endpoints, or frontend-triggered ingestion.
 
 P9-02 adds a static source registry inside the backend ingestion layer. It is a
 developer-controlled code registry for safe non-secret source metadata,
@@ -134,9 +134,40 @@ scope; author and category text do not establish ownership. The adapter emits
 only plain-text `PublicationCandidate` metadata, and the common pipeline derives
 the `threat_report` item type. The CLI owns one run, per-record nested
 transactions, source-record-free duplicate/conflict audits, and one final
-commit. It performs no Anomali request, scraping, RSS collection, article-body
-fetch, IOC extraction, ThreatStream access, report/PDF/media download,
-scheduling, startup execution, background work, or public API ingestion.
+commit. The reviewed local-file command performs no Anomali request. Its strict
+adapter validates the catalogue schema, file and record bounds, title family,
+canonical URL identity, timestamps, and bounded plain-text fields. The local
+adapter is not a comprehensive automatic IOC detector; catalogue review ensures
+that summaries, authors, and categories contain publication metadata only and
+exclude article-body text, indicators, and raw response or downloadable
+material.
+
+The later Anomali live integration adds a manually triggered secure collector
+and a separate atomic persistence service above the same adapter and common
+pipeline. The collector accepts only a record bound from 1 through 20 and makes
+one fixed discovery request to `https://www.anomali.com/blog`; it has no
+arbitrary URL input. Every discovery, redirect, and article request must retain
+HTTPS, exact host `www.anomali.com`, and the approved discovery or literal
+`/blog/anomali-cyber-watch-...` article path. Redirects are validated explicitly,
+requests are not automatically retried, request starts are at least ten seconds
+apart, and timeouts and response sizes are bounded. Collection finishes before
+database-session creation. Persistence then owns one atomic, safely audited run,
+and raw HTTP and database errors remain hidden. The live collector does not parse
+article-body prose. It extracts bounded publication metadata and screens
+selected title, summary, author, and category fields for IOC-like URLs, IP
+addresses, domains, hashes, internationalized domains, and common defanged
+forms, rejecting unsafe metadata before adapter invocation. It does not persist
+raw HTML, HTTP headers, cookies, attachments, media, PDFs, downloads, or malware
+samples.
+
+Reviewed local catalogues must contain operator-prepared publication metadata
+only. Operators and reviewers must exclude article-body text; IOCs and
+observables; hashes, IP addresses, and domains used as indicators; raw HTML;
+HTTP headers and cookies; and attachments, media, PDFs, downloads, or malware
+samples. The verified five-record catalogue was reviewed and contained safe
+metadata. Neither workflow implements ThreatStream, commercial feeds/APIs,
+STIX/TAXII, or STAXX, or adds scheduling, startup execution, background
+ingestion, a public API trigger, or a frontend trigger.
 
 ## UAE Relevance Classification
 
@@ -198,16 +229,17 @@ not overwritten by automatic rules, including their existing confidence values.
 ## Proposed Source-Expansion Architecture
 
 The following roadmap covers remaining source-expansion architecture. It does
-not approve Censys platform/exposure collection, live collection from Anomali,
-Recorded Future, or IBM X-Force, or structured VirusTotal / Google Threat
-Intelligence API families. Implemented Censys behavior is limited to bounded
+not approve Censys platform/exposure collection, live collection from other
+Anomali families, Recorded Future, or IBM X-Force, or structured VirusTotal /
+Google Threat Intelligence API families. Implemented Censys behavior is limited
+to bounded
 manual live public-publication metadata collection and the P9-04 reviewed local
 fallback. The only implemented Google TI/Mandiant behavior is the P9-05 bounded
-manual shared-RSS publication metadata adapter, and the only implemented
-Anomali behavior is the P9-06 offline Cyber Watch metadata catalogue described
-above. P9-07 implements only two source-separated IBM X-Force local metadata
-catalogues; it does not implement IBM network collection or the general X-Force
-Exchange platform.
+manual shared-RSS publication metadata adapter. Implemented Anomali behavior is
+limited to bounded manual live Cyber Watch metadata collection and the P9-06
+reviewed local fallback described above. P9-07 implements only two
+source-separated IBM X-Force local metadata catalogues; it does not implement
+IBM network collection or the general X-Force Exchange platform.
 
 1. Source assessment
 2. Source registry (P9-02 metadata foundation implemented)
@@ -215,7 +247,8 @@ Exchange platform.
 4. Censys public research adapter, bounded live collector, and shared service
    (implemented; reviewed local-file fallback retained)
 5. Google TI/Mandiant public publication RSS adapter (P9-05 implemented)
-6. Anomali Cyber Watch manual publication catalogue (P9-06 implemented)
+6. Anomali Cyber Watch bounded manual live collector and reviewed local
+   publication catalogue (implemented)
 7. IBM X-Force research and OSINT advisory catalogues (P9-07 implemented)
 8. Indicator model
 9. IOC extraction and relationships
@@ -239,8 +272,8 @@ The Censys ARC and Rapid Response registry definitions are enabled only for the
 bounded manual live collector and P9-04 reviewed local-file importer. Google
 Threat Intelligence and Mandiant public threat-research definitions are enabled
 only for the P9-05 manual shared RSS publication adapter. The Anomali Cyber
-Watch definition is enabled only for the P9-06 manual local-file catalogue;
-other Anomali families are not implemented.
+Watch definition is enabled only for the bounded manual live collector and
+P9-06 reviewed local-file catalogue; other Anomali families are not implemented.
 The two IBM X-Force definitions are enabled only for P9-07 manual local-file
 metadata: exact IBM Think X-Force research pages and exact Exchange public OSINT
 advisory GUID pages. The general Exchange platform remains unimplemented. No
@@ -249,9 +282,19 @@ scraping, IOC extraction, or storage of upstream report bodies. Public
 publication hosts and developer documentation hosts are separate source
 families; documentation hosts are not automatically allowed for public
 threat-research definitions. P9-05 is implemented as metadata-only RSS
-publication ingestion, P9-06 does not approve live Anomali collection, and
-P9-07 does not approve IBM scraping, IBMid/guest automation, report downloads,
-indicator/reputation ingestion, paid tiers, or STIX/TAXII.
+publication ingestion, the Anomali collector approves only its fixed Cyber Watch
+metadata boundary, and P9-07 does not approve IBM scraping, IBMid/guest
+automation, report downloads, indicator/reputation ingestion, paid tiers, or
+STIX/TAXII.
+
+During controlled live validation on 19 July 2026, the fixed Anomali discovery
+page returned HTML with no deterministic main-content region and no approved
+Cyber Watch article links. Discovery failed safely before an article request was
+issued and before database-session creation, with no ingestion run or live
+persistence. The request was not rejected with HTTP 403; the observed response
+status was HTTP 200. The reviewed safe local JSON catalogue then successfully
+created and linked 5 records. It remains the currently supported operational
+method while the live discovery-page limitation exists.
 
 ## Current Status
 

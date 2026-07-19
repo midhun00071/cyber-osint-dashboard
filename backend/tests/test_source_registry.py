@@ -256,7 +256,7 @@ def test_censys_registry_metadata_remains_distinct_and_safe() -> None:
     )
 
 
-def test_anomali_cyber_watch_is_exact_enabled_manual_catalogue_source() -> None:
+def test_anomali_cyber_watch_supports_manual_live_and_local_fallback() -> None:
     source = get_source_definition("anomali-cyber-watch")
 
     assert source.display_name == "Anomali Cyber Watch"
@@ -270,9 +270,16 @@ def test_anomali_cyber_watch_is_exact_enabled_manual_catalogue_source() -> None:
     assert source.implementation_status is ImplementationStatus.IMPLEMENTED
     assert source.enabled is True
     assert source.source_type == "json"
-    assert source.base_url == "https://www.anomali.com/blog/"
-    assert "local-file" in (source.rate_limit_notes or "")
-    assert "no Anomali network requests" in (source.rate_limit_notes or "")
+    assert source.base_url == "https://www.anomali.com/blog"
+    notes = source.rate_limit_notes or ""
+    assert "Manual-only live publication-metadata collection" in notes
+    assert "one fixed public discovery page" in notes
+    assert "at least ten seconds between request starts" in notes
+    assert "maximum of 20 records" in notes
+    assert "local-file JSON fallback remains supported" in notes
+    assert "HTTP 200" in notes
+    assert "failed safely before database-session creation" in notes
+    assert "no Anomali network requests" not in notes
     assert publication_item_type_for_content_family(source.content_family) == (
         "threat_report"
     )
