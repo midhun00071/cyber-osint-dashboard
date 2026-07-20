@@ -1,9 +1,18 @@
 import { strict as assert } from "node:assert";
-import { createElement } from "react";
+import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { SafeExternalLink } from "../src/components/SafeExternalLink";
 import { getSafeExternalUrl } from "../src/utils/safeExternalUrl";
+
+type ValidationLinkProps = Omit<
+  Parameters<typeof SafeExternalLink>[0],
+  "children"
+> & { children?: ReactNode };
+
+const ValidationSafeExternalLink = SafeExternalLink as (
+  props: ValidationLinkProps,
+) => ReturnType<typeof SafeExternalLink>;
 
 const acceptedCases = new Map<string, string>([
   ["https://example.com/report", "https://example.com/report"],
@@ -60,11 +69,14 @@ for (const candidate of rejectedCases) {
 }
 
 const validLinkMarkup = renderToStaticMarkup(
-  createElement(SafeExternalLink, {
-    children: "Open source",
-    className: "safeSourceLink",
-    url: "https://example.com/report",
-  }),
+  createElement(
+    ValidationSafeExternalLink,
+    {
+      className: "safeSourceLink",
+      url: "https://example.com/report",
+    },
+    "Open source",
+  ),
 );
 
 assert.match(validLinkMarkup, /^<a /);
@@ -84,10 +96,13 @@ const fixturePayloads = [
 for (const payload of fixturePayloads) {
   const textMarkup = renderToStaticMarkup(createElement("p", null, payload));
   const unsafeLinkMarkup = renderToStaticMarkup(
-    createElement(SafeExternalLink, {
-      children: payload,
-      url: "javascript:alert(1)",
-    }),
+    createElement(
+      ValidationSafeExternalLink,
+      {
+        url: "javascript:alert(1)",
+      },
+      payload,
+    ),
   );
 
   for (const markup of [textMarkup, unsafeLinkMarkup]) {
