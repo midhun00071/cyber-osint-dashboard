@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.v1.query_validation import VALIDATION_ERROR_DETAIL
+from app.core.request_context import REQUEST_ID_HEADER
+from app.core.security_headers import API_CONTENT_SECURITY_POLICY, SECURITY_HEADERS
 from app.db.session import get_db_session
 from app.main import app
 from app.models import (
@@ -387,6 +389,34 @@ def test_dashboard_summary_empty_database_returns_safe_zero_values(client) -> No
     assert data["ingestion"]["last_successful_ingestion_at"] is None
     assert data["latest_articles"] == []
     assert data["latest_fetch"] is None
+    request_id = UUID(response.headers[REQUEST_ID_HEADER])
+    assert request_id.version == 4
+    for name, value in SECURITY_HEADERS.items():
+        assert response.headers[name] == value
+    assert response.headers["Content-Security-Policy"] == API_CONTENT_SECURITY_POLICY
+
+
+@pytest.mark.parametrize(
+    ("window_days", "expected_start"),
+    [
+        (1, "2026-07-09T12:00:00Z"),
+        (365, "2025-07-10T12:00:00Z"),
+    ],
+)
+def test_window_days_boundaries_are_accepted(
+    client,
+    window_days: int,
+    expected_start: str,
+) -> None:
+    response = client(FakeSession()).get(
+        f"/api/v1/dashboard/summary?window_days={window_days}"
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["window_days"] == window_days
+    assert data["window_start"] == expected_start
+    assert data["window_end"] == "2026-07-10T12:00:00Z"
 
 
 def test_dashboard_summary_counts_match_database_fixtures(client) -> None:

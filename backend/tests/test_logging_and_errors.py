@@ -29,7 +29,11 @@ API_KEY_CANARY = "SUPER_SECRET_API_KEY_CANARY"
 DATABASE_URL_CANARY = "postgresql://user:password@example.invalid/db"
 TOKEN_CANARY = "Bearer TOP_SECRET_TOKEN_CANARY"
 PAYLOAD_CANARY = "<script>alert(1)</script>"
-EXCEPTION_CANARY = f"unexpected {DATABASE_URL_CANARY} {API_KEY_CANARY}"
+FILESYSTEM_PATH_CANARY = r"C:\sensitive\internal\path"
+EXCEPTION_CANARY = (
+    f"unexpected {DATABASE_URL_CANARY} {API_KEY_CANARY} "
+    f"{TOKEN_CANARY} {FILESYSTEM_PATH_CANARY} {PAYLOAD_CANARY}"
+)
 
 
 class EmptyScalarResult:
@@ -293,6 +297,8 @@ def test_unexpected_exception_is_sanitized_correlated_and_logged_once(
         DATABASE_URL_CANARY,
         API_KEY_CANARY,
         TOKEN_CANARY,
+        FILESYSTEM_PATH_CANARY,
+        PAYLOAD_CANARY,
         ATTACKER_REQUEST_ID,
         "RuntimeError",
         "Traceback",

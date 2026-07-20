@@ -13,6 +13,8 @@ from app.api.v1.query_validation import (
     MAX_SEARCH_LENGTH,
     VALIDATION_ERROR_DETAIL,
 )
+from app.core.request_context import REQUEST_ID_HEADER
+from app.core.security_headers import API_CONTENT_SECURITY_POLICY, SECURITY_HEADERS
 from app.db.session import get_db_session
 from app.main import app
 from app.models import (
@@ -115,6 +117,15 @@ def client():
     app.dependency_overrides.clear()
     for test_client in created_clients:
         test_client.close()
+
+
+def assert_success_response_headers(response) -> None:
+    assert response.headers["content-type"].split(";", maxsplit=1)[0] == "application/json"
+    request_id = UUID(response.headers[REQUEST_ID_HEADER])
+    assert request_id.version == 4
+    for name, value in SECURITY_HEADERS.items():
+        assert response.headers[name] == value
+    assert response.headers["Content-Security-Policy"] == API_CONTENT_SECURITY_POLICY
 
 
 def make_article(
@@ -444,6 +455,7 @@ def test_articles_endpoint_returns_safe_article_fields(client) -> None:
     response = client(FakeSession([item])).get("/api/v1/articles")
 
     assert response.status_code == 200
+    assert_success_response_headers(response)
     data = response.json()
     returned = data["items"][0]
     assert data["total"] == 1
@@ -488,6 +500,7 @@ def test_article_detail_endpoint_returns_safe_article_fields(client) -> None:
     response = client(FakeSession([item])).get(f"/api/v1/articles/{item.public_id}")
 
     assert response.status_code == 200
+    assert_success_response_headers(response)
     assert response.json() == {
         "public_id": str(item.public_id),
         "title": "CERT-EU detail advisory",
@@ -602,6 +615,19 @@ def test_pagination_uses_total_matching_count(client) -> None:
     assert data["limit"] == 1
     assert data["offset"] == 1
     assert [entry["title"] for entry in data["items"]] == ["Middle"]
+
+
+@pytest.mark.parametrize("limit", [1, 100])
+def test_limit_boundaries_are_accepted(client, limit: int) -> None:
+    response = client(FakeSession()).get(f"/api/v1/articles?limit={limit}")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "items": [],
+        "total": 0,
+        "limit": limit,
+        "offset": 0,
+    }
 
 
 @pytest.mark.parametrize("query", ["limit=0", "limit=101", "offset=-1"])

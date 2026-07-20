@@ -9,7 +9,9 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.api.v1.query_validation import VALIDATION_ERROR_DETAIL
+from app.api.v1.query_validation import MAX_PAGINATION_OFFSET, VALIDATION_ERROR_DETAIL
+from app.core.request_context import REQUEST_ID_HEADER
+from app.core.security_headers import API_CONTENT_SECURITY_POLICY, SECURITY_HEADERS
 from app.db.session import get_db_session
 from app.main import app
 from app.models import (
@@ -74,6 +76,15 @@ def client():
     app.dependency_overrides.clear()
     for test_client in created_clients:
         test_client.close()
+
+
+def assert_success_response_headers(response) -> None:
+    assert response.headers["content-type"].split(";", maxsplit=1)[0] == "application/json"
+    request_id = UUID(response.headers[REQUEST_ID_HEADER])
+    assert request_id.version == 4
+    for name, value in SECURITY_HEADERS.items():
+        assert response.headers[name] == value
+    assert response.headers["Content-Security-Policy"] == API_CONTENT_SECURITY_POLICY
 
 
 def make_vulnerability_item(
@@ -338,6 +349,7 @@ def test_list_endpoint_returns_stored_vulnerability_record_without_raw_payloads(
     response = client(FakeSession([item])).get("/api/v1/intelligence/items")
 
     assert response.status_code == 200
+    assert_success_response_headers(response)
     data = response.json()
     assert data["total"] == 1
     returned = data["items"][0]
@@ -388,16 +400,49 @@ def test_list_pagination_limit_and_offset_work(client) -> None:
     assert [entry["cve_id"] for entry in data["items"]] == ["CVE-2026-00001"]
 
 
-def test_invalid_limit_returns_validation_error(client) -> None:
-    response = client(FakeSession()).get("/api/v1/intelligence/items?limit=101")
+@pytest.mark.parametrize("limit", [0, 101])
+def test_invalid_limit_returns_validation_error(client, limit: int) -> None:
+    session = FakeSession()
+    response = client(session).get(f"/api/v1/intelligence/items?limit={limit}")
 
     assert response.status_code == 422
+    assert response.json() == {"detail": VALIDATION_ERROR_DETAIL}
+    assert session.execute_calls == 0
 
 
-def test_invalid_offset_returns_validation_error(client) -> None:
-    response = client(FakeSession()).get("/api/v1/intelligence/items?offset=-1")
+@pytest.mark.parametrize("offset", [-1, MAX_PAGINATION_OFFSET + 1, 10**100])
+def test_invalid_offset_returns_validation_error(client, offset: int) -> None:
+    session = FakeSession()
+    response = client(session).get(f"/api/v1/intelligence/items?offset={offset}")
 
     assert response.status_code == 422
+    assert response.json() == {"detail": VALIDATION_ERROR_DETAIL}
+    assert session.execute_calls == 0
+
+
+@pytest.mark.parametrize("limit", [1, 100])
+def test_limit_boundaries_are_accepted(client, limit: int) -> None:
+    response = client(FakeSession()).get(
+        f"/api/v1/intelligence/items?limit={limit}"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "items": [],
+        "total": 0,
+        "limit": limit,
+        "offset": 0,
+    }
+
+
+@pytest.mark.parametrize("offset", [0, MAX_PAGINATION_OFFSET])
+def test_offset_boundaries_are_accepted(client, offset: int) -> None:
+    response = client(FakeSession()).get(
+        f"/api/v1/intelligence/items?offset={offset}"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["offset"] == offset
 
 
 def test_severity_filter_is_case_insensitive(client) -> None:
@@ -559,6 +604,32 @@ def test_q_search_matches_title_summary_and_cve_id(client) -> None:
     ]
     assert [entry["cve_id"] for entry in cve_response.json()["items"]] == [
         "CVE-2026-77777"
+    ]
+
+
+@pytest.mark.parametrize("search_text", ["%", "_", "\\", "تنبيه دبي"])
+def test_q_search_treats_wildcards_and_escape_as_text_and_accepts_unicode(
+    client,
+    search_text: str,
+) -> None:
+    match = make_vulnerability_item(
+        cve_id="CVE-2026-77778",
+        title=f"Defensive advisory {search_text}",
+    )
+    unrelated = make_vulnerability_item(
+        cve_id="CVE-2026-77779",
+        title="Unrelated record",
+    )
+
+    response = client(FakeSession([match, unrelated])).get(
+        "/api/v1/intelligence/items",
+        params={"q": search_text},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert [entry["cve_id"] for entry in response.json()["items"]] == [
+        "CVE-2026-77778"
     ]
 
 
@@ -724,6 +795,7 @@ def test_detail_endpoint_returns_one_safe_item(client) -> None:
     )
 
     assert response.status_code == 200
+    assert_success_response_headers(response)
     data = response.json()
     assert data["public_id"] == str(item.public_id)
     assert data["cve_id"] == "CVE-2026-07000"
@@ -749,6 +821,35 @@ def test_detail_endpoint_returns_one_safe_item(client) -> None:
     assert "created_at" not in data
     assert "updated_at" not in data
     assert "nvd-secret-marker" not in response.text
+
+
+def test_detail_endpoint_returns_safe_non_vulnerability_item(client) -> None:
+    item = make_non_vulnerability_item()
+
+    response = client(FakeSession([item])).get(
+        f"/api/v1/intelligence/items/{item.public_id}"
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["public_id"] == str(item.public_id)
+    assert data["item_type"] == "cyber_news"
+    assert data["title"] == "Regional cyber news"
+    assert data["source_slug"] == "example-feed"
+    assert data["severity"] is None
+    assert data["cve_id"] is None
+    assert data["geographic_scope"] == "regional"
+    assert data["uae_relevance_status"] == "possible"
+    assert data["uae_relevance_confidence"] == 0.42
+    for prohibited in (
+        "news-raw-payload",
+        "raw_payload",
+        "content_hash",
+        "analyst_review_status",
+        "uae_relevance_reason",
+        "uae_relevance_method",
+    ):
+        assert prohibited not in response.text
 
 
 def test_detail_endpoint_does_not_trigger_ingestion_or_network(
@@ -823,6 +924,32 @@ def test_database_errors_are_sanitized(client) -> None:
     assert body == {"detail": "Unable to load intelligence items."}
     assert "private-password" not in response.text
     assert "postgresql://" not in response.text
+
+
+def test_detail_database_errors_are_sanitized(client) -> None:
+    database_canary = "postgresql://detail-user:detail-password@private-host/db"
+    response = client(FakeSession(error_message=database_canary)).get(
+        f"/api/v1/intelligence/items/{uuid4()}"
+    )
+
+    assert response.status_code == 500
+    assert response.json() == {
+        "detail": "Unable to load the requested intelligence item."
+    }
+    assert database_canary not in response.text
+    assert "detail-password" not in response.text
+
+
+def test_detail_endpoint_rejects_query_parameters_before_lookup(client) -> None:
+    session = FakeSession([make_vulnerability_item()])
+
+    response = client(session).get(
+        f"/api/v1/intelligence/items/{uuid4()}?unknown=x"
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": VALIDATION_ERROR_DETAIL}
+    assert session.execute_calls == 0
 
 
 @pytest.mark.parametrize(

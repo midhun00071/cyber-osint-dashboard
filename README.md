@@ -294,6 +294,46 @@ Run these commands from the repository root:
 backend tests plus the frontend type check and production build. `docker` builds,
 starts, and verifies the complete Docker Compose application.
 
+### Backend API tests
+
+The backend API tests run offline with deterministic dependency overrides. They
+cover the public metadata, dashboard summary, article list/detail, intelligence
+list/detail, validation, pagination, error, CORS, request-ID, and security-header
+contracts. From the repository root, run the focused suite with:
+
+```powershell
+$OriginalTemp = $env:TEMP
+$OriginalTmp = $env:TMP
+$OriginalPytestAddopts = $env:PYTEST_ADDOPTS
+$ValidationTemp = Join-Path $env:USERPROFILE "pytest-temp-api"
+New-Item -ItemType Directory -Path $ValidationTemp -Force | Out-Null
+$env:TEMP = $ValidationTemp
+$env:TMP = $ValidationTemp
+Remove-Item Env:PYTEST_ADDOPTS -ErrorAction SilentlyContinue
+
+Push-Location .\backend
+.\.venv\Scripts\python.exe -m pytest `
+    tests/test_health.py tests/test_version.py `
+    tests/test_dashboard_summary_api.py tests/test_articles_api.py `
+    tests/test_intelligence_api.py tests/test_security_middleware.py `
+    tests/test_logging_and_errors.py -q -p no:cacheprovider
+Pop-Location
+
+$env:TEMP = $OriginalTemp
+$env:TMP = $OriginalTmp
+if ($null -eq $OriginalPytestAddopts) {
+    Remove-Item Env:PYTEST_ADDOPTS -ErrorAction SilentlyContinue
+} else {
+    $env:PYTEST_ADDOPTS = $OriginalPytestAddopts
+}
+```
+
+The alternate temp directory avoids Windows profile temp-folder permission
+problems and remains outside the repository. Full project validation remains
+`.\run.cmd test`. The current dependency set can emit the known
+`StarletteDeprecationWarning` about the FastAPI/Starlette test client and
+`httpx`; this does not indicate a test failure.
+
 For day-to-day development, `dev` starts only PostgreSQL in Docker, then runs the
 FastAPI backend and Next.js frontend locally with reload support. Press Ctrl+C to
 stop the local backend and frontend processes. The database container remains
