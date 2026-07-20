@@ -207,6 +207,31 @@ This frontend control is defense in depth. It does not make unsafe backend
 ingestion or storage acceptable, and the P5-02 Content Security Policy remains a
 separate response-layer safeguard.
 
+### Backend logging and error correlation
+
+P5-04 configures the standard-library `app` logger namespace through one
+central handler. `LOG_LEVEL` accepts `DEBUG`, `INFO`, `WARNING`, `ERROR`, or
+`CRITICAL`; the default is `INFO`, including production. Unsupported values are
+rejected without echoing the configured value, production rejects `DEBUG=true`,
+and Uvicorn's raw access logger is replaced by the application's safer request
+completion events.
+
+Every HTTP request receives a new server-generated canonical UUID in the
+`X-Request-ID` response header. Incoming `X-Request-ID` values are ignored. One
+request event contains only the event name, request ID, allow-listed method,
+matched route template (or `unmatched`), status code, and duration in
+milliseconds. It excludes raw paths, query values, bodies, response content,
+headers, cookies, tokens, database URLs, external payloads, and client-provided
+correlation values.
+
+Unexpected request-time exceptions return the stable body
+`{"detail":"An unexpected server error occurred."}` with the same request ID,
+CORS behavior where applicable, and the existing P5-02 security headers. Logs
+record only the safe category `unexpected_exception`, never exception text or a
+traceback. Existing route-specific `400`, `404`, and handled `500` bodies and the
+P5-01 generic `422` body remain unchanged. This is local application logging;
+no remote telemetry or log-shipping service is introduced.
+
 ### Backend CORS and HTTP security headers
 
 P5-02 restricts browser access through the existing backend settings model.

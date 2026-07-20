@@ -42,7 +42,8 @@ Implemented backend controls:
 
 - Pydantic validation.
 - Controlled error responses.
-- Safe logging.
+- Centralized allow-listed application logging.
+- Server-generated request IDs and sanitized unexpected-error handling.
 - CORS restricted to validated exact frontend origins.
 - Request timeouts for external sources.
 
@@ -85,6 +86,31 @@ using an untrusted `X-Forwarded-Proto` value would be unsafe. HSTS remains
 deferred until production HTTPS assumptions and trusted proxy handling are
 implemented and documented.
 
+### Request logging and unexpected errors
+
+P5-04 owns one standard-library handler under the `app` logger namespace.
+`LOG_LEVEL` supports `DEBUG`, `INFO`, `WARNING`, `ERROR`, and `CRITICAL`, with
+`INFO` as the development, test, and production default. Unsupported values fail
+configuration without echoing the rejected value. Production also rejects
+`DEBUG=true`, and application request events replace Uvicorn's raw access log so
+query values are not recorded.
+
+Each request receives a fresh server-generated canonical UUID. An incoming
+`X-Request-ID` is never trusted or reused; the generated value is returned in
+the `X-Request-ID` response header. Request events contain only `event`,
+`request_id`, an allow-listed `method`, the matched internal `route` template or
+`unmatched`, `status_code`, and `duration_ms`. Server failures additionally use
+the stable category `handled_server_error` or `unexpected_exception`.
+
+Request and response bodies, raw paths and query values, headers, cookies,
+authorization and API-key values, database URLs, environment mappings, raw
+external payloads, client addresses, exception messages, and tracebacks are not
+included. Unexpected request-time failures return the deterministic body
+`{"detail":"An unexpected server error occurred."}` while retaining the
+request ID, applicable CORS behavior, and P5-02 security headers. Existing P5-01
+validation and route-specific handled-error bodies remain stable. No detailed
+exception traces, remote telemetry, SIEM export, or log shipping are enabled.
+
 Still planned:
 
 - Admin ingestion endpoint protection if such endpoints are introduced.
@@ -109,6 +135,8 @@ separate response-layer control.
 
 ## Current Status
 
-P5-02 CORS validation and HTTP response-header hardening and P5-03 frontend
-content-rendering hardening are implemented. Broader error-envelope work
-remains a separate P5-04 task.
+P5-02 CORS validation and HTTP response-header hardening, P5-03 frontend
+content-rendering hardening, and P5-04 safe logging, request correlation, and
+unexpected-error handling are implemented. A broader structured error envelope,
+remote telemetry, rate limiting, and protected administrative workflows remain
+deferred.

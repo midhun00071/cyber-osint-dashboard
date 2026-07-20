@@ -9,6 +9,8 @@ from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import URL, make_url
 
+from app.core.logging_config import normalize_log_level
+
 
 DEFAULT_DEVELOPMENT_CORS_ALLOWED_ORIGINS = (
     "http://localhost:3000",
@@ -92,6 +94,13 @@ class Settings(BaseSettings):
 
         return value
 
+    @field_validator("log_level")
+    @classmethod
+    def validate_log_level(cls, value: str) -> str:
+        """Normalize supported levels without exposing a rejected value."""
+
+        return normalize_log_level(value)
+
     @field_validator("backend_cors_allowed_origins", mode="before")
     @classmethod
     def validate_cors_allowed_origins(cls, value: object) -> str:
@@ -120,6 +129,8 @@ class Settings(BaseSettings):
         """Require explicit non-loopback HTTPS frontend origins in production."""
 
         if self.app_env.lower() == "production":
+            if self.debug:
+                raise ValueError("DEBUG must be disabled when APP_ENV=production.")
             for origin in self.cors_origins_list:
                 parsed = urlsplit(origin)
                 host = parsed.hostname

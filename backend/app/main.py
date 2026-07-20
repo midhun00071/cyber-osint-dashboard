@@ -18,6 +18,10 @@ from app.api.v1.routes.intelligence import router as intelligence_router
 from app.api.v1.routes.version import router as version_router
 from app.core.config import get_settings
 from app.core.logging_config import configure_logging
+from app.core.request_context import (
+    RequestContextMiddleware,
+    UnexpectedExceptionMiddleware,
+)
 from app.core.security_headers import SecurityHeadersMiddleware
 
 settings = get_settings()
@@ -30,15 +34,11 @@ logger = logging.getLogger(__name__)
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     """Run application startup and shutdown tasks."""
 
-    logger.info(
-        "Starting %s backend in %s mode.",
-        settings.app_name,
-        settings.app_env,
-    )
+    logger.info("event=application_starting")
 
     yield
 
-    logger.info("Shutting down %s backend.", settings.app_name)
+    logger.info("event=application_stopped")
 
 
 app = FastAPI(
@@ -49,6 +49,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Added first so expected route exceptions are handled inside CORS, request-ID,
+# and security-header boundaries. Starlette applies later additions outermost.
+app.add_middleware(UnexpectedExceptionMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
@@ -56,7 +59,9 @@ app.add_middleware(
     allow_methods=["GET"],
     allow_headers=[],
 )
-# Added after CORS so security headers wrap preflight and handled error responses.
+# Request context wraps CORS so preflight responses also receive correlation IDs.
+app.add_middleware(RequestContextMiddleware)
+# Security headers remain outermost for successful and all sanitized responses.
 app.add_middleware(SecurityHeadersMiddleware)
 
 app.include_router(health_router, prefix="/api")

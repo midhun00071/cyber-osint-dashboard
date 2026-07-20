@@ -1199,9 +1199,11 @@ scalar parameters, and unsupported query parameters. P5-01 does not change the
 existing sanitized `400` date-range and vulnerability-filter-combination
 responses or the existing sanitized `404` and `500` route responses.
 
-The standardized envelope below, including error codes, field details, request
-IDs, and timestamps, is a future design target for later error-handling work
-such as P5-04. It is not the currently implemented P5-01 response.
+P5-04 adds a server-generated `X-Request-ID` response header and safe operational
+correlation without changing existing public JSON bodies. The standardized
+envelope below, including body-level error codes, field details, request IDs,
+and timestamps, remains a future design target. It is not the currently
+implemented P5-01 or P5-04 response body.
 
 Future standardized error shape:
 
@@ -1281,7 +1283,7 @@ Not-found error example:
 }
 ```
 
-Internal server error example:
+Future standardized internal server error example:
 
 ```json
 {
@@ -1295,19 +1297,32 @@ Internal server error example:
 }
 ```
 
-## 17. Request ID and Rate-Limit Behavior
+Current unexpected-error response body:
 
-This section describes future target behavior and is not part of the current
-P5-01 validation response.
+```json
+{
+  "detail": "An unexpected server error occurred."
+}
+```
 
-- Every response includes `X-Request-ID`.
-- Error bodies include the same request ID.
-- The server generates the request ID.
-- Client-provided request IDs are not blindly trusted.
-- Client-provided values must be validated, bounded, and sanitized before any use.
-- Request IDs must not contain secrets.
+The response has HTTP `500`, the generated `X-Request-ID`, and the existing
+security headers. It does not expose exception text, types, tracebacks, SQL,
+database URLs, filesystem paths, request data, or environment values.
 
-For `429`:
+## 17. Request ID and Future Rate-Limit Behavior
+
+Implemented P5-04 behavior:
+
+- Every application HTTP response includes `X-Request-ID`.
+- The server generates a new canonical UUID for every request.
+- Incoming request IDs are ignored and are not logged.
+- Current success and error response bodies remain unchanged.
+- Request logs correlate through the header value using allow-listed metadata.
+
+The future structured error envelope may include the same request ID in the
+body. Body-level request IDs are not implemented by P5-04.
+
+Future `429` behavior:
 
 - Use the standard error envelope.
 - Include `Retry-After` when the retry interval is known.
