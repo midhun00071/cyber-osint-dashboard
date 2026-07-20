@@ -8,6 +8,11 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.api.v1.query_validation import (
+    MAX_PAGINATION_OFFSET,
+    MAX_SEARCH_LENGTH,
+    VALIDATION_ERROR_DETAIL,
+)
 from app.db.session import get_db_session
 from app.main import app
 from app.models import (
@@ -1361,3 +1366,205 @@ def test_article_detail_does_not_trigger_ingestion(client, monkeypatch: pytest.M
     response = client(FakeSession([item])).get(f"/api/v1/articles/{item.public_id}")
 
     assert response.status_code == 200
+
+
+def test_offset_zero_and_maximum_are_accepted(client) -> None:
+    zero_session = FakeSession([make_article()])
+    maximum_session = FakeSession([make_article()])
+
+    zero_response = client(zero_session).get("/api/v1/articles?offset=0")
+    maximum_response = client(maximum_session).get(
+        f"/api/v1/articles?offset={MAX_PAGINATION_OFFSET}"
+    )
+
+    assert zero_response.status_code == 200
+    assert zero_response.json()["offset"] == 0
+    assert maximum_response.status_code == 200
+    assert maximum_response.json()["offset"] == MAX_PAGINATION_OFFSET
+
+
+@pytest.mark.parametrize(
+    "offset",
+    [MAX_PAGINATION_OFFSET + 1, 10**100],
+)
+def test_oversized_offset_is_rejected_before_database_access(client, offset: int) -> None:
+    session = FakeSession([make_article()])
+
+    response = client(session).get(f"/api/v1/articles?offset={offset}")
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": VALIDATION_ERROR_DETAIL}
+    assert session.execute_calls == []
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "limit=1&limit=100",
+        "offset=0&offset=1",
+        "q=alpha&q=beta",
+        "category=cyber_news&category=threat_report",
+        "published_from=2026-01-01&published_from=2025-01-01",
+        "li%6Dit=1&limit=2",
+    ],
+)
+def test_repeated_scalar_query_parameters_are_rejected(client, query: str) -> None:
+    session = FakeSession([make_article()])
+
+    response = client(session).get(f"/api/v1/articles?{query}")
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": VALIDATION_ERROR_DETAIL}
+    assert session.execute_calls == []
+
+
+def test_different_supported_query_parameters_remain_accepted(client) -> None:
+    response = client(FakeSession([make_article()])).get(
+        "/api/v1/articles?limit=1&offset=0"
+    )
+
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize("query", ["unknown_param=x", "sort=title"])
+def test_unsupported_article_query_parameters_are_rejected(client, query: str) -> None:
+    session = FakeSession([make_article()])
+
+    response = client(session).get(f"/api/v1/articles?{query}")
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": VALIDATION_ERROR_DETAIL}
+    assert session.execute_calls == []
+
+
+@pytest.mark.parametrize(
+    "search_text",
+    [
+        "O'Brien - TLS 1.3 / API: (Dubai).",
+        "تنبيه أمني دبي",
+    ],
+)
+def test_search_accepts_useful_punctuation_and_unicode(client, search_text: str) -> None:
+    response = client(FakeSession([make_article(title=search_text)])).get(
+        "/api/v1/articles",
+        params={"q": search_text},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+
+
+def test_search_length_boundary_is_enforced(client) -> None:
+    maximum = "a" * MAX_SEARCH_LENGTH
+    too_long = "b" * (MAX_SEARCH_LENGTH + 1)
+
+    valid_response = client(FakeSession([make_article(title=maximum)])).get(
+        "/api/v1/articles",
+        params={"q": maximum},
+    )
+    invalid_response = client(FakeSession([make_article(title=too_long)])).get(
+        "/api/v1/articles",
+        params={"q": too_long},
+    )
+
+    assert valid_response.status_code == 200
+    assert valid_response.json()["total"] == 1
+    assert invalid_response.status_code == 422
+    assert invalid_response.json() == {"detail": VALIDATION_ERROR_DETAIL}
+
+
+@pytest.mark.parametrize(
+    "search_text",
+    [
+        "nul\x00value",
+        "line\nfeed",
+        "carriage\rreturn",
+        "tab\tvalue",
+        "zero\u200bwidth",
+        "<script",
+        "script>",
+    ],
+)
+def test_search_rejects_controls_format_characters_and_markup(
+    client,
+    search_text: str,
+) -> None:
+    session = FakeSession([make_article()])
+
+    response = client(session).get(
+        "/api/v1/articles",
+        params={"q": search_text},
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": VALIDATION_ERROR_DETAIL}
+    assert search_text not in response.text
+    assert session.execute_calls == []
+
+
+def test_search_treats_escape_character_as_literal_text(client) -> None:
+    matching = make_article(index=1, title=r"Windows path C:\\Temp")
+    unrelated = make_article(index=2, title="Windows path C:Temp")
+
+    response = client(FakeSession([matching, unrelated])).get(
+        "/api/v1/articles",
+        params={"q": r"C:\\Temp"},
+    )
+
+    assert response.status_code == 200
+    assert [item["title"] for item in response.json()["items"]] == [matching.canonical_title]
+
+
+def test_uppercase_canonical_article_uuid_is_accepted(client) -> None:
+    item = make_article()
+    item.public_id = UUID("abcdefab-cdef-4abc-8def-abcdefabcdef")
+
+    response = client(FakeSession([item])).get(
+        f"/api/v1/articles/{str(item.public_id).upper()}"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["public_id"] == str(item.public_id)
+
+
+@pytest.mark.parametrize(
+    "public_id",
+    [
+        "12345678123456781234567812345678",
+        "{12345678-1234-5678-1234-567812345678}",
+        "not-a-uuid",
+        "12345678-1234-5678-1234-567812345678-extra",
+    ],
+)
+def test_noncanonical_article_uuid_is_safely_rejected_before_lookup(
+    client,
+    public_id: str,
+) -> None:
+    session = FakeSession([make_article()])
+
+    response = client(session).get(f"/api/v1/articles/{public_id}")
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": VALIDATION_ERROR_DETAIL}
+    assert public_id not in response.text
+    assert session.execute_calls == []
+    for prohibited in (
+        "uuid_parsing",
+        "input",
+        "ValueError",
+        "RequestValidationError",
+        "traceback",
+        "postgresql://",
+    ):
+        assert prohibited not in response.text
+
+
+def test_article_detail_rejects_query_parameters(client) -> None:
+    item = make_article()
+    session = FakeSession([item])
+
+    response = client(session).get(f"/api/v1/articles/{item.public_id}?unknown=x")
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": VALIDATION_ERROR_DETAIL}
+    assert session.execute_calls == []

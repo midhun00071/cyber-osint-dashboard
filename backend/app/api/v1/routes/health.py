@@ -1,13 +1,15 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.api.v1.query_validation import validate_query_parameters
 from app.core.config import get_settings
 
 router = APIRouter(prefix="/health", tags=["health"])
+validate_no_query_parameters = validate_query_parameters(set())
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(validate_no_query_parameters)])
 def health_check() -> dict[str, str]:
     """Return a safe health-check response for deployment and monitoring."""
 

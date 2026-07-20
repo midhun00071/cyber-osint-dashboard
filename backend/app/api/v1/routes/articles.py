@@ -3,18 +3,20 @@
 from __future__ import annotations
 
 from datetime import date as date_type
-from uuid import UUID
-
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.v1.query_validation import (
     ARTICLE_ITEM_TYPE_VALUES,
+    MAX_PAGINATION_OFFSET,
+    MAX_SEARCH_LENGTH,
+    CanonicalPublicUUID,
     GEOGRAPHIC_SCOPE_VALUES,
     UAE_RELEVANCE_STATUS_VALUES,
     normalize_enum_filter,
     normalize_search_text,
     normalize_slug_filter,
+    validate_query_parameters,
     validate_article_date_range,
 )
 from app.api.v1.schemas.articles import ArticleListResponse, ArticleSummary
@@ -28,13 +30,37 @@ from app.services.article_query_service import (
 
 
 router = APIRouter(prefix="/articles", tags=["articles"])
+validate_article_list_query = validate_query_parameters(
+    {
+        "limit",
+        "offset",
+        "q",
+        "category",
+        "source_slug",
+        "tag_slug",
+        "published_from",
+        "published_to",
+        "geographic_scope",
+        "uae_relevance_status",
+    }
+)
+validate_no_query_parameters = validate_query_parameters(set())
 
 
-@router.get("", response_model=ArticleListResponse)
+@router.get(
+    "",
+    response_model=ArticleListResponse,
+    dependencies=[Depends(validate_article_list_query)],
+)
 def list_articles(
     limit: int = Query(default=25, ge=1, le=100),
-    offset: int = Query(default=0, ge=0),
-    q: str | None = Query(default=None, min_length=1, max_length=120, pattern=r".*\S.*"),
+    offset: int = Query(default=0, ge=0, le=MAX_PAGINATION_OFFSET),
+    q: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=MAX_SEARCH_LENGTH,
+        pattern=r".*\S.*",
+    ),
     category: str | None = Query(default=None, min_length=1, max_length=40),
     source_slug: str | None = Query(default=None, min_length=1, max_length=80),
     tag_slug: str | None = Query(default=None, min_length=1, max_length=100),
@@ -85,9 +111,13 @@ def list_articles(
         ) from exc
 
 
-@router.get("/{public_id}", response_model=ArticleSummary)
+@router.get(
+    "/{public_id}",
+    response_model=ArticleSummary,
+    dependencies=[Depends(validate_no_query_parameters)],
+)
 def get_article(
-    public_id: UUID,
+    public_id: CanonicalPublicUUID,
     db_session: Session = Depends(get_db_session),
 ) -> ArticleSummary:
     """Return one active stored article-like intelligence item safely."""

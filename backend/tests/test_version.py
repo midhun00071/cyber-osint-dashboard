@@ -2,6 +2,7 @@ import importlib
 
 from fastapi.testclient import TestClient
 
+from app.api.v1.query_validation import VALIDATION_ERROR_DETAIL
 from app.core.config import get_settings
 
 
@@ -72,3 +73,12 @@ def test_fastapi_metadata_uses_configured_version(monkeypatch) -> None:
 
     get_settings.cache_clear()
     importlib.reload(main_module)
+
+
+def test_version_endpoint_rejects_query_parameters() -> None:
+    from app.main import app
+
+    response = TestClient(app).get("/api/version?unknown=x")
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": VALIDATION_ERROR_DETAIL}

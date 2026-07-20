@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.api.v1.query_validation import VALIDATION_ERROR_DETAIL
 from app.db.session import get_db_session
 from app.main import app
 from app.models import (
@@ -694,3 +695,20 @@ def test_dashboard_summary_does_not_trigger_ingestion_or_network(
     )
 
     assert response.status_code == 200
+
+
+@pytest.mark.parametrize(
+    "query",
+    ["unknown=x", "window_days=7&window_days=30"],
+)
+def test_dashboard_summary_rejects_unsupported_or_repeated_queries(
+    client,
+    query: str,
+) -> None:
+    session = FakeSession()
+
+    response = client(session).get(f"/api/v1/dashboard/summary?{query}")
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": VALIDATION_ERROR_DETAIL}
+    assert session.execute_kinds == []

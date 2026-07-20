@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from datetime import UTC, date, datetime, time, timedelta
-from typing import Iterable
+from typing import Annotated, Iterable
+from uuid import UUID
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException, Request, status
+from pydantic import BeforeValidator
 
 from app.models.intelligence_item import (
     GEOGRAPHIC_SCOPE_VALUES,
@@ -21,17 +24,60 @@ ARTICLE_ITEM_TYPE_VALUES = tuple(
 SEVERITY_VALUES = ("unknown", "none", "low", "medium", "high", "critical")
 CANONICAL_SLUG_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 CVE_ID_PATTERN = re.compile(r"^CVE-[0-9]{4}-[0-9]{4,}$")
+CANONICAL_PUBLIC_UUID_PATTERN = re.compile(
+    r"^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-"
+    r"[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
+)
 MAX_ARTICLE_DATE_RANGE_YEARS = 5
+MAX_PAGINATION_OFFSET = 10_000
+MAX_SEARCH_LENGTH = 120
+VALIDATION_ERROR_DETAIL = "Request validation failed."
+
+
+def _validate_canonical_public_uuid(value: object) -> object:
+    if (
+        not isinstance(value, str)
+        or CANONICAL_PUBLIC_UUID_PATTERN.fullmatch(value) is None
+    ):
+        raise ValueError(VALIDATION_ERROR_DETAIL)
+    return value
+
+
+CanonicalPublicUUID = Annotated[
+    UUID,
+    BeforeValidator(_validate_canonical_public_uuid),
+]
+
+
+def validate_query_parameters(
+    allowed_names: Iterable[str],
+) -> Callable[[Request], None]:
+    """Return a dependency that rejects unknown or repeated scalar queries."""
+
+    allowed = frozenset(allowed_names)
+
+    def validate(request: Request) -> None:
+        decoded_names = [name for name, _ in request.query_params.multi_items()]
+        if any(name not in allowed for name in decoded_names):
+            _raise_validation_error()
+        if len(decoded_names) != len(set(decoded_names)):
+            _raise_validation_error()
+
+    return validate
 
 
 def normalize_search_text(value: str | None, *, field_name: str = "q") -> str | None:
-    """Trim a supplied search parameter and reject whitespace-only values."""
+    """Trim and validate a bounded, printable plain-text search value."""
 
     if value is None:
         return None
+    if len(value) > MAX_SEARCH_LENGTH:
+        _raise_validation_error()
+    if any(character in "<>" or not character.isprintable() for character in value):
+        _raise_validation_error()
     normalized = value.strip()
     if not normalized:
-        _raise_validation_error(f"{field_name} must contain non-whitespace text.")
+        _raise_validation_error()
     return normalized
 
 
@@ -47,10 +93,10 @@ def normalize_enum_filter(
         return None
     normalized = value.strip().lower()
     if not normalized:
-        _raise_validation_error(f"{field_name} must not be empty.")
+        _raise_validation_error()
     allowed = tuple(allowed_values)
     if normalized not in allowed:
-        _raise_validation_error(f"{field_name} has an unsupported value.")
+        _raise_validation_error()
     return normalized
 
 
@@ -61,9 +107,9 @@ def normalize_slug_filter(value: str | None, *, field_name: str) -> str | None:
         return None
     normalized = value.strip().lower()
     if not normalized:
-        _raise_validation_error(f"{field_name} must not be empty.")
+        _raise_validation_error()
     if CANONICAL_SLUG_PATTERN.fullmatch(normalized) is None:
-        _raise_validation_error(f"{field_name} has an invalid slug format.")
+        _raise_validation_error()
     return normalized
 
 
@@ -74,9 +120,9 @@ def normalize_cve_id_filter(value: str | None) -> str | None:
         return None
     normalized = value.strip().upper()
     if not normalized:
-        _raise_validation_error("cve_id must not be empty.")
+        _raise_validation_error()
     if CVE_ID_PATTERN.fullmatch(normalized) is None:
-        _raise_validation_error("cve_id has an invalid CVE format.")
+        _raise_validation_error()
     return normalized
 
 
@@ -147,8 +193,8 @@ def _raise_invalid_article_date_range() -> None:
     )
 
 
-def _raise_validation_error(message: str) -> None:
+def _raise_validation_error() -> None:
     raise HTTPException(
-        status_code=422,
-        detail=message,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail=VALIDATION_ERROR_DETAIL,
     )

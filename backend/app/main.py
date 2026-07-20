@@ -2,9 +2,15 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
+from app.api.v1.query_validation import (
+    VALIDATION_ERROR_DETAIL,
+    validate_query_parameters,
+)
 from app.api.v1.routes.articles import router as articles_router
 from app.api.v1.routes.dashboard import router as dashboard_router
 from app.api.v1.routes.health import router as health_router
@@ -55,9 +61,23 @@ app.include_router(version_router, prefix="/api")
 app.include_router(articles_router, prefix="/api/v1")
 app.include_router(dashboard_router, prefix="/api/v1")
 app.include_router(intelligence_router, prefix="/api/v1")
+validate_no_query_parameters = validate_query_parameters(set())
 
 
-@app.get("/")
+@app.exception_handler(RequestValidationError)
+async def request_validation_error_handler(
+    _request: Request,
+    _exc: RequestValidationError,
+) -> JSONResponse:
+    """Return a stable public error without echoing rejected request values."""
+
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        content={"detail": VALIDATION_ERROR_DETAIL},
+    )
+
+
+@app.get("/", dependencies=[Depends(validate_no_query_parameters)])
 def root() -> dict[str, str]:
     """Return a safe root response without exposing sensitive configuration."""
 

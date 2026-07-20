@@ -2,20 +2,22 @@
 
 from __future__ import annotations
 
-from uuid import UUID
-
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.v1.query_validation import (
     GEOGRAPHIC_SCOPE_VALUES,
     ITEM_TYPE_VALUES,
+    MAX_PAGINATION_OFFSET,
+    MAX_SEARCH_LENGTH,
     SEVERITY_VALUES,
     UAE_RELEVANCE_STATUS_VALUES,
+    CanonicalPublicUUID,
     normalize_cve_id_filter,
     normalize_enum_filter,
     normalize_search_text,
     normalize_slug_filter,
+    validate_query_parameters,
     validate_vulnerability_filter_combination,
 )
 from app.api.v1.schemas.intelligence import (
@@ -32,13 +34,36 @@ from app.services.intelligence_query_service import (
 
 
 router = APIRouter(prefix="/intelligence/items", tags=["intelligence"])
+validate_intelligence_list_query = validate_query_parameters(
+    {
+        "limit",
+        "offset",
+        "q",
+        "severity",
+        "source_slug",
+        "item_type",
+        "cve_id",
+        "geographic_scope",
+        "uae_relevance_status",
+    }
+)
+validate_no_query_parameters = validate_query_parameters(set())
 
 
-@router.get("", response_model=IntelligenceItemListResponse)
+@router.get(
+    "",
+    response_model=IntelligenceItemListResponse,
+    dependencies=[Depends(validate_intelligence_list_query)],
+)
 def list_intelligence_items(
     limit: int = Query(default=25, ge=1, le=100),
-    offset: int = Query(default=0, ge=0),
-    q: str | None = Query(default=None, min_length=1, max_length=120, pattern=r".*\S.*"),
+    offset: int = Query(default=0, ge=0, le=MAX_PAGINATION_OFFSET),
+    q: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=MAX_SEARCH_LENGTH,
+        pattern=r".*\S.*",
+    ),
     severity: str | None = Query(default=None, min_length=1, max_length=20),
     source_slug: str | None = Query(default=None, min_length=1, max_length=80),
     item_type: str | None = Query(default=None, min_length=1, max_length=40),
@@ -95,9 +120,13 @@ def list_intelligence_items(
         ) from exc
 
 
-@router.get("/{item_public_id}", response_model=IntelligenceItemSummary)
+@router.get(
+    "/{item_public_id}",
+    response_model=IntelligenceItemSummary,
+    dependencies=[Depends(validate_no_query_parameters)],
+)
 def get_intelligence_item(
-    item_public_id: UUID,
+    item_public_id: CanonicalPublicUUID,
     db_session: Session = Depends(get_db_session),
 ) -> IntelligenceItemSummary:
     """Return one stored intelligence item without raw source payloads."""

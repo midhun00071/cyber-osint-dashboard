@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app.api.v1.query_validation import validate_query_parameters
 from app.api.v1.schemas.dashboard import DashboardSummaryResponse
 from app.db.session import get_db_session
 from app.services.dashboard_summary_service import (
@@ -15,9 +16,14 @@ from app.services.dashboard_summary_service import (
 
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
+validate_dashboard_summary_query = validate_query_parameters({"window_days"})
 
 
-@router.get("/summary", response_model=DashboardSummaryResponse)
+@router.get(
+    "/summary",
+    response_model=DashboardSummaryResponse,
+    dependencies=[Depends(validate_dashboard_summary_query)],
+)
 def get_dashboard_summary(
     window_days: int = Query(default=30, ge=1, le=365),
     db_session: Session = Depends(get_db_session),

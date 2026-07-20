@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.api.v1.query_validation import VALIDATION_ERROR_DETAIL
 from app.db.session import get_db_session
 from app.main import app
 from app.models import (
@@ -49,8 +50,10 @@ class FakeSession:
     ) -> None:
         self.items = items or []
         self.error_message = error_message
+        self.execute_calls = 0
 
     def execute(self, _statement):
+        self.execute_calls += 1
         if self.error_message is not None:
             raise SQLAlchemyError(self.error_message)
         return FakeExecuteResult(self.items)
@@ -820,3 +823,76 @@ def test_database_errors_are_sanitized(client) -> None:
     assert body == {"detail": "Unable to load intelligence items."}
     assert "private-password" not in response.text
     assert "postgresql://" not in response.text
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "severity=critical&severity=low",
+        "q=first&q=second",
+        "offset=0&offset=1",
+    ],
+)
+def test_repeated_intelligence_query_parameters_are_rejected(
+    client,
+    query: str,
+) -> None:
+    session = FakeSession([make_vulnerability_item()])
+
+    response = client(session).get(f"/api/v1/intelligence/items?{query}")
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": VALIDATION_ERROR_DETAIL}
+    assert session.execute_calls == 0
+
+
+@pytest.mark.parametrize("query", ["unknown_param=x", "sort=title"])
+def test_unsupported_intelligence_query_parameters_are_rejected(
+    client,
+    query: str,
+) -> None:
+    session = FakeSession([make_vulnerability_item()])
+
+    response = client(session).get(f"/api/v1/intelligence/items?{query}")
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": VALIDATION_ERROR_DETAIL}
+    assert session.execute_calls == 0
+
+
+def test_uppercase_canonical_intelligence_uuid_is_accepted(client) -> None:
+    item = make_vulnerability_item(
+        public_id=UUID("abcdefab-cdef-4abc-8def-abcdefabcdef")
+    )
+
+    response = client(FakeSession([item])).get(
+        f"/api/v1/intelligence/items/{str(item.public_id).upper()}"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["public_id"] == str(item.public_id)
+
+
+@pytest.mark.parametrize(
+    "item_public_id",
+    [
+        "12345678123456781234567812345678",
+        "{12345678-1234-5678-1234-567812345678}",
+        "malformed-uuid",
+        "12345678-1234-5678-1234-5678123456780",
+    ],
+)
+def test_noncanonical_intelligence_uuid_is_rejected_before_lookup(
+    client,
+    item_public_id: str,
+) -> None:
+    session = FakeSession([make_vulnerability_item()])
+
+    response = client(session).get(
+        f"/api/v1/intelligence/items/{item_public_id}"
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": VALIDATION_ERROR_DETAIL}
+    assert item_public_id not in response.text
+    assert session.execute_calls == 0

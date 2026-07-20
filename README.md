@@ -496,6 +496,34 @@ endpoints:
 - `GET /api/v1/intelligence/items`
 - `GET /api/v1/intelligence/items/{item_public_id}`
 
+The two list endpoints use bounded offset pagination: `limit` defaults to `25`
+and accepts `1` through `100`, while `offset` defaults to `0` and accepts `0`
+through `10,000`. Out-of-range values return sanitized HTTP `422`. Every
+currently implemented query parameter is single-value; repeated scalar names,
+unknown names, and unimplemented names such as `sort` return `422` after
+percent-decoding. Different supported parameters can still be combined. The
+dashboard summary accepts only `window_days`; article/intelligence detail,
+`GET /`, `GET /api/health`, and `GET /api/version` accept no query parameters.
+
+The implemented `q` fields are plain-text searches with a maximum supplied
+length of 120 characters. Surrounding whitespace is trimmed, while
+whitespace-only values, NUL/control or non-printable characters, embedded line
+breaks, Unicode format/control characters, and `<` or `>` return `422`.
+Ordinary Unicode and useful punctuation remain valid. SQL LIKE wildcard and
+escape characters are treated literally, and raw payloads or sensitive fields
+are never searched. Article search covers title and summary; intelligence-item
+search also covers the primary CVE identifier.
+
+Article and intelligence detail IDs must be canonical 36-character hyphenated
+UUIDs such as `12345678-1234-5678-1234-567812345678`. Uppercase hexadecimal is
+accepted and normalized; compact, braced, malformed, or overlong UUIDs return
+`422`, while a correctly formatted nonexistent UUID returns `404`. Current
+P5-01 validation failures use the sanitized body
+`{"detail":"Request validation failed."}` without echoing rejected input or
+exposing parser internals, exception context, stack traces, headers, database
+details, or configuration. A richer standardized error envelope remains future
+error-handling work.
+
 The article list endpoint returns active article-like records with bounded
 `limit` and `offset` pagination, title/summary search through `q`, and safe
 filters for category, source slug, tag slug, publication date range,

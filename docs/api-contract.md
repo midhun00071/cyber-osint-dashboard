@@ -53,6 +53,13 @@ implemented article and intelligence list filters. Invalid individual query
 values return `422`; invalid combinations of otherwise valid filters return
 `400` with sanitized messages.
 
+Implementation note as of July 20, 2026: P5-01 adds shared request validation
+for the implemented public read routes. It enforces bounded offset pagination,
+single-value query parameters, route-specific query allow-lists, plain-text
+search rules, canonical public UUIDs, and a sanitized `422` response. The
+broader standardized error envelope described later in this document remains
+future design work and is not the current P5-01 response.
+
 Implementation note as of July 13, 2026: P4-03 adds single-value
 `geographic_scope` and `uae_relevance_status` filters to the implemented
 `GET /api/v1/intelligence/items` endpoint. They use the same approved enum
@@ -170,7 +177,8 @@ Implemented P2-09/P2-11 article list endpoint:
 It excludes `vulnerability` and excludes inactive `merged`, `superseded`, and
 `archived` records. Pagination is offset-based with `limit`
 default `25`, minimum `1`, maximum `100`, and `offset` default `0`, minimum
-`0`. The response envelope is:
+`0`, maximum `10,000`. Values outside these bounds return a sanitized `422`.
+The response envelope is:
 
 ```json
 {
@@ -197,13 +205,18 @@ Article row fields are:
 - `uae_relevance_confidence`
 - `last_seen_at`
 
-The optional `q` parameter trims surrounding whitespace, supports 1 to 120
-characters, and performs case-insensitive substring search over only
-`canonical_title` and `summary`. When `q` is supplied, the trimmed value must
-contain at least one non-whitespace character; whitespace-only searches return
-`422`. SQL wildcard characters such as `%` and `_` are escaped and treated as
-literal text. Raw payloads, URLs, source external IDs, hashes, identifiers,
-errors, headers, and configuration are not searched.
+The optional `q` parameter is plain-text search with a maximum supplied length
+of 120 characters. It trims surrounding whitespace and performs
+case-insensitive substring search over only `canonical_title` and `summary`.
+The trimmed value must contain at least one non-whitespace character;
+whitespace-only searches return `422`. NUL, control characters, embedded line
+breaks, Unicode format/control characters, other non-printable characters, and
+the `<` and `>` markup delimiters are rejected. Ordinary Unicode text and
+useful punctuation remain accepted. SQL LIKE wildcard characters such as `%`
+and `_`, plus the `\` escape character, are escaped and treated as literal
+search text. Raw payloads, URLs, source external IDs, hashes, identifiers,
+errors, headers, database details, configuration, and other sensitive fields
+are not searched.
 
 Article filters are optional single-value filters and combine with logical
 `AND`. Each supplied text filter trims surrounding whitespace, normalizes to
@@ -255,8 +268,9 @@ network requests. Public sort parameters remain pending.
 
 Implemented `GET /api/v1/intelligence/items` validation:
 
-- `q` is optional, trims surrounding whitespace, has maximum length 120, and
-  rejects whitespace-only input with `422`.
+- `q` is optional and follows the same 120-character plain-text validation
+  rules described above. It searches canonical title, summary, and the primary
+  CVE identifier only; SQL wildcard and escape characters remain literal text.
 - `severity` is optional, normalizes to lowercase, and allows only `unknown`,
   `none`, `low`, `medium`, `high`, or `critical`.
 - `source_slug` is optional, normalizes to lowercase, has maximum length 80,
@@ -275,9 +289,40 @@ Implemented `GET /api/v1/intelligence/items` validation:
   `item_type` returns `400` with
   `Vulnerability filters require item_type=vulnerability.`.
 
-The implemented list endpoint accepts one value for each of these filters.
-Different supplied filters combine with logical `AND`, and `total`, `limit`,
-and `offset` describe the result set after filtering.
+Both implemented list endpoints use offset pagination with `limit` default
+`25`, minimum `1`, maximum `100`, and `offset` default `0`, minimum `0`, maximum
+`10,000`. Values outside those bounds return a sanitized `422`.
+
+Each currently implemented query parameter is single-value. Repeating any
+scalar parameter returns `422`, including repeats written with a
+percent-encoded parameter name. Parameter names are percent-decoded before the
+duplicate and route allow-list checks. Unsupported or unknown parameters also
+return `422`; unimplemented parameters such as `sort` are rejected rather than
+ignored. Different supported parameters may still be combined normally. On
+the two list endpoints, different supplied filters combine with logical `AND`,
+and `total`, `limit`, and `offset` describe the result set after filtering.
+
+The route-specific query allow-lists are:
+
+- `GET /api/v1/articles` and `GET /api/v1/intelligence/items` accept only their
+  currently documented list parameters.
+- `GET /api/v1/dashboard/summary` accepts only the single-value `window_days`
+  parameter.
+- `GET /api/v1/articles/{public_id}`,
+  `GET /api/v1/intelligence/items/{item_public_id}`, `GET /`,
+  `GET /api/health`, and `GET /api/version` accept no query parameters.
+
+The two implemented detail routes require public identifiers in the canonical
+36-character hyphenated UUID representation:
+
+```text
+12345678-1234-5678-1234-567812345678
+```
+
+Uppercase hexadecimal is accepted and normalized. Compact UUIDs without
+hyphens, braced UUIDs, malformed values, and overlong values return `422`. A
+correctly formatted but nonexistent UUID still returns the existing sanitized
+`404`. The validation does not restrict public identifiers to one UUID version.
 
 ## 7. Intelligence-Item Query Parameters
 
@@ -353,14 +398,18 @@ Implemented filter behavior:
 
 - Different filter categories combine with `AND`.
 - Single supplied values are exact matches after safe normalization.
-- Repeated values of the same filter and page-based response links remain
-  deferred for the broader planned API contract.
+- Repeated values of the same filter return `422` on the implemented endpoint.
 - `q` searches canonical title, summary, and the primary CVE identifier.
 - Exact CVE identifier matching uses `cve_id`.
 - Raw payload content is never searched.
 - `analyst_review_status` is excluded from the public MVP.
 
 ## 8. Pagination and Sorting
+
+The page-based model in this section remains the broader future design target.
+The implemented article and intelligence list endpoints use the bounded
+`limit`/`offset` contract documented in Section 6, reject repeated or unknown
+parameters, and do not implement `sort` or cursor pagination.
 
 Page-based pagination:
 
@@ -1104,7 +1153,27 @@ The internal ID is an unexposed stable tie-breaker.
 
 ## 16. Error Contract and HTTP Status Codes
 
-Error shape:
+Current implemented P5-01 validation response:
+
+```json
+{
+  "detail": "Request validation failed."
+}
+```
+
+This response uses HTTP `422`. It does not echo rejected input or expose
+Pydantic parser internals, exception context, stack traces, request headers,
+database details, or configuration. It covers current request-validation
+failures such as invalid types, bounds, formats, canonical UUIDs, repeated
+scalar parameters, and unsupported query parameters. P5-01 does not change the
+existing sanitized `400` date-range and vulnerability-filter-combination
+responses or the existing sanitized `404` and `500` route responses.
+
+The standardized envelope below, including error codes, field details, request
+IDs, and timestamps, is a future design target for later error-handling work
+such as P5-04. It is not the currently implemented P5-01 response.
+
+Future standardized error shape:
 
 ```json
 {
@@ -1118,7 +1187,7 @@ Error shape:
 }
 ```
 
-Approved error codes:
+Future approved error codes:
 
 - `validation_error`
 - `invalid_query`
@@ -1144,11 +1213,12 @@ Examples of `400`:
 - start date later than end date
 - date range exceeding the allowed maximum
 
-Normalize FastAPI validation errors into the standard envelope while retaining `422`.
+Future work should normalize FastAPI validation errors into the standard
+envelope while retaining `422`.
 
 External feed outages should not cause stored-data list or detail requests to return `503`.
 
-Validation error example:
+Future standardized validation error example:
 
 ```json
 {
@@ -1196,6 +1266,9 @@ Internal server error example:
 ```
 
 ## 17. Request ID and Rate-Limit Behavior
+
+This section describes future target behavior and is not part of the current
+P5-01 validation response.
 
 - Every response includes `X-Request-ID`.
 - Error bodies include the same request ID.
