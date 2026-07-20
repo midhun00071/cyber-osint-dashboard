@@ -173,7 +173,9 @@ def test_existing_non_database_settings_still_behave_correctly() -> None:
         APP_VERSION="  1.2.3  ",
         APP_ENV="  test  ",
         DEBUG=True,
-        BACKEND_CORS_ORIGINS=" http://localhost:3000, http://127.0.0.1:3000 ",
+        BACKEND_CORS_ALLOWED_ORIGINS=(
+            " http://localhost:3000, http://127.0.0.1:3000 "
+        ),
     )
 
     assert settings.app_name == "Custom Dashboard"

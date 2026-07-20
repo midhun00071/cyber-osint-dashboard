@@ -192,6 +192,53 @@ reputation ingestion, STIX/TAXII processing, or paid-tier integration.
 - Render external text safely in the frontend.
 - Log errors without exposing secrets.
 
+### Backend CORS and HTTP security headers
+
+P5-02 restricts browser access through the existing backend settings model.
+`BACKEND_CORS_ALLOWED_ORIGINS` is a comma-separated list of exact origins. The
+safe local-development value is:
+
+```text
+http://localhost:3000,http://127.0.0.1:3000
+```
+
+Scheme, host, and non-default port are matched exactly. Default HTTP port `80`
+and HTTPS port `443` are normalized away, and IP addresses use their canonical
+representation. Wildcards, empty entries, URL paths, queries, fragments, user
+information, unsupported schemes, malformed ports, and control, format,
+whitespace, or other non-printable characters are rejected before URL parsing.
+When `APP_ENV=production`, an explicit HTTPS-only allow-list is required and
+localhost, `.localhost` subdomains, and IPv4/IPv6 loopback addresses are
+rejected. A valid production example is
+`https://dashboard.example.com`. Set `NEXT_PUBLIC_API_BASE_URL` to the backend
+URL visible to that frontend, and never commit a real `.env` file or secrets.
+
+The browser CORS method policy allows only `GET` and configures no additional
+non-safelisted request headers. Starlette advertises the standard CORS-safelisted
+`Accept`, `Accept-Language`, `Content-Language`, and `Content-Type` names during
+preflight; this does not add write endpoints because the method allow-list
+remains `GET`. Wildcard, authorization, and custom headers are not granted.
+Credentials are disabled; the current application does not use browser cookies,
+sessions, or authorization headers. Requests without an `Origin` header remain
+available to ordinary API clients.
+
+API and non-documentation responses include these exact headers:
+
+```text
+X-Content-Type-Options: nosniff
+X-Frame-Options: DENY
+Referrer-Policy: no-referrer
+Permissions-Policy: camera=(), microphone=(), geolocation=()
+Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'
+```
+
+The enabled `/docs` and `/redoc` HTML pages retain the first four headers but
+omit the API CSP so FastAPI's existing interactive documentation remains
+renderable; API routes keep the strict policy. HSTS is deferred because the
+repository does not yet define trusted HTTPS termination or a trusted reverse
+proxy. The backend does not trust arbitrary forwarded headers to make that
+decision, and local HTTP development remains unaffected.
+
 ## Running the Project
 
 Run these commands from the repository root:

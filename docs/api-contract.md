@@ -1153,6 +1153,36 @@ The internal ID is an unexposed stable tie-breaker.
 
 ## 16. Error Contract and HTTP Status Codes
 
+### P5-02 HTTP security headers
+
+The browser CORS policy allows only `GET`, disables credentials, and configures
+no additional non-safelisted request headers. Starlette advertises the standard
+CORS-safelisted `Accept`, `Accept-Language`, `Content-Language`, and
+`Content-Type` names; wildcard, authorization, and unsupported custom headers
+are not granted. `Content-Type` does not permit write behavior because the
+method allow-list remains `GET`.
+
+Configured origins reject control, format, whitespace, and other non-printable
+characters before URL parsing. Default HTTP port `80` and HTTPS port `443` are
+normalized away, non-default ports remain significant, and IP addresses use
+canonical representation. Production requires HTTPS and rejects `localhost`,
+`.localhost` subdomains, and IPv4/IPv6 loopback origins.
+
+Successful API responses, CORS preflight responses, and handled `404`, `422`,
+and `500` responses include:
+
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY`
+- `Referrer-Policy: no-referrer`
+- `Permissions-Policy: camera=(), microphone=(), geolocation=()`
+- `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`
+
+The enabled `/docs` and `/redoc` HTML routes retain the first four headers but
+omit the strict API CSP so the existing FastAPI documentation remains
+renderable. The exception is limited to those documentation HTML routes. HSTS
+is deferred until trusted HTTPS termination and reverse-proxy behavior are
+defined; request-supplied forwarded headers are not trusted to enable it.
+
 Current implemented P5-01 validation response:
 
 ```json

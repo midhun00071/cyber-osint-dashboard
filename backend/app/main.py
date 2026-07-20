@@ -18,6 +18,7 @@ from app.api.v1.routes.intelligence import router as intelligence_router
 from app.api.v1.routes.version import router as version_router
 from app.core.config import get_settings
 from app.core.logging_config import configure_logging
+from app.core.security_headers import SecurityHeadersMiddleware
 
 settings = get_settings()
 configure_logging(settings.log_level)
@@ -53,8 +54,10 @@ app.add_middleware(
     allow_origins=settings.cors_origins_list,
     allow_credentials=False,
     allow_methods=["GET"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=[],
 )
+# Added after CORS so security headers wrap preflight and handled error responses.
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.include_router(health_router, prefix="/api")
 app.include_router(version_router, prefix="/api")

@@ -38,14 +38,56 @@ Dockerfiles should:
 
 ## Backend Security
 
-Planned backend controls:
+Implemented backend controls:
 
 - Pydantic validation.
 - Controlled error responses.
 - Safe logging.
-- CORS restricted to trusted frontend origins.
+- CORS restricted to validated exact frontend origins.
 - Request timeouts for external sources.
-- Admin ingestion endpoint protected or disabled in production.
+
+P5-02 uses `BACKEND_CORS_ALLOWED_ORIGINS` as the single comma-separated origin
+allow-list. Development defaults are exactly `http://localhost:3000` and
+`http://127.0.0.1:3000`. Production mode requires explicitly configured HTTPS
+origins. Production also rejects `localhost`, `.localhost` subdomains, and
+IPv4/IPv6 loopback addresses. Origins with wildcards, paths, queries, fragments,
+user information, unsupported schemes, malformed ports, empty entries, or
+control, format, whitespace, or non-printable characters fail before URL
+parsing; configuration never falls back to allow-all. Default HTTP port `80`
+and HTTPS port `443` are removed during normalization, non-default ports are
+preserved, and IP addresses use canonical representation.
+
+The browser method policy permits only `GET`, configures no additional
+non-safelisted request headers, and keeps credentials disabled. Starlette's
+standard CORS safelist advertises `Accept`, `Accept-Language`, `Content-Language`,
+and `Content-Type`; wildcard, authorization, and unsupported custom headers are
+not granted. `Content-Type` does not enable write endpoints because only `GET`
+is allowed. The middleware does not reflect request origins. Requests without
+an `Origin` header remain ordinary API requests.
+
+The backend adds these headers to successful API responses, CORS preflight,
+and handled `404`, `422`, and `500` responses:
+
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY`
+- `Referrer-Policy: no-referrer`
+- `Permissions-Policy: camera=(), microphone=(), geolocation=()`
+- `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`
+
+FastAPI's enabled `/docs` and `/redoc` HTML routes receive the first four
+headers but omit the strict API CSP because that policy would block the
+framework's existing interactive documentation assets. This exception is
+route-specific and does not weaken API responses.
+
+`Strict-Transport-Security` is not emitted. The repository has no established
+trusted HTTPS-termination or reverse-proxy design, so setting HSTS locally or
+using an untrusted `X-Forwarded-Proto` value would be unsafe. HSTS remains
+deferred until production HTTPS assumptions and trusted proxy handling are
+implemented and documented.
+
+Still planned:
+
+- Admin ingestion endpoint protection if such endpoints are introduced.
 
 ## Frontend Security
 
@@ -58,4 +100,6 @@ Planned frontend controls:
 
 ## Current Status
 
-Phase 1 setup only. Security checks will expand during implementation and testing.
+P5-02 CORS validation and HTTP response-header hardening are implemented and
+covered by backend tests. Frontend content-rendering hardening and broader
+error-envelope work remain separate P5-03 and P5-04 tasks.

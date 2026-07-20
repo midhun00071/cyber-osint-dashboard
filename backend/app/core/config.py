@@ -1,9 +1,24 @@
+import ipaddress
+import re
+import unicodedata
 from functools import lru_cache
 from typing import List
+from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import URL, make_url
+
+
+DEFAULT_DEVELOPMENT_CORS_ALLOWED_ORIGINS = (
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+)
+_ALLOWED_ORIGIN_SCHEMES = frozenset({"http", "https"})
+_HOSTNAME_PATTERN = re.compile(
+    r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*"
+    r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+)
 
 
 class Settings(BaseSettings):
@@ -39,9 +54,9 @@ class Settings(BaseSettings):
     postgres_user: str | None = Field(default=None, alias="POSTGRES_USER")
     postgres_password: SecretStr | None = Field(default=None, alias="POSTGRES_PASSWORD")
 
-    backend_cors_origins: str = Field(
-        default="http://localhost:3000",
-        alias="BACKEND_CORS_ORIGINS",
+    backend_cors_allowed_origins: str = Field(
+        default=",".join(DEFAULT_DEVELOPMENT_CORS_ALLOWED_ORIGINS),
+        alias="BACKEND_CORS_ALLOWED_ORIGINS",
     )
 
     nvd_api_key: SecretStr | None = Field(default=None, alias="NVD_API_KEY")
@@ -52,6 +67,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        hide_input_in_errors=True,
         populate_by_name=True,
     )
 
@@ -61,7 +77,6 @@ class Settings(BaseSettings):
         "app_env",
         "log_level",
         "backend_host",
-        "backend_cors_origins",
         "postgres_host",
         "postgres_db",
         "postgres_user",
@@ -77,6 +92,49 @@ class Settings(BaseSettings):
 
         return value
 
+    @field_validator("backend_cors_allowed_origins", mode="before")
+    @classmethod
+    def validate_cors_allowed_origins(cls, value: object) -> str:
+        """Validate, normalize, and deduplicate exact comma-separated origins."""
+
+        if not isinstance(value, str):
+            raise ValueError("BACKEND_CORS_ALLOWED_ORIGINS must be comma-separated.")
+
+        entries = value.split(",")
+        trimmed_entries = [entry.strip(" ") for entry in entries]
+        if not trimmed_entries or any(not entry for entry in trimmed_entries):
+            raise ValueError("BACKEND_CORS_ALLOWED_ORIGINS contains an empty origin.")
+
+        normalized_origins: list[str] = []
+        seen_origins: set[str] = set()
+        for entry in trimmed_entries:
+            normalized_origin = cls._normalize_cors_origin(entry)
+            if normalized_origin not in seen_origins:
+                seen_origins.add(normalized_origin)
+                normalized_origins.append(normalized_origin)
+
+        return ",".join(normalized_origins)
+
+    @model_validator(mode="after")
+    def require_secure_production_cors(self) -> "Settings":
+        """Require explicit non-loopback HTTPS frontend origins in production."""
+
+        if self.app_env.lower() == "production":
+            for origin in self.cors_origins_list:
+                parsed = urlsplit(origin)
+                host = parsed.hostname
+                if (
+                    parsed.scheme != "https"
+                    or host is None
+                    or self._is_loopback_origin_host(host)
+                ):
+                    raise ValueError(
+                        "BACKEND_CORS_ALLOWED_ORIGINS must contain explicit "
+                        "non-loopback HTTPS origins when APP_ENV=production."
+                    )
+
+        return self
+
     @field_validator("database_url", mode="before")
     @classmethod
     def strip_database_url(cls, value: object) -> object:
@@ -90,17 +148,83 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins_list(self) -> List[str]:
-        """Return CORS origins as a cleaned list.
+        """Return the validated exact CORS origin allow-list.
 
-        BACKEND_CORS_ORIGINS should be provided as a comma-separated string,
+        BACKEND_CORS_ALLOWED_ORIGINS is a comma-separated string,
         for example: http://localhost:3000,http://127.0.0.1:3000
         """
 
-        return [
-            origin.strip()
-            for origin in self.backend_cors_origins.split(",")
-            if origin.strip()
-        ]
+        return self.backend_cors_allowed_origins.split(",")
+
+    @staticmethod
+    def _normalize_cors_origin(origin: str) -> str:
+        """Return one canonical origin after rejecting unsafe raw characters."""
+
+        if any(
+            character.isspace()
+            or not character.isprintable()
+            or unicodedata.category(character) in {"Cc", "Cf"}
+            for character in origin
+        ):
+            raise ValueError(
+                "BACKEND_CORS_ALLOWED_ORIGINS contains invalid characters."
+            )
+
+        try:
+            parsed = urlsplit(origin)
+            port = parsed.port
+        except ValueError as exc:
+            raise ValueError(
+                "BACKEND_CORS_ALLOWED_ORIGINS contains a malformed origin."
+            ) from exc
+
+        scheme = parsed.scheme.lower()
+        host = parsed.hostname
+        if (
+            scheme not in _ALLOWED_ORIGIN_SCHEMES
+            or host is None
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path
+            or parsed.query
+            or parsed.fragment
+            or "*" in parsed.netloc
+            or parsed.netloc.endswith(":")
+            or port == 0
+        ):
+            raise ValueError(
+                "BACKEND_CORS_ALLOWED_ORIGINS contains an invalid origin."
+            )
+
+        normalized_host = host.lower()
+        try:
+            parsed_ip = ipaddress.ip_address(normalized_host)
+        except ValueError:
+            if _HOSTNAME_PATTERN.fullmatch(normalized_host) is None:
+                raise ValueError(
+                    "BACKEND_CORS_ALLOWED_ORIGINS contains an invalid host."
+                )
+            rendered_host = normalized_host
+        else:
+            canonical_ip = str(parsed_ip)
+            rendered_host = (
+                f"[{canonical_ip}]" if parsed_ip.version == 6 else canonical_ip
+            )
+
+        default_port = 80 if scheme == "http" else 443
+        rendered_port = f":{port}" if port not in {None, default_port} else ""
+        return f"{scheme}://{rendered_host}{rendered_port}"
+
+    @staticmethod
+    def _is_loopback_origin_host(host: str) -> bool:
+        normalized_host = host.lower()
+        if normalized_host == "localhost" or normalized_host.endswith(".localhost"):
+            return True
+
+        try:
+            return ipaddress.ip_address(normalized_host).is_loopback
+        except ValueError:
+            return False
 
     @property
     def sqlalchemy_database_url(self) -> URL:

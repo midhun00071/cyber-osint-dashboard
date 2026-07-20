@@ -25,3 +25,14 @@ def test_backend_compose_uses_component_database_settings() -> None:
         backend_environment["POSTGRES_PASSWORD"]
         == "${POSTGRES_PASSWORD:-change_me_locally}"
     )
+
+
+def test_backend_compose_uses_explicit_cors_allow_list_setting() -> None:
+    compose_config = load_compose_config()
+    backend_environment = compose_config["services"]["backend"]["environment"]
+
+    assert "BACKEND_CORS_ORIGINS" not in backend_environment
+    assert backend_environment["BACKEND_CORS_ALLOWED_ORIGINS"] == (
+        "${BACKEND_CORS_ALLOWED_ORIGINS:-http://localhost:3000,"
+        "http://127.0.0.1:3000}"
+    )
