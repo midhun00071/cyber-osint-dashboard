@@ -134,9 +134,10 @@ def test_http_errors_are_sanitized(status_code: int, expected: type[Exception]) 
     assert "private upstream payload" not in str(exc_info.value)
 
 
-def test_transport_errors_are_sanitized() -> None:
+@pytest.mark.parametrize("error_type", [httpx.ConnectError, httpx.ReadTimeout])
+def test_timeout_and_transport_errors_are_sanitized(error_type) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        raise httpx.ConnectError("private host detail", request=request)
+        raise error_type("private host detail", request=request)
 
     with pytest.raises(RssRequestError) as exc_info:
         client_for(handler).fetch_cert_eu_security_advisories()
@@ -163,3 +164,20 @@ def test_rejects_oversized_response() -> None:
 
     with pytest.raises(RssResponseTooLargeError):
         client_for(handler).fetch_cert_eu_security_advisories()
+
+
+def test_accepts_feed_at_exact_response_size_limit() -> None:
+    body = RSS_BYTES + b" " * (MAX_RESPONSE_BYTES - len(RSS_BYTES))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        del request
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/rss+xml"},
+            content=body,
+        )
+
+    result = client_for(handler).fetch_cert_eu_security_advisories()
+
+    assert result.feed_bytes == body
+    assert result.byte_count == MAX_RESPONSE_BYTES

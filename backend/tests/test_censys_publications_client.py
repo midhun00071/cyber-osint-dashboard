@@ -751,6 +751,24 @@ def test_publication_http_failures_are_sanitized(
     assert "private" not in repr(result.failure_reasons)
 
 
+def test_discovery_http_403_fails_safely_without_bypass_or_alternate_request() -> None:
+    seen: list[str] = []
+    private_body = b"SUPER_SECRET_FETCHER_CANARY"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return response(403, content=private_body)
+
+    client, _ = client_for(handler)
+    with client:
+        with pytest.raises(CensysDiscoveryCollectionError) as exc_info:
+            client.fetch_publications(ARC, max_records=1)
+
+    assert seen == [ARC_DISCOVERY_URL]
+    assert str(exc_info.value) == "Censys discovery collection failed."
+    assert "SUPER_SECRET_FETCHER_CANARY" not in str(exc_info.value)
+
+
 @pytest.mark.parametrize(
     ("exception_type", "reason"),
     [

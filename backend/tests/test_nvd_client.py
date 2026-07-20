@@ -318,6 +318,22 @@ def test_invalid_top_level_schema_is_response_error(payload: object) -> None:
         http_client.close()
 
 
+@pytest.mark.parametrize("vulnerabilities", [None, "invalid", [False]])
+def test_invalid_vulnerability_collection_is_response_error(
+    vulnerabilities: object,
+) -> None:
+    payload = make_payload()
+    payload["vulnerabilities"] = vulnerabilities
+    client, http_client = make_client(
+        lambda request: httpx.Response(200, json=payload, request=request)
+    )
+    try:
+        with pytest.raises(NvdResponseError, match="list of objects"):
+            client.fetch_page(START, END)
+    finally:
+        http_client.close()
+
+
 @pytest.mark.parametrize(
     "field",
     ["startIndex", "resultsPerPage", "totalResults"],

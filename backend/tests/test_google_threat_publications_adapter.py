@@ -70,6 +70,15 @@ def test_parse_feed_bytes_returns_bounded_entries() -> None:
         parse_google_threat_feed_entries(feed, max_entries=MAX_GOOGLE_THREAT_FEED_ENTRIES + 1)
 
 
+def test_malformed_feed_is_rejected_without_raw_content_disclosure() -> None:
+    malformed = b"\xff\xfe\x00SUPER_SECRET_FETCHER_CANARY"
+
+    with pytest.raises(GoogleThreatFeedError) as exc_info:
+        parse_google_threat_feed_entries(malformed)
+
+    assert "SUPER_SECRET_FETCHER_CANARY" not in str(exc_info.value)
+
+
 @pytest.mark.parametrize(
     ("author", "expected_slug"),
     [

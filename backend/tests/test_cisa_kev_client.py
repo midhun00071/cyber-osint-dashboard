@@ -22,6 +22,12 @@ from app.ingestion.collectors.cisa_kev_client import (
 
 
 CATALOG_BYTES = b'{"vulnerabilities":[]}'
+FETCHER_CANARY_BODY = (
+    b"SUPER_SECRET_FETCHER_CANARY Bearer FETCHER_TOKEN_CANARY "
+    b"api_key=FETCHER_API_KEY_CANARY "
+    b"postgresql://user:password@example.invalid/database "
+    b"Cookie: SESSION_CANARY <script>alert(1)</script>"
+)
 
 
 def client_for(handler) -> CisaKevClient:
@@ -128,19 +134,26 @@ def test_redirect_limit_is_enforced() -> None:
     ("status_code", "expected"),
     [(429, CisaKevRateLimitError), (500, CisaKevHttpError)],
 )
-def test_http_errors_are_sanitized(status_code: int, expected: type[Exception]) -> None:
+def test_http_errors_are_sanitized(
+    caplog: pytest.LogCaptureFixture,
+    status_code: int,
+    expected: type[Exception],
+) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         del request
-        return httpx.Response(status_code, content=b"private upstream payload")
+        return httpx.Response(status_code, content=FETCHER_CANARY_BODY)
 
     with pytest.raises(expected) as exc_info:
         client_for(handler).fetch_catalog()
-    assert "private upstream payload" not in str(exc_info.value)
+    for canary in FETCHER_CANARY_BODY.decode().split():
+        if canary in str(exc_info.value) or canary in caplog.text:
+            pytest.fail("A synthetic fetcher canary appeared in error output.")
 
 
-def test_transport_errors_are_sanitized() -> None:
+@pytest.mark.parametrize("error_type", [httpx.ConnectError, httpx.ReadTimeout])
+def test_timeout_and_transport_errors_are_sanitized(error_type) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        raise httpx.ConnectError("private host detail", request=request)
+        raise error_type("private host detail", request=request)
 
     with pytest.raises(CisaKevRequestError) as exc_info:
         client_for(handler).fetch_catalog()
@@ -153,6 +166,20 @@ def test_rejects_invalid_json_safely() -> None:
         return httpx.Response(200, headers={"content-type": "application/json"}, content=b"{")
 
     with pytest.raises(CisaKevResponseError):
+        client_for(handler).fetch_catalog()
+
+
+@pytest.mark.parametrize("payload", [[], "invalid", False])
+def test_rejects_non_object_json_catalogues(payload: object) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        del request
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            json=payload,
+        )
+
+    with pytest.raises(CisaKevResponseError, match="JSON object"):
         client_for(handler).fetch_catalog()
 
 
@@ -176,3 +203,20 @@ def test_rejects_oversized_response() -> None:
 
     with pytest.raises(CisaKevResponseTooLargeError):
         client_for(handler).fetch_catalog()
+
+
+def test_accepts_valid_json_at_exact_response_size_limit() -> None:
+    body = CATALOG_BYTES + b" " * (MAX_RESPONSE_BYTES - len(CATALOG_BYTES))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        del request
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            content=body,
+        )
+
+    result = client_for(handler).fetch_catalog()
+
+    assert result.catalog == {"vulnerabilities": []}
+    assert result.byte_count == MAX_RESPONSE_BYTES

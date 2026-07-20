@@ -73,6 +73,15 @@ def test_normalizes_rss_item_into_safe_allowlisted_fields() -> None:
     }
 
 
+def test_malformed_feed_is_rejected_without_raw_content_disclosure() -> None:
+    malformed = b"\xff\xfe\x00SUPER_SECRET_FETCHER_CANARY"
+
+    with pytest.raises(RssNormalizationError) as exc_info:
+        normalize_rss_feed(malformed)
+
+    assert "SUPER_SECRET_FETCHER_CANARY" not in str(exc_info.value)
+
+
 def test_normalizes_atom_entries() -> None:
     record = normalize_rss_feed(atom_feed())[0]
 
