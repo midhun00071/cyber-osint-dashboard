@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
+import { SafeExternalLink } from "@/components/SafeExternalLink";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { fetchArticleDetail } from "@/services/articleApi";
 import type {
@@ -69,18 +70,6 @@ function uaeRelevanceTone(status: UaeRelevanceStatus): BadgeTone {
   }
 
   return "neutral";
-}
-
-function isSafeExternalSourceUrl(value: string | null): value is string {
-  if (!value) {
-    return false;
-  }
-
-  try {
-    return new URL(value).protocol === "https:";
-  } catch {
-    return false;
-  }
 }
 
 function getPublicIdParam(value: string | string[] | undefined): string | null {
@@ -193,16 +182,9 @@ export default function ArticleDetailPage() {
           <Link className="safeSourceLink" href="/">
             Back to dashboard
           </Link>
-          {isSafeExternalSourceUrl(article.source_url) ? (
-            <a
-              className="safeSourceLink"
-              href={article.source_url}
-              rel="noreferrer noopener"
-              target="_blank"
-            >
-              Open source
-            </a>
-          ) : null}
+          <SafeExternalLink className="safeSourceLink" url={article.source_url}>
+            Open source
+          </SafeExternalLink>
         </div>
 
         <header className="articleDetailHero">

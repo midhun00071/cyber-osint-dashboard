@@ -192,6 +192,21 @@ reputation ingestion, STIX/TAXII processing, or paid-tier integration.
 - Render external text safely in the frontend.
 - Log errors without exposing secrets.
 
+### Frontend external-content rendering
+
+P5-03 treats all feed and API content as untrusted at the frontend boundary.
+Titles, summaries, source names, and other external text remain ordinary React
+text nodes; raw feed HTML is not parsed or injected. External intelligence links
+are centrally validated and become clickable only when they are absolute HTTP or
+HTTPS URLs. URLs with credentials, unsafe schemes, malformed hosts or ports, or
+control, format, whitespace, or other non-printable characters fail closed and
+their labels render as non-clickable text. Valid links retain the existing new-tab
+behavior with `rel="noopener noreferrer"`.
+
+This frontend control is defense in depth. It does not make unsafe backend
+ingestion or storage acceptable, and the P5-02 Content Security Policy remains a
+separate response-layer safeguard.
+
 ### Backend CORS and HTTP security headers
 
 P5-02 restricts browser access through the existing backend settings model.

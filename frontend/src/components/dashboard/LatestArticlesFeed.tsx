@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
+import { SafeExternalLink } from "@/components/SafeExternalLink";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { fetchArticles } from "@/services/articleApi";
 import type {
@@ -104,18 +105,6 @@ function uaeRelevanceTone(status: UaeRelevanceStatus): BadgeTone {
   }
 
   return "neutral";
-}
-
-function isSafeExternalSourceUrl(value: string | null): value is string {
-  if (!value) {
-    return false;
-  }
-
-  try {
-    return new URL(value).protocol === "https:";
-  } catch {
-    return false;
-  }
 }
 
 function summarize(value: string | null): string {
@@ -352,16 +341,12 @@ export function LatestArticlesFeed() {
                 >
                   View details
                 </Link>
-                {isSafeExternalSourceUrl(article.source_url) ? (
-                  <a
-                    className="safeSourceLink"
-                    href={article.source_url}
-                    rel="noreferrer noopener"
-                    target="_blank"
-                  >
-                    Open source
-                  </a>
-                ) : null}
+                <SafeExternalLink
+                  className="safeSourceLink"
+                  url={article.source_url}
+                >
+                  Open source
+                </SafeExternalLink>
               </div>
             </article>
           ))}

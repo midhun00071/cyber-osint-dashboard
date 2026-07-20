@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "type-check": "next typegen && tsc --noEmit"
+    "type-check": "next typegen && tsc --noEmit",
+    "validate:safe-rendering": "tsc --project tsconfig.safe-rendering.json --outDir \"%TEMP%\\cyber-osint-p5-03-validation\" && set \"NODE_PATH=%CD%\\node_modules\" && node \"%TEMP%\\cyber-osint-p5-03-validation\\scripts\\validate-safe-rendering.js\""
   },
   "dependencies": {
     "next": "latest",

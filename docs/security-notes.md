@@ -91,15 +91,24 @@ Still planned:
 
 ## Frontend Security
 
-Planned frontend controls:
+Implemented P5-03 controls:
 
 - Do not store secrets in frontend variables.
 - Only use NEXT_PUBLIC_ variables for safe public values.
-- Escape or safely render external source content.
-- Avoid rendering untrusted HTML.
+- Render external feed and API strings as React text rather than raw HTML.
+- Centrally validate external URLs and allow only absolute HTTP or HTTPS links.
+- Reject credentials, unsafe schemes, malformed hosts or ports, and control,
+  format, whitespace, or other non-printable URL characters.
+- Render rejected external-link labels as non-clickable text.
+- Use `rel="noopener noreferrer"` for external links opened in a new tab.
+
+These frontend controls are defense in depth and do not replace safe backend
+ingestion, normalization, validation, or storage. Raw feed HTML remains
+untrusted and is not rendered. The P5-02 API Content Security Policy remains a
+separate response-layer control.
 
 ## Current Status
 
-P5-02 CORS validation and HTTP response-header hardening are implemented and
-covered by backend tests. Frontend content-rendering hardening and broader
-error-envelope work remain separate P5-03 and P5-04 tasks.
+P5-02 CORS validation and HTTP response-header hardening and P5-03 frontend
+content-rendering hardening are implemented. Broader error-envelope work
+remains a separate P5-04 task.

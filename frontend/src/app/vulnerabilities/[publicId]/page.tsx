@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
+import { SafeExternalLink } from "@/components/SafeExternalLink";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { fetchVulnerabilityDetail } from "@/services/vulnerabilityApi";
 import type {
@@ -137,18 +138,6 @@ function formatRansomwareUse(value: boolean | null): string {
   return "Unknown";
 }
 
-function isSafeExternalSourceUrl(value: string | null): value is string {
-  if (!value) {
-    return false;
-  }
-
-  try {
-    return new URL(value).protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
 function getPublicIdParam(value: string | string[] | undefined): string | null {
   if (typeof value !== "string") {
     return null;
@@ -262,16 +251,9 @@ export default function VulnerabilityDetailPage() {
           <Link className="safeSourceLink" href="/">
             Back to dashboard
           </Link>
-          {isSafeExternalSourceUrl(item.source_url) ? (
-            <a
-              className="safeSourceLink"
-              href={item.source_url}
-              rel="noreferrer noopener"
-              target="_blank"
-            >
-              Open source
-            </a>
-          ) : null}
+          <SafeExternalLink className="safeSourceLink" url={item.source_url}>
+            Open source
+          </SafeExternalLink>
         </div>
 
         <header className="articleDetailHero">
