@@ -753,5 +753,6 @@ See the docs/ folder for:
 - source-integration-policy.md
 - security-notes.md
 - testing-plan.md
+- manual-test-cases.md
 - deployment-notes.md
 - uae-classification.md
