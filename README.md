@@ -31,7 +31,7 @@ The application must not provide exploit instructions, weaponized proof-of-conce
 - Database: PostgreSQL
 - Background scheduling: APScheduler for MVP
 - Deployment: Docker and Docker Compose
-- Testing: pytest for backend and frontend tests later
+- Testing: pytest for the backend; Vitest and React Testing Library for the frontend
 
 ## Repository Structure
 
@@ -291,8 +291,32 @@ Run these commands from the repository root:
 ```
 
 `install` prepares the backend and frontend dependencies, while `test` runs the
-backend tests plus the frontend type check and production build. `docker` builds,
-starts, and verifies the complete Docker Compose application.
+backend pytest suite, frontend Vitest suite, frontend type check, and frontend
+production build. `docker` builds, starts, and verifies the complete Docker
+Compose application.
+
+### Frontend component tests
+
+The frontend uses Vitest, jsdom, and React Testing Library. Tests run offline
+with synthetic fixtures and mocked frontend service responses; they do not need
+a running backend, database, Docker service, live OSINT source, or secret.
+
+From `frontend`, run the suite once for automated validation:
+
+```powershell
+npm run test:run
+```
+
+Use watch mode during local test development:
+
+```powershell
+npm test
+```
+
+The project-level `.\run.cmd test` workflow includes the one-shot frontend
+suite. The standalone `npm run validate:safe-rendering` command remains
+available for the broader P5-03 URL and text-payload validation. This repository
+does not currently define a CI workflow.
 
 ### Backend API tests
 

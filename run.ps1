@@ -41,7 +41,7 @@ Usage:
   .\run.cmd full        Run the full workflow
   .\run.cmd setup       Check prerequisites and create missing local env files
   .\run.cmd install     Install backend and frontend dependencies
-  .\run.cmd test        Run backend tests and frontend checks
+  .\run.cmd test        Run backend and frontend tests, type check, and build
   .\run.cmd docker      Build, start, and verify the Docker services
   .\run.cmd dev         Run the database in Docker and apps locally
   .\run.cmd help        Show this help
@@ -128,9 +128,16 @@ function Invoke-ProjectTests {
         Pop-Location
     }
 
-    Write-Section "Frontend type check"
+    Write-Section "Frontend tests"
     Push-Location (Join-Path $script:ProjectRoot "frontend")
     try {
+        Invoke-CheckedCommand `
+            -Executable "npm" `
+            -Arguments @("run", "test:run") `
+            -FailureMessage "Frontend tests failed"
+        Write-Success "Frontend tests passed."
+
+        Write-Section "Frontend type check"
         Invoke-CheckedCommand `
             -Executable "npm" `
             -Arguments @("run", "type-check") `

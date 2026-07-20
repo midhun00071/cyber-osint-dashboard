@@ -8,6 +8,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
+    "test": "vitest",
+    "test:run": "vitest run",
     "type-check": "next typegen && tsc --noEmit",
     "validate:safe-rendering": "tsc --project tsconfig.safe-rendering.json --outDir \"%TEMP%\\cyber-osint-p5-03-validation\" && set \"NODE_PATH=%CD%\\node_modules\" && node \"%TEMP%\\cyber-osint-p5-03-validation\\scripts\\validate-safe-rendering.js\""
   },
@@ -17,11 +19,18 @@
     "react-dom": "latest"
   },
   "devDependencies": {
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
+    "@vitejs/plugin-react": "^6.0.3",
     "eslint": "latest",
     "eslint-config-next": "latest",
-    "typescript": "latest"
+    "jsdom": "^29.1.1",
+    "typescript": "latest",
+    "vitest": "^4.1.10"
   }
 }
