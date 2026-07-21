@@ -273,6 +273,114 @@ function Assert-PortAvailable {
     }
 }
 
+function Get-BackendConfiguredDatabaseUrl {
+    param([Parameter(Mandatory)][string]$BackendDirectory)
+
+    if (Test-Path -LiteralPath "Env:DATABASE_URL") {
+        if ([string]::IsNullOrWhiteSpace($env:DATABASE_URL)) {
+            return $null
+        }
+
+        return $env:DATABASE_URL
+    }
+
+    $environmentPath = Join-Path $BackendDirectory ".env"
+    if (-not (Test-Path -LiteralPath $environmentPath -PathType Leaf)) {
+        return $null
+    }
+
+    foreach ($line in [System.IO.File]::ReadLines($environmentPath)) {
+        $match = [regex]::Match(
+            $line,
+            "^\s*(?:export\s+)?DATABASE_URL\s*=\s*(?<value>.*)$"
+        )
+        if (-not $match.Success) {
+            continue
+        }
+
+        $value = $match.Groups["value"].Value.Trim()
+        if ($value.Length -ge 2 -and (
+            ($value[0] -eq '"' -and $value[$value.Length - 1] -eq '"') -or
+            ($value[0] -eq "'" -and $value[$value.Length - 1] -eq "'")
+        )) {
+            $value = $value.Substring(1, $value.Length - 2)
+        }
+        else {
+            $value = [regex]::Replace($value, "\s+#.*$", "").TrimEnd()
+        }
+
+        if ([string]::IsNullOrWhiteSpace($value)) {
+            return $null
+        }
+
+        return $value
+    }
+
+    return $null
+}
+
+function ConvertTo-HostDatabaseUrl {
+    param([Parameter(Mandatory)][string]$DatabaseUrl)
+
+    $parsedUrl = $null
+    if (-not [Uri]::TryCreate(
+        $DatabaseUrl,
+        [UriKind]::Absolute,
+        [ref]$parsedUrl
+    ) -or [string]::IsNullOrWhiteSpace($parsedUrl.Host)) {
+        throw "The configured DATABASE_URL must be a valid absolute database URL."
+    }
+
+    if (-not $parsedUrl.Host.Equals(
+        "db",
+        [StringComparison]::OrdinalIgnoreCase
+    )) {
+        return $DatabaseUrl
+    }
+
+    $hostUrl = [UriBuilder]::new($parsedUrl)
+    $hostUrl.Host = "localhost"
+    return $hostUrl.Uri.AbsoluteUri
+}
+
+function Start-HostBackendProcess {
+    param(
+        [Parameter(Mandatory)][string]$FilePath,
+        [Parameter(Mandatory)][string[]]$ArgumentList,
+        [Parameter(Mandatory)][string]$WorkingDirectory,
+        [AllowNull()][string]$ConfiguredDatabaseUrl
+    )
+
+    $databaseUrlWasSet = Test-Path -LiteralPath "Env:DATABASE_URL"
+    $previousDatabaseUrl = if ($databaseUrlWasSet) {
+        $env:DATABASE_URL
+    }
+    else {
+        $null
+    }
+
+    try {
+        if ($null -ne $ConfiguredDatabaseUrl) {
+            $env:DATABASE_URL = ConvertTo-HostDatabaseUrl $ConfiguredDatabaseUrl
+        }
+
+        return Start-Process `
+            -FilePath $FilePath `
+            -ArgumentList $ArgumentList `
+            -WorkingDirectory $WorkingDirectory `
+            -NoNewWindow `
+            -PassThru
+    }
+    finally {
+        if ($databaseUrlWasSet) {
+            $env:DATABASE_URL = $previousDatabaseUrl
+        }
+        else {
+            Remove-Item -LiteralPath "Env:DATABASE_URL" -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 function Invoke-DevelopmentWorkflow {
     Assert-TestDependencies
 
@@ -302,12 +410,13 @@ function Invoke-DevelopmentWorkflow {
 
     try {
         Write-Section "Start local development servers"
-        $backendProcess = Start-Process `
+        $configuredDatabaseUrl = Get-BackendConfiguredDatabaseUrl `
+            -BackendDirectory $backendDirectory
+        $backendProcess = Start-HostBackendProcess `
             -FilePath $script:BackendPython `
             -ArgumentList @("-m", "uvicorn", "app.main:app", "--reload", "--host", "127.0.0.1", "--port", "8000") `
             -WorkingDirectory $backendDirectory `
-            -NoNewWindow `
-            -PassThru
+            -ConfiguredDatabaseUrl $configuredDatabaseUrl
 
         $frontendProcess = Start-Process `
             -FilePath $npmCommand `
