@@ -15,6 +15,17 @@ node_modules/
 out/
 dist/
 
+# Test-only and repository artifacts
+**/*.test.ts
+**/*.test.tsx
+src/test/
+vitest.config.mts
+tsconfig.safe-rendering.json
+scripts/
+.git/
+*.zip
+review*/
+
 # Logs
 *.log
 npm-debug.log*

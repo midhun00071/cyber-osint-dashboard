@@ -756,4 +756,5 @@ See the docs/ folder for:
 - manual-test-cases.md
 - deployment-notes.md
 - [Deployment build validation](docs/deployment-build-validation.md)
+- [Production Docker deployment](docs/production-docker-deployment.md)
 - uae-classification.md

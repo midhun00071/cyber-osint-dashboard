@@ -45,8 +45,15 @@ Before production-style deployment:
 
 ## Docker Notes
 
-The current Docker setup is prepared for later use, but full container execution should wait until backend and frontend application skeletons are implemented.
+The development Compose workflow remains available for local work. P7-01 adds a
+separate production-oriented Compose entry point with non-root application
+images, private PostgreSQL networking, manual-only migrations, health checks,
+bounded logging, and restart controls. See
+[Production Docker deployment](production-docker-deployment.md) for the
+approved commands and limitations.
 
 ## Current Status
 
-Phase 1 setup only. Deployment run steps will be added after the application can start successfully.
+The application can be built and validated as an isolated production-oriented
+Compose stack. TLS termination, backups, monitoring, orchestration, and
+deployment-specific secret management remain external responsibilities.

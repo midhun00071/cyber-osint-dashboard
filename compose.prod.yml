@@ -1,0 +1,151 @@
+name: alpha-data-production
+
+x-application-security: &application-security
+  init: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  logging:
+    driver: local
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  db:
+    image: postgres:17-alpine
+    user: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:?POSTGRES_DB must be set}"
+      POSTGRES_USER: "${POSTGRES_USER:?POSTGRES_USER must be set}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"'
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - database
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  backend:
+    <<: *application-security
+    image: "alpha-data-backend:${IMAGE_TAG:-p7-01}"
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    restart: unless-stopped
+    environment:
+      APP_NAME: "${APP_NAME:-Cyber OSINT Dashboard}"
+      APP_VERSION: "${APP_VERSION:-0.1.0}"
+      APP_ENV: production
+      DEBUG: "false"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: "${POSTGRES_DB:?POSTGRES_DB must be set}"
+      POSTGRES_USER: "${POSTGRES_USER:?POSTGRES_USER must be set}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}"
+      BACKEND_CORS_ALLOWED_ORIGINS: "${BACKEND_CORS_ALLOWED_ORIGINS:?BACKEND_CORS_ALLOWED_ORIGINS must be set}"
+      ENABLE_ADMIN_INGESTION: "false"
+    ports:
+      - "${BACKEND_BIND_ADDRESS:-127.0.0.1}:${BACKEND_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+        restart: true
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3).read()"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - application
+      - database
+
+  frontend:
+    <<: *application-security
+    image: "alpha-data-frontend:${IMAGE_TAG:-p7-01}"
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+      args:
+        NEXT_PUBLIC_API_BASE_URL: "${NEXT_PUBLIC_API_BASE_URL:?NEXT_PUBLIC_API_BASE_URL must be set}"
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_BIND_ADDRESS:-127.0.0.1}:${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+        restart: true
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/').then(response => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - application
+
+  migrate:
+    <<: *application-security
+    image: "alpha-data-backend:${IMAGE_TAG:-p7-01}"
+    profiles:
+      - migration
+    restart: "no"
+    command:
+      - alembic
+      - -c
+      - /app/alembic.ini
+      - upgrade
+      - head
+    environment:
+      APP_ENV: production
+      DEBUG: "false"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: "${POSTGRES_DB:?POSTGRES_DB must be set}"
+      POSTGRES_USER: "${POSTGRES_USER:?POSTGRES_USER must be set}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}"
+      BACKEND_CORS_ALLOWED_ORIGINS: "${BACKEND_CORS_ALLOWED_ORIGINS:?BACKEND_CORS_ALLOWED_ORIGINS must be set}"
+      ENABLE_ADMIN_INGESTION: "false"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - database
+
+volumes:
+  postgres_data:
+
+networks:
+  application:
+    driver: bridge
+  database:
+    driver: bridge
+    internal: true

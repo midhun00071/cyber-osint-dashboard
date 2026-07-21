@@ -3,9 +3,17 @@
 .env.*
 !.env.example
 
+# Repository and review artifacts
+.git/
+tests/
+*.zip
+review*/
+
 # Python cache
 __pycache__/
+**/__pycache__/
 *.py[cod]
+**/*.py[cod]
 *.pyo
 *.pyd
 .pytest_cache/
