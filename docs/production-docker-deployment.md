@@ -15,6 +15,11 @@ from being inherited accidentally and leaves `.\run.cmd dev` unchanged.
 
 ## Required configuration
 
+The authoritative variable classifications, placeholder rules, storage
+requirements, and rotation procedure are documented in
+[Environment and secret handling](environment-and-secrets.md). This deployment
+guide retains only the variables and commands needed to operate P7-01.
+
 Create the deployment environment file outside the repository. Start from
 `.env.production.example`, restrict access to the completed file, and never add
 it to Git. The required variables are:
@@ -26,10 +31,17 @@ it to Git. The required variables are:
 - `NEXT_PUBLIC_API_BASE_URL`
 
 `POSTGRES_PASSWORD` has no committed default. Use a strong deployment secret.
+The official PostgreSQL image grants the configured `POSTGRES_USER`
+initialization role superuser privileges, and current Compose reuses that
+privileged role for backend and migration access. It does not provision a
+separate restricted application role. A mature production deployment should
+separately provision a non-superuser application role with only the required
+permissions, but that database and deployment change is future, separately
+reviewed work and is not implemented or automated by P7-02.
 `BACKEND_CORS_ALLOWED_ORIGINS` must contain explicit trusted HTTPS origins; a
 wildcard is invalid. `NEXT_PUBLIC_API_BASE_URL` is public browser configuration,
-not a secret. Next.js embeds it during the image build, so changing it requires
-rebuilding the frontend image.
+never a secret. Next.js embeds it in browser-delivered assets during the image
+build, so changing it requires rebuilding and redeploying the frontend image.
 
 The template also lists optional image tag, application metadata, log level,
 loopback bind address, and host-port overrides. Do not place API keys, tokens,

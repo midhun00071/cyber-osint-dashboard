@@ -757,4 +757,5 @@ See the docs/ folder for:
 - deployment-notes.md
 - [Deployment build validation](docs/deployment-build-validation.md)
 - [Production Docker deployment](docs/production-docker-deployment.md)
+- [Environment and secret handling](docs/environment-and-secrets.md)
 - uae-classification.md
