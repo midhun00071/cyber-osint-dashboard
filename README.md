@@ -755,4 +755,5 @@ See the docs/ folder for:
 - testing-plan.md
 - manual-test-cases.md
 - deployment-notes.md
+- [Deployment build validation](docs/deployment-build-validation.md)
 - uae-classification.md
