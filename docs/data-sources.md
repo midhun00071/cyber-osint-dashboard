@@ -1,336 +1,464 @@
 # Data Sources
 
-## Purpose
+## Purpose and audience
 
-This document tracks approved and candidate safe public and authorized cybersecurity data sources for the dashboard.
+This guide is the source-traceability record for mentors, reviewers, operators,
+and future developers of the Alpha Data / Cyber OSINT Dashboard. It maps every
+enabled implemented source identity to its approved endpoint or reviewed input,
+manual invocation path, normalization and persistence behavior, identity
+controls, and exclusions. The current backend source registry and ingestion code
+are authoritative when this guide and an older planning statement differ.
 
-## Source Selection Rules
+External OSINT is untrusted data. “Publicly visible” does not by itself grant
+permission to scrape, automate access, store, mirror, redistribute, or use a
+commercial API. A source-registry entry records developer-controlled metadata;
+registry inclusion, `implemented` status, or `enabled: true` does not grant
+collection authorization, licensing permission, API access, storage rights, or
+approval for a new live collection method.
 
-All sources must be:
+## Defensive selection and authorization rules
 
-- Publicly available, or explicitly authorized for project use through approved licensed, account, API, feed, or standards-based access.
-- Automated access must be authorized.
-- Access and licensing must be verified before implementation; mentor and project approval are required before implementing a future gated or commercial source.
-- Relevant to defensive cybersecurity awareness.
-- Documented with source name, access method, and original URL.
-- Used without scraping restricted or unsafe content; arbitrary private, stolen, leaked, restricted, dark-web, and unauthorized data are not allowed.
+An integration is eligible only when it is defensive, ethical, authorized,
+educational, or lab-safe and uses a public or explicitly authorized access
+method. Before a future source is implemented, the project must verify its
+current terms, access and automation permission, licensing, storage and
+redistribution rights, host and URL boundaries, rate limits, data minimization,
+and mentor approval.
 
-## MVP Candidate Sources
+The project does not collect stolen, leaked, private, restricted, or dark-web
+data. It does not perform active scanning or target probing, exploit execution,
+credential collection, malware retrieval, file submission, arbitrary URL
+fetching, or offensive automation. Public source text is processed as bounded
+plain text. Credentials, authorization material, HTTP headers and cookies,
+attachments, downloaded reports, malware samples, and raw payloads are not
+exposed through public APIs.
 
-### NVD
+Exact HTTPS host allow-lists and fixed endpoint paths are controlled in
+`backend/app/ingestion/source_registry.py` and the source-specific collectors or
+adapters. Adding metadata to the registry is not a substitute for implementing
+and reviewing an approved collector.
 
-Purpose:
+## Registry status and operational support
 
-- CVE records
-- CVSS scores
-- Vulnerability descriptions
-- Published and modified dates
-- References
+`implementation_status: implemented` means repository code and deterministic
+tests exist for the registered workflow. `enabled: true` allows that specific
+workflow to create or validate its `IntelligenceSource` row. Neither field
+starts ingestion or broadens the registered endpoint, content family, or access
+method. The current registry has no planned definitions; future and excluded
+vendors are recorded separately in the assessment documents.
 
-Access method:
+All ingestion and enrichment is manual-only and explicitly operator invoked.
+There is no active scheduler, startup ingestion, recurring background ingestion,
+background worker, frontend ingestion trigger, or public ingestion API. No
+standard refresh interval is implemented. Operators choose when to run an
+approved command; local-file imports require a separately reviewed file each
+time. Live network requests occur only through the fixed endpoints used by the
+corresponding command.
 
-- Official API
+## Implemented-source summary
 
-### CISA Known Exploited Vulnerabilities Catalog
+Every row below is `implemented`, `enabled: true`, and unauthenticated by
+requirement (`authentication_required: false`). NVD supports an optional API key
+for the official service’s higher rate allowance, but the source itself does not
+require authentication.
 
-Purpose:
+| Canonical slug | Display name / owner | Content family; source type | Fixed base URL; exact approved host | Registry access; structured input |
+| --- | --- | --- | --- | --- |
+| `nvd` | National Vulnerability Database / NIST | `vulnerability`; `api` | `https://services.nvd.nist.gov/rest/json/cves/2.0`; `services.nvd.nist.gov` | `authorized_api`; yes |
+| `first-epss` | FIRST EPSS / FIRST | `exploit_enrichment`; `api` | `https://api.first.org/data/v1/epss`; `api.first.org` | `authorized_api`; yes |
+| `cisa-kev` | CISA Known Exploited Vulnerabilities Catalog / CISA | `exploit_enrichment`; `json` | `https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json`; `www.cisa.gov` | `public_publication`; yes |
+| `cert-eu-security-advisories` | CERT-EU Security Advisories / CERT-EU | `security_advisory`; `rss` | `https://cert.europa.eu/publications/security-advisories-rss`; `cert.europa.eu` | `public_feed`; yes |
+| `censys-arc-research` | Censys ARC Research / Censys | `exposure_research`; `json` | `https://censys.com/blog/`; `censys.com` | `manual_catalogue`; no |
+| `censys-rapid-response-advisories` | Censys Rapid Response Advisories / Censys | `public_osint_advisory`; `json` | `https://censys.com/advisory/`; `censys.com` | `manual_catalogue`; no |
+| `anomali-cyber-watch` | Anomali Cyber Watch / Anomali | `threat_research`; `json` | `https://www.anomali.com/blog`; `www.anomali.com` | `manual_catalogue`; no |
+| `ibm-x-force-public-research` | IBM X-Force Public Research / IBM X-Force | `threat_research`; `json` | `https://www.ibm.com/think/x-force/`; `www.ibm.com` | `manual_catalogue`; no |
+| `ibm-x-force-public-osint-advisories` | IBM X-Force Public OSINT Advisories / IBM X-Force | `public_osint_advisory`; `json` | `https://exchange.xforce.ibmcloud.com/osint/`; `exchange.xforce.ibmcloud.com` | `manual_catalogue`; no |
+| `google-threat-intelligence-public-research` | Google Threat Intelligence Public Research / Google Threat Intelligence | `threat_research`; `rss` | `https://feeds.feedburner.com/threatintelligence/pvexyqv7v0v`; collection host `feeds.feedburner.com`, publication host `cloud.google.com` | `public_feed`; yes |
+| `mandiant-public-threat-research` | Mandiant Public Threat Research / Mandiant / Google Security | `threat_research`; `rss` | `https://feeds.feedburner.com/threatintelligence/pvexyqv7v0v`; collection host `feeds.feedburner.com`, publication host `cloud.google.com` | `public_feed`; yes |
 
-- Known exploited vulnerability status
-- Prioritization of actively exploited CVEs
+Commands below are run from `backend` after the documented environment and
+PostgreSQL service are ready. They are examples of explicit invocation, not
+scheduled refresh instructions.
 
-Access method:
+## Vulnerability and enrichment sources
 
-- Official JSON catalog
-- URL: `https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json`
+### `nvd` — National Vulnerability Database
 
-Implementation status:
+- **Role and path:** `NvdClient` fetches the fixed official CVE API and
+  `NvdIngestionService` creates or updates vulnerability items. Invoke:
 
-- Implemented as a manual-only bounded backend enrichment command for existing
-  local CVE vulnerability records.
-- Locked to the approved HTTPS host and catalog URL.
-- Unknown KEV-only CVEs are skipped safely and are not created locally.
-- No scheduler, startup hook, API route trigger, or frontend integration is
-  included.
+  ```powershell
+  .\.venv\Scripts\python.exe -m app.ingestion.nvd_cli --window-minutes 60 --results-per-page 25 --max-records 25
+  ```
 
-### Cybersecurity RSS or News Source
+- **Normalized persistence:** uppercase CVE identifier; bounded canonical title
+  and English description; canonical NVD detail URL; source publication and
+  modification timestamps; active or archived status; severity; selected CVSS
+  score, vector, and version; bounded affected-product configuration summary and
+  values; source observation timestamps and sanitized audit counters/status.
+- **Refresh and identity:** each command requests a caller-bounded last-modified
+  window. Defaults are 60 minutes, 25 records per page, and 25 total records;
+  supported CLI bounds are 1–1440 minutes and 1–100 records. CVE namespace/value
+  plus the NVD source external ID identify records; a canonical content hash
+  separates unchanged data from updates.
+- **Controls and limitations:** HTTPS is fixed to `services.nvd.nist.gov`;
+  date-window and pagination metadata are validated; normalized source evidence
+  is capped at 512 KiB per CVE; client timeouts apply. Consecutive official API
+  request starts are delayed 6 seconds without an API key or 0.6 seconds with
+  the optional `NVD_API_KEY`. The key is secret-managed and never documented or
+  logged. The workflow does not execute exploits, retrieve malware, or scan
+  affected systems.
 
-Purpose:
+### `first-epss` — FIRST EPSS
 
-- Recent cyberattack reports
-- Malware campaigns
-- Ransomware news
-- Phishing and breach updates
+- **Role and path:** FIRST EPSS enriches existing local CVE vulnerability
+  records; it does not create arbitrary vulnerability items. Invoke:
 
-Access method:
+  ```powershell
+  .\.venv\Scripts\python.exe -m app.ingestion.epss_cli --max-cves 25 --batch-size 100
+  ```
 
-- Approved RSS feed or public API
+- **Normalized persistence:** uppercase CVE identifier, six-decimal EPSS
+  probability, six-decimal percentile, score date, source observation state,
+  content hash, and sanitized run counters/status.
+- **Refresh and identity:** each run selects at most the requested local CVEs,
+  batches their IDs, and requests only those IDs from the fixed API. `--max-cves`
+  is 1–500; `--batch-size` is 1–100 and is also constrained by the client’s
+  2,000-character query limit. The CVE identifier links enrichment to an
+  existing item; source external ID and content hash distinguish unchanged from
+  updated evidence.
+- **Controls and limitations:** HTTPS host and endpoint are fixed, responses and
+  probability/date formats are validated, and source evidence is capped at 4
+  KiB per record. Missing or non-vulnerability local CVEs are skipped safely.
+  EPSS is a probability estimate, not proof of exploitation or a scan result.
 
-### CERT-EU Security Advisories
+### `cisa-kev` — CISA Known Exploited Vulnerabilities Catalog
 
-Purpose:
+- **Role and path:** CISA KEV enriches existing local CVE vulnerability records
+  from the fixed official JSON catalogue. Invoke:
 
-- Public defensive security advisories
-- Advisory titles, source links, summaries, and source timestamps
-- Additional non-CVE security-advisory intelligence items
+  ```powershell
+  .\.venv\Scripts\python.exe -m app.ingestion.cisa_kev_cli --max-records 25
+  ```
 
-Access method:
+- **Normalized persistence:** CVE identifier; listed status and last-checked
+  time; catalogue date added; remediation due date; required action; known
+  ransomware-campaign-use boolean; bounded vendor, product, vulnerability name,
+  short description, and notes in source evidence; content hash and sanitized
+  audit status.
+- **Refresh and identity:** each command retrieves the current catalogue and
+  processes a caller-bounded 1–500 entries (default 25). Exact duplicate CVEs
+  collapse; conflicting duplicates fail safely. CVE identity links only to an
+  existing local vulnerability. Unknown KEV-only CVEs are skipped and are not
+  created locally.
+- **Controls and limitations:** the collector permits only the exact HTTPS
+  catalogue URL, at most three validated redirects, bounded timeouts, JSON
+  content, and a 2 MiB response. Individual normalized evidence is capped at 16
+  KiB. It does not claim that items absent from a bounded run are not exploited.
 
-- Approved RSS feed
-- URL: `https://cert.europa.eu/publications/security-advisories-rss`
+## Advisory and research publication sources
 
-Implementation status:
+All publication adapters emit `PublicationCandidate` objects. The shared
+`PublicationPipeline` validates the registered source, derives item type from
+the content family, normalizes text and timezone-aware timestamps, canonicalizes
+approved HTTPS URLs, removes tracking parameters, rejects credential-like or
+signed query keys, bounds safe metadata, and persists without fetching upstream
+content or committing the transaction. Sanitized ingestion-run evidence and
+commit/rollback ownership are workflow-specific: some commands own the
+transaction directly, while the Censys and live Anomali workflows delegate it to
+their source-specific ingestion services.
 
-- Implemented as a manual-only bounded backend ingestion command.
-- Locked to the approved HTTPS host and feed URL.
-- No scheduler, startup hook, API route trigger, frontend integration, or
-  article-body fetcher is included.
+### `cert-eu-security-advisories` — CERT-EU Security Advisories
 
-## UAE-Relevant Sources
+- **Role and path:** the fixed public RSS feed creates or updates
+  `security_advisory` items. Invoke:
 
-UAE-focused sources should only be automated if an approved feed, API, or authorized access method exists.
+  ```powershell
+  .\.venv\Scripts\python.exe -m app.ingestion.rss_cli --max-records 25
+  ```
 
-P4-01 UAE classification may trust only controlled canonical source slugs in
-the backend classifier allow-list. The current classification allow-list is
-limited to UAE government or cybersecurity source identities:
+- **Normalized persistence:** feed ID/GUID or a URL-derived fallback source ID;
+  bounded plain-text title and summary; canonical CERT-EU publication URL;
+  publication and modification timestamps; bounded author and category
+  metadata; item type, source identity, content hash, observation timestamps,
+  and sanitized audit counts/status.
+- **Refresh and identity:** the command fetches the feed on demand and processes
+  1–100 entries (default 25). Source external ID and canonical URL hash identify
+  a source record; global canonical-URL and normalized-title fingerprints avoid
+  unsafe cross-source duplication within the same article type. Exact duplicates
+  collapse and conflicting duplicates fail safely.
+- **Controls and limitations:** collection is locked to
+  `cert.europa.eu/publications/security-advisories-rss`, with validated redirects,
+  timeouts, RSS/XML content, and a 1 MiB response. It does not fetch article
+  bodies, attachments, PDFs, or malware samples.
 
-- `ae-cert`
-- `uae-cert`
-- `uae-cyber-security-council`
+### `censys-arc-research` — Censys ARC Research
 
-These slugs do not authorize new live collection by themselves. Any future UAE
-source ingestion still requires separate approval of the feed, API, access
-method, terms, and rate limits.
+This source stores approved Censys ARC publication metadata as `threat_report`
+items. Manual live invocation uses the closed selector `arc`:
 
-## Censys Public Publications
+```powershell
+.\.venv\Scripts\python.exe -m app.ingestion.censys_publications_live_cli --source arc --max-records 5
+```
 
-Approved manual metadata families:
+The reviewed local-file fallback remains supported:
 
-- `censys-arc-research`: official `https://censys.com/blog/` pages, stored as
-  `threat_report` items.
-- `censys-rapid-response-advisories`: official
-  `https://censys.com/advisory/` pages, stored as `security_advisory` items.
+```powershell
+.\.venv\Scripts\python.exe -m app.ingestion.censys_publications_cli --file <reviewed-local-json-file>
+```
 
-The manual live collector accepts only the closed selectors `arc` and
-`rapid-response`. Each maps to a fixed public discovery location in code; no
-arbitrary URL input is available. Requests have bounded redirects, timeouts,
-response sizes, HTML content types, and at least ten seconds between request
-starts. Only normalized publication metadata is persisted through the existing
-Censys adapter, shared ingestion service, and P9-03 common publication pipeline.
-Raw HTML and JSON-LD are not stored. The collector is not a general crawler and
-does not use a Censys API, account, or API key.
+### `censys-rapid-response-advisories` — Censys Rapid Response Advisories
 
-The P9-04 reviewed local-file fallback remains supported. Its strict UTF-8 JSON
-input is limited to 1 MiB, 100 publications, 20 authors per publication, and 20
-categories per publication. Only fixed schema fields and plain-text metadata
-are accepted. The file must be reached through an ordinary local path without
-symlink or reparse-point components; UNC/network and Windows device-namespace
-forms are rejected before traversal. URLs must use exact host `censys.com`, the
-selected source's literal path family without percent escapes or path
-parameters, and no residual non-tracking query string.
+This source stores approved rapid-response publication metadata as
+`security_advisory` items. Manual live invocation uses the closed selector
+`rapid-response`:
 
-Both workflows are explicitly invoked and deduplicate through the same
-publication pipeline. There is no scheduler, startup hook, background worker,
-frontend invocation, or public ingestion endpoint. Exposure records, hosts,
-certificates, DNS data, scan results, search results, and rescan capability are
-not imported.
+```powershell
+.\.venv\Scripts\python.exe -m app.ingestion.censys_publications_live_cli --source rapid-response --max-records 5
+```
 
-## Google TI and Mandiant Public Publications
+The same reviewed local-file command is used with a document whose
+`source_slug` is `censys-rapid-response-advisories`.
 
-Approved manual shared-feed families:
+For both Censys sources, the closed selectors `arc` and `rapid-response` map to
+fixed approved public discovery pages in code; no arbitrary URL input is
+available. `--source` is required,
+`--max-records` defaults to 5, and its valid range is 1 through 20. Requests use
+bounded redirects, timeouts, response sizes, HTML content types, and at least ten
+seconds between request starts. The collector parses bounded title, summary,
+publication/modified timestamps, authors, and categories from selected metadata
+only. Raw HTML and JSON-LD are not stored.
 
-- `google-threat-intelligence-public-research`: official Google Cloud Threat
-  Intelligence topic RSS entries authored exactly by `Google Threat Intelligence
-  Group`, stored as `threat_report` items.
-- `mandiant-public-threat-research`: official Google Cloud Threat Intelligence
-  topic RSS entries authored exactly by `Mandiant`, stored as `threat_report`
-  items.
+The strict reviewed JSON fallback is UTF-8, at most 1 MiB, 100 publications, 20
+authors, and 20 categories per publication. It accepts an ordinary local path,
+rejects UNC/network, device-namespace, symlink, and reparse-point traversal, and
+requires one of the two exact seven-field source schemas. Censys canonical URLs
+use exact host `censys.com` and the selected literal `/blog/` or `/advisory/`
+path family. A source-family namespace plus SHA-256 of the canonical URL forms
+the external ID; common publication URL/title fingerprints and content hash
+provide cross-source linking, duplicate conflict detection, and update checks.
 
-P9-05 implements a manual-only bounded collector for the fixed official RSS feed:
-`https://feeds.feedburner.com/threatintelligence/pvexyqv7v0v`. The collection
-host is exactly `feeds.feedburner.com`; canonical stored publication URLs must
-use exact host `cloud.google.com` and literal path prefix
-`/blog/topics/threat-intelligence/`.
+There is no scheduler, startup hook, background worker, frontend invocation, or
+public ingestion endpoint. Censys exposure records, hosts, certificates, DNS
+data, scan results, search results, active scanning, target probing, and rescan
+capability are excluded. The integration does not use a Censys API, account, or
+API key and must not be used to scan, probe, search, or rescan internet assets.
 
-The adapter stores metadata only: title, canonical URL, short feed-provided
-`summary` or `description`, feed timestamps, bounded author/category metadata,
-and a safe feed ID when available. Feed `content`, article bodies, attachments,
-media links, downloadable reports, and PDFs are ignored. It does not scrape
-Google Cloud HTML, use search-engine results, ingest developer documentation,
-call Google Threat Intelligence or VirusTotal APIs, use credentials, submit or
-retrieve files or malware samples, extract IOCs, schedule work, run at startup,
-or expose a public ingestion endpoint. Source ownership is based only on the
-exact authoritative feed author and is never inferred from titles, categories,
-product names, report links, threat names, or article text.
+### `google-threat-intelligence-public-research` — Google Threat Intelligence Public Research
 
-Known-owner validation failures are counted and audited only on the resolved
-source run. Unassigned shared-feed entries are not described as Google TI or
-Mandiant publications and are not counted as source-owned fetched or failed
-records; the command records sanitized shared-feed error evidence on both
-logical runs and includes the aggregate unassigned count in each safe summary.
+### `mandiant-public-threat-research` — Mandiant Public Threat Research
 
-## Anomali Cyber Watch Publications
+Both logical sources share the one fixed public RSS feed but remain separate
+registered identities. Invoke the bounded shared collector explicitly:
 
-Approved manual live and reviewed catalogue family:
+```powershell
+.\.venv\Scripts\python.exe -m app.ingestion.google_threat_publications_cli --max-records 25
+```
 
-- `anomali-cyber-watch`: official Cyber Watch publication pages on exact host
-  `www.anomali.com`, stored as `threat_report` items.
+The command accepts 1–100 records (default 25). Collection uses exact host
+`feeds.feedburner.com`; stored canonical publication URLs use exact host
+`cloud.google.com` and literal prefix `/blog/topics/threat-intelligence/`.
+Ownership is determined only by one exact authoritative feed author: `Google
+Threat Intelligence Group` maps to
+`google-threat-intelligence-public-research`, while `Mandiant` maps to
+`mandiant-public-threat-research`. Ownership is never inferred from titles,
+categories, product names, report links, threat names, or article text.
+
+Both sources persist `threat_report` items with source-separated URL-derived
+external IDs, bounded title and feed summary/description, canonical URL, feed
+publication/modified timestamps, bounded authors/categories, and safe feed ID
+when present. Common URL/title fingerprints and content hashes provide identity
+and update behavior. Known-owner validation failures are audited only on the
+resolved source run. Unassigned shared-feed entries are not counted or described
+as Google TI or Mandiant publications; sanitized aggregate evidence is recorded
+on both logical runs.
+
+Feed `content`, article bodies, attachments, media links, reports, PDFs, and
+downloads are ignored. The workflow does not scrape Google Cloud HTML, use
+search results, call Google Threat Intelligence or VirusTotal APIs, use
+credentials, submit or retrieve files or malware samples, extract or validate
+IOCs, schedule work, run at startup, or expose a public ingestion endpoint.
+
+### `anomali-cyber-watch` — Anomali Cyber Watch
+
+The source stores only official Cyber Watch publication metadata from exact host
+`www.anomali.com` as `threat_report` items. Invoke bounded live collection:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.ingestion.anomali_publications_live_cli --max-records 5
+```
+
+Or invoke the reviewed local JSON fallback, which remains the currently
+operational method:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.ingestion.anomali_publications_cli --file C:\path\to\anomali-cyber-watch.json
+```
 
 The manual live collector accepts only `max_records` from 1 through 20. It
-requests the one fixed discovery URL `https://www.anomali.com/blog` and accepts
-no arbitrary URL. Discovery and article requests must use HTTPS and exact host
-`www.anomali.com`; article URLs must use literal path family
-`/blog/anomali-cyber-watch-`. Redirects receive explicit validation, there are no
-automatic retries, request starts are at least ten seconds apart, and timeouts
-and response sizes are bounded. Collection completes before a database session
-is opened. Successful persistence is atomic and safely audited, and raw HTTP and
-database errors are not exposed. The collector does not parse article-body
-prose. It extracts bounded publication metadata and screens selected title,
-summary, author, and category fields for IOC-like URLs, IP addresses, domains,
-hashes, internationalized domains, and common defanged forms. Unsafe metadata is
-rejected before adapter invocation. Raw HTML, HTTP headers, cookies, attachments,
-media, PDFs, downloads, and malware samples are not persisted by live
-collection.
+requests the fixed discovery URL `https://www.anomali.com/blog`; no arbitrary URL
+is accepted. Approved article paths start `/blog/anomali-cyber-watch-`.
+Redirects are validated, there are no automatic retries, request starts are at
+least ten seconds apart, and timeouts and response sizes are bounded. Collection
+finishes before a database session is opened; persistence is atomic and safely
+audited. Raw HTTP and database errors are not exposed.
 
-The P9-06 reviewed local JSON fallback remains supported and is the currently
-operational method. Its reviewed, operator-prepared file is strict UTF-8 JSON
-limited to 1 MiB and 100 seven-field publications.
+The collector does not parse article-body prose. It screens selected title,
+summary, author, and category metadata for IOC-like URLs, IP addresses, domains,
+hashes, internationalized domains, and common defanged forms; unsafe metadata is
+rejected before adapter invocation. The reviewed, operator-prepared fallback is
+strict UTF-8 JSON of at most 1 MiB and 100 seven-field publications. Titles must
+start `Anomali Cyber Watch:` and URLs must use the exact host and literal Cyber
+Watch path family. The source-separated canonical-URL hash is the external ID;
+the common URL/title fingerprints and content hash control duplicates/updates.
 
-Every title must start exactly with `Anomali Cyber Watch:` and contain
-publication-specific text. Every canonical URL must use literal path family
-`/blog/anomali-cyber-watch-` with a non-empty article slug. Tracking parameters
-may be removed; other query strings, encoded paths, credentials, fragments,
-path parameters, alternate hosts, and general blog paths are rejected.
-
-The adapter validates the schema, file and record bounds, title family,
-canonical URL identity, timestamps, and bounded plain-text title, summary,
-author, and category values. It is not a comprehensive automatic IOC detector.
-Reviewed catalogues must contain publication metadata only. Operators and
-reviewers must exclude article-body text; IOCs and observables; hashes, IP
-addresses, and domains used as indicators; raw HTML; HTTP headers and cookies;
-and attachments, media, PDFs, downloads, or malware samples. The verified
-five-record catalogue was reviewed and contained safe metadata. There is no RSS,
-credential, scheduler, startup hook, background ingestion, public ingestion API,
-or frontend trigger. General Anomali public research, ThreatStream, commercial
-feeds/APIs, STIX/TAXII, and STAXX remain unimplemented or excluded according to
-their recorded decisions.
+The adapter is not a comprehensive automatic IOC detector. Reviewed catalogues
+must contain publication metadata only and exclude article-body text; IOCs and
+observables; hashes, IP addresses, and domains used as indicators; raw HTML;
+HTTP headers and cookies; attachments, media, PDFs, downloads, and malware
+samples. The verified five-record catalogue was reviewed and contained safe
+metadata; the local import recorded 5 records fetched, created, and linked.
 
 Manual live collection is implemented and validated offline. During a
-controlled live smoke test on 19 July 2026, the fixed official blog page returned
-HTML with no deterministic main-content region and no approved Cyber Watch
-article links. Discovery therefore failed safely before an article request was
-issued and before database-session creation. No ingestion run was created and no
-live records were persisted. The request was not rejected with HTTP 403; the
-observed response status was HTTP 200. The reviewed safe local JSON fallback then
-completed successfully for source `anomali-cyber-watch`: 5 records were fetched,
-created, and linked.
+controlled live smoke test on 19 July 2026, the fixed official blog was checked.
+The request was not rejected with HTTP 403; the observed response status was HTTP 200.
+The returned HTML had no deterministic main-content region and no approved Cyber
+Watch article links, so discovery failed safely before an article request was
+issued and before database-session creation. No ingestion run was created and
+no live records were persisted.
 
-## IBM X-Force Public Publications
+There is no credential, RSS, scheduler, startup ingestion, background ingestion,
+public ingestion API, or frontend trigger. General Anomali research,
+ThreatStream, commercial feeds/APIs, STIX/TAXII, STAXX, IOC services, and malware
+functionality are excluded.
 
-P9-07 implements two source-separated manual metadata catalogues:
+### `ibm-x-force-public-research` — IBM X-Force Public Research
 
-- `ibm-x-force-public-research`: exact
-  `https://www.ibm.com/think/x-force/<lower-kebab-slug>` articles, stored as
-  `threat_report` items.
-- `ibm-x-force-public-osint-advisories`: exact
-  `https://exchange.xforce.ibmcloud.com/osint/guid%3A<32-lowercase-hex>` pages,
-  stored as `security_advisory` items.
+This reviewed manual catalogue accepts only canonical
+`https://www.ibm.com/think/x-force/<lower-kebab-slug>` publication metadata and
+stores `threat_report` items.
 
-Each versioned UTF-8 JSON document names exactly one source and contains at most
-100 exact seven-field metadata records in 1 MiB. The OSINT GUID separator and
-hex case are canonicalized without following the URL. Only plain-text title,
-summary, timestamps, authors, and categories are accepted.
+### `ibm-x-force-public-osint-advisories` — IBM X-Force Public OSINT Advisories
 
-No IBM or X-Force Exchange network request is made. Guest-readable pages do not
-authorize scraping, bulk collection, API access, IBMid automation, indicators,
-reputation data, collections, comments, structured threat objects, paid-tier
-data, Threat Intelligence Index/report/PDF/attachment downloads, or STIX/TAXII.
-The general X-Force Exchange platform is not marked implemented.
+This separate reviewed manual catalogue accepts only canonical
+`https://exchange.xforce.ibmcloud.com/osint/guid%3A<32-lowercase-hex>` metadata
+and stores `security_advisory` items. The GUID separator and hex case are
+canonicalized locally without following the URL.
 
-## Safety Notes
+Both source families use the same manual-only importer; the reviewed document’s
+exact `source_slug` selects one family:
 
-- Do not download malware samples.
-- Do not collect from dark web or restricted sources.
-- Do not include exploit instructions.
-- Store source links for traceability.
-- Respect API rate limits and terms of use.
+```powershell
+.\.venv\Scripts\python.exe -m app.ingestion.ibm_x_force_publications_cli --file <reviewed-local-json-file>
+```
 
-## Current Status
+Each versioned UTF-8 JSON file names exactly one source and contains at most 100
+exact seven-field records in 1 MiB. The adapter accepts bounded plain-text title,
+summary, publication/modified timestamps, authors, and categories. It derives a
+source-separated canonical-URL hash external ID and uses the common URL/title
+fingerprints and content hash for duplicate and update decisions.
 
-NVD CVE ingestion, FIRST EPSS enrichment, CISA KEV enrichment, CERT-EU Security
-Advisories RSS ingestion, Censys bounded live publication collection and local
-fallback, Anomali bounded live collection and local fallback, IBM X-Force
-local-file imports, and Google TI/Mandiant
-shared-RSS publication ingestion are implemented as manual-only backend
-workflows with sanitized audit records.
-Other candidate sources still require explicit approval before ingestion is
-implemented.
+The application performs no IBM request. IBMid automation, scraping, APIs,
+reputation queries, indicators, collections, comments, structured threat
+objects, paid-tier data, Threat Intelligence Index/report/PDF/attachment
+downloads, malware retrieval, and STIX/TAXII are excluded. Guest-readable pages
+do not authorize automation. The general X-Force Exchange platform is not an
+implemented source.
 
-P9-02 adds a static backend source registry for developer-controlled metadata
-only. The implemented entries for NVD, FIRST EPSS, CISA KEV, CERT-EU Security
-Advisories, the two source-separated Censys publication families, the Anomali
-Cyber Watch live-and-fallback source, both IBM X-Force manual catalogue
-families, and the two Google TI/Mandiant public RSS publication families
-preserve canonical slugs and manual ingestion behavior.
+## Persisted fields, normalization, and audit evidence
 
-P9-03 adds a common publication pipeline for source adapters that already have
-safe parsed publication candidates. CERT-EU RSS now uses this shared
-persistence path. The pipeline does not approve or fetch new vendors; planned
-source registry entries remain disabled until a later task explicitly approves
-and implements an adapter. P9-05 enables only the Google TI and Mandiant public
-RSS publication source definitions; Anomali Cyber Watch is enabled only for its
-bounded manual live collector and reviewed local-file metadata fallback; P9-07
-enables only the two exact IBM X-Force manual metadata families. Adapters cannot
-supply arbitrary normalized source
-definitions, and publication item type is derived from the registered content
-family rather than adapter input.
+`IntelligenceSource` preserves the canonical slug, display name, source type,
+fixed base URL, enabled state, rate-limit notes, and safe checkpoint metadata.
+`SourceRecord` links one source-owned external ID and source URL to an
+`IntelligenceItem`, with content and optional canonical-URL hashes, first/last
+seen and source timestamps, processing/upstream status, and safe error summary.
+These persistent source links preserve traceability to the approved publication
+or catalogue identity.
+Ingestion runs record the explicit manual trigger, status, bounded counters for
+fetched/created/updated/unchanged/skipped/failed records, and sanitized error and
+run-record evidence. Raw database errors, stack traces, secrets, and
+authorization material are not placed in those summaries.
 
-Required publication identities are rejected when oversized. Safe source
-metadata is shallow, defensively copied, bounded, and must not contain
-credential, token, signed-URL alias, cookie, password, or request/response
-header metadata. ASCII controls and Unicode surrogates are rejected from
-persisted publication and payload text while normal human-readable Unicode is
-retained.
-Publication identity is isolated by trusted article type, currently
-`security_advisory` and `threat_report`, and timestamps are normalized to UTC.
-Publication URLs with raw control characters or exact normalized credential and
-signed-URL query aliases are rejected before persistence.
+Publication items persist a registry-derived `security_advisory` or
+`threat_report` type, canonical title, bounded summary, canonical URL, source
+publication/modification timestamps, observation timestamps, active status,
+confidence, UAE classification state, and pending analyst-review state. Safe
+publication payload metadata is shallow and bounded to 50 keys, 100 values per
+sequence, and 8 KiB canonical JSON; credential-, token-, signature-, cookie-,
+password-, header-, and signed-URL aliases are rejected. Normal human-readable
+Unicode is retained, while control characters and Unicode surrogates fail
+safely.
 
-Planned registry entries do not authorize collection, scraping, API use,
-licensing, report mirroring, IOC extraction, or scheduler behavior. Host
-allow-lists are controlled by application code and use strict exact-host
-matching; there is no public source-management API.
+Vulnerability items additionally persist CVE identity, NVD status/severity/CVSS
+and affected-product fields, then optional EPSS and KEV enrichment fields as
+described above. Enrichment services never create a new vulnerability solely
+from EPSS or KEV input.
 
-## Proposed Source Expansion
+## Validation, deduplication, and error handling
 
-The following vendors have been assessed for future source-expansion planning
-only:
+- Fixed-source collectors validate HTTPS scheme, exact host and endpoint/path,
+  redirect destinations, status/content type, response size, and parsed shape.
+  They do not accept operator-supplied network URLs.
+- Publication URLs discard fragments and tracking parameters such as `utm_*`,
+  but reject credentials, unexpected ports, unsupported hosts, and sensitive
+  query aliases. Source adapters add literal path-family and schema checks.
+- Publication source records deduplicate within a source by external ID or
+  canonical URL hash. Global canonical-URL and normalized-title SHA-256
+  identifiers can link the same trusted article type across sources; conflicting
+  URL/title/type signals fail safely or require analyst review. Stable content
+  hashes produce `unchanged` or `updated` outcomes.
+- NVD identity uses the global CVE namespace/value and NVD source ID. EPSS and
+  KEV locate that existing CVE identity, skip missing items, and use source IDs
+  plus content hashes for idempotent enrichment.
+- Transaction ownership is workflow-specific. The invoking CLI or the
+  source-specific ingestion service owns commit/rollback and produces sanitized
+  outcomes; `PublicationPipeline` itself does not commit. Invalid records can be
+  counted safely; database/network internals, raw SQL, headers, cookies, secrets,
+  and full exception details are not printed or exposed.
 
-- Censys
-- Anomali
-- VirusTotal / Google Threat Intelligence
-- Recorded Future
-- Mandiant / Google Security
-- IBM X-Force
+## Planned and assessed sources
 
-Censys bounded manual live publication-metadata collection and its reviewed
-local-file fallback, Anomali Cyber Watch bounded manual live collection and its
-reviewed local fallback, the two IBM X-Force manual catalogues, and the bounded
-Google TI/Mandiant public RSS adapter
-are implemented from this proposed group. No live IBM collection or live
-collection from other Anomali families is implemented. The assessment separates
-public publication metadata, manual catalogue candidates, developer reference
-material, standardized STIX/TAXII concepts, and authorized structured API
-enrichment. Any future implementation
-still requires source onboarding, security review, and current access/licensing
-verification.
+The [Source Assessment Matrix](source-assessment-matrix.md) evaluates additional
+families from Censys, Anomali, VirusTotal / Google Threat Intelligence, Recorded
+Future, Mandiant / Google Security, and IBM X-Force. The
+[Source Integration Policy](source-integration-policy.md) defines the review and
+approval gate. Assessment is not implementation, and names in those documents
+must not be treated as enabled collection support.
 
-Planning references:
+Only the eleven registry identities in the implemented-source table are
+implemented. No other Censys data, Anomali family, IBM/X-Force platform feature,
+VirusTotal capability, Recorded Future source, STIX/TAXII endpoint, commercial
+API, or UAE live source is implemented. Controlled classifier slugs such as
+`ae-cert`, `uae-cert`, and `uae-cyber-security-council` do not authorize live
+collection.
 
-- [Source Assessment Matrix](source-assessment-matrix.md)
-- [Source Integration Policy](source-integration-policy.md)
+Any future integration requires a new explicit task, current authorization and
+licensing verification, an exact source definition, a bounded collector or
+reviewed input contract, safe normalization/persistence, tests, documentation,
+and independent review. Scheduling remains out of scope unless separately
+approved.
 
-The proposed source expansion preserves the existing defensive scope:
-manual-only ingestion unless scheduling is explicitly approved, no startup
-ingestion, no background worker, no arbitrary URL fetching, no active scanning,
-no target probing, no malware retrieval, no automatic file submission, no
-exploit execution, and no raw upstream payload exposure through public APIs.
+## Known limitations
+
+- Refresh timing is operator-controlled; no automatic freshness guarantee or
+  standard refresh interval exists.
+- Registry metadata does not verify that upstream terms, page structure, or
+  availability remain unchanged. Those facts require review before each future
+  integration change.
+- A bounded run can be partial, capped, skipped, or safely failed and must not be
+  interpreted as comprehensive upstream coverage.
+- Publication ingestion stores metadata, not full article bodies, attachments,
+  reports, PDFs, IOCs, malware, exposure/search datasets, or scan results.
+- The controlled Anomali live smoke test did not discover ingestible links; the
+  reviewed local JSON fallback is the currently operational method.
+- Manual workflows and sanitized audit records do not replace analyst review,
+  source licensing review, production monitoring, or a data-retention policy.
+
+Related repository guidance:
+
+- [Architecture](architecture.md)
+- [Security Notes](security-notes.md)
+- [Testing Plan](testing-plan.md)
+- [Manual Test Cases](manual-test-cases.md)
+- [Environment and Secrets](environment-and-secrets.md)
+- [Production Docker Deployment](production-docker-deployment.md)
