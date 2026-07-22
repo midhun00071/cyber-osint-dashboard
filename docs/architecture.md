@@ -1,301 +1,591 @@
-# Architecture Notes
+# Architecture
 
-## Purpose
+## Purpose and audience
 
-This document explains the planned architecture for the Cyber OSINT Dashboard / Alpha Data project.
+This document describes the implemented technical design of the Alpha Data /
+Cyber OSINT Dashboard for mentors, senior cybersecurity reviewers, developers,
+and deployment reviewers. It explains component ownership, data and trust
+boundaries, development and production-oriented runtimes, security controls,
+test architecture, and known limitations. It is a review guide for the current
+repository, not an aspirational design or a claim of public-internet production
+readiness.
 
-## High-Level Architecture
+## Defensive and ethical scope
 
-The application will follow a modular full-stack architecture:
+The system collects and presents defensive public cybersecurity intelligence
+through explicitly approved, bounded workflows. It is intended for authorized,
+ethical, educational, or lab-safe analysis. It must not be used for arbitrary
+URL collection, active scanning or target probing, active IOC validation,
+exploit execution, credential collection, malware retrieval, file submission,
+or offensive automation.
 
-Open-source cybersecurity sources
--> Backend ingestion layer
--> Processing and enrichment layer
--> PostgreSQL database
--> FastAPI backend API
--> Next.js frontend dashboard
+External OSINT is untrusted data. Public visibility does not grant collection
+authorization, licensing, storage, mirroring, redistribution, or API rights.
+Source onboarding remains subject to the documented approval process; a source
+registry entry does not grant legal authorization, credentials, or permission
+for a new live collection method.
 
-## Planned Main Modules
+## Architecture principles
 
-1. Backend API and Database
-2. Data Ingestion
-3. Data Processing and Enrichment
-4. Frontend Dashboard
+- Ingestion is manual-only and explicitly operator invoked.
+- Fixed endpoints, exact hosts, closed selectors, or reviewed local files bound
+  every implemented source workflow; operators cannot supply network URLs.
+- Collectors, adapters/normalizers, persistence, queries, and presentation have
+  separate responsibilities.
+- PostgreSQL is the authoritative persistence layer; frontend preview data is
+  clearly labeled where it remains presentational only.
+- Public APIs are read-only and expose allow-listed response schemas rather than
+  ORM objects or raw source records.
+- External text is treated as untrusted plain text throughout collection,
+  persistence, API serialization, and React rendering.
+- Secrets and internal errors are excluded from source, responses, logs, and
+  review evidence.
+- Development convenience and production-oriented configuration are separate
+  architectures with different risk boundaries.
+- Absent controls and operational limitations are documented rather than
+  implied to exist.
 
-## Current Implemented Data Flow
-
-The implemented MVP data flow is intentionally bounded and defensive:
+## High-level system context
 
 ```text
-approved public OSINT source
--> manual ingestion CLI
--> bounded collector
--> normalizer
--> persistence service
--> PostgreSQL
--> read-only FastAPI APIs
--> Next.js frontend
+Approved public intelligence sources
+        |
+        | Explicit manual collector/CLI execution
+        v
+Backend ingestion, validation, and normalization
+        |
+        | SQLAlchemy ORM-managed persistence
+        v
+PostgreSQL
+
+Defensive analyst browser
+        |
+        +--> Next.js frontend through its published frontend URL
+        |
+        +--> FastAPI query endpoints through the browser-resolvable
+             NEXT_PUBLIC_API_BASE_URL
+                  |
+                  | Allow-listed read-only response schemas and
+                  | backend-controlled SQLAlchemy sessions
+                  v
+              PostgreSQL
 ```
 
-Current implemented source workflows are manual-only NVD CVE ingestion, FIRST
-EPSS enrichment for existing CVEs, CISA KEV enrichment for existing CVEs,
-CERT-EU Security Advisories RSS ingestion, bounded live and reviewed local-file
-Censys publication metadata ingestion, manual Google TI/Mandiant shared-RSS
-publication metadata ingestion, and bounded live plus reviewed local-file
-Anomali Cyber Watch publication metadata ingestion. These workflows are not
-connected to application startup, a scheduler, background workers, public write
-endpoints, or frontend-triggered ingestion.
+Dashboard and detail API calls originate in the browser. The public
+`NEXT_PUBLIC_API_BASE_URL` value is embedded in the frontend browser assets at
+build time; the frontend container does not proxy the current API requests.
+The browser has no direct access to PostgreSQL or external intelligence
+sources, and the backend remains the only application component that accesses
+PostgreSQL. There is no direct frontend-to-source or frontend-to-PostgreSQL
+connection. The diagram does not imply automatic collection: FastAPI startup
+creates no ingestion job, scheduler, recurring background worker, frontend
+ingestion trigger, or public ingestion API.
 
-P9-02 adds a static source registry inside the backend ingestion layer. It is a
-developer-controlled code registry for safe non-secret source metadata,
-canonical source slugs, implementation status, and exact host allow-lists. It
-does not add source registration APIs, database-backed source onboarding,
-runtime source mutation, startup ingestion, scheduling, or new external
-requests. For implemented collectors, the registry is the source of truth for
-the approved base URLs used by exported collector URL constants.
+## Major components and responsibilities
 
-P9-03 adds a common publication pipeline below source-specific adapters. It
-accepts already-fetched and already-parsed publication candidates only; it does
-not perform HTTP requests, parse arbitrary upstream pages, schedule jobs, or
-expose public write APIs. The pipeline enforces implemented/enabled registry
-sources, publication-compatible content families, HTTPS-only exact host
-allow-lists, sanitized shallow source metadata, timezone-aware timestamps, and
-the existing article identity and provenance rules. Source-specific adapters
-must pass `PublicationCandidate` values through common validation and cannot
-provide arbitrary `SourceDefinition` objects or pre-normalized database-ready
-source definitions.
+| Component | Implemented responsibility | Boundary |
+| --- | --- | --- |
+| Source registry | Developer-controlled source identity, vendor, content family, access method, implementation/enabled state, fixed base URL, and exact host allow-list | Metadata and enabled status do not execute or authorize collection |
+| Collectors | Retrieve an approved fixed feed/API/publication location, or accept the workflow’s reviewed local input | Bounded timeouts, redirects, response/file sizes, record counts, content types, and safe failures; no arbitrary network URL |
+| Adapters and normalizers | Convert source-specific untrusted structures into normalized CVE/enrichment records or `PublicationCandidate` values | Validate schema, plain text, timestamps, URLs, and source ownership before persistence |
+| Ingestion services and CLIs | Orchestrate explicit source runs, database sessions, workflow-specific transactions, and sanitized run/error evidence | No startup, scheduler, background, frontend, or public-API invocation |
+| Common publication pipeline | Validate candidates, derive item type, normalize safe metadata, apply identity/deduplication rules, and persist through the supplied session | Fetches no upstream content and does not universally own commit/rollback |
+| Processing | Deterministic UAE relevance classification for normalized records | No network, LLM, machine learning, or public mutation route |
+| PostgreSQL and SQLAlchemy | Store normalized intelligence, provenance, identifiers, tags, vulnerabilities, and ingestion audit records | Persistence is not backup; access is through backend/migration sessions |
+| FastAPI | Validate read-only queries and serialize allow-listed health, version, dashboard, article, and intelligence responses | No write, ingestion, administration, authentication, or authorization endpoint |
+| Next.js | Fetch validated API data and present dashboard/list/detail states safely | No source collection, database connection, credentials, or raw HTML rendering |
 
-Publication item type is derived from registry content family: security
-advisory and public OSINT advisory sources store `security_advisory` items,
-while threat research and exposure research sources store `threat_report`
-items. The article identity helper accepts only these trusted publication
-types and refuses cross-type linking, so an advisory cannot merge with a threat
-report even when URL or title fingerprints collide. Required identity fields
-are rejected if they exceed current schema limits. Safe source metadata is
-shallow, defensively copied, byte/key/sequence bounded, and rejects sensitive
-credential, signed-URL alias, or header-like keys. Persisted publication and
-payload text rejects ASCII controls and Unicode surrogates before hashing and
-persistence while retaining normal human-readable Unicode. Publication
-timestamps are validated as aware datetimes and normalized to UTC. Publication
-URLs reject raw controls before parsing and reject exact normalized credential,
-token, password, signature, and cloud signed-URL query aliases while preserving
-ordinary safe query parameters and stripping tracking parameters.
+## Repository and module structure
 
-P9-04 adds an offline adapter above that pipeline for a strict, bounded,
-operator-supplied structured JSON catalogue. The upstream Censys pages remain
-unstructured public publication content. The selected registry source fixes the
-item type and literal URL path family: Censys ARC `/blog/` pages become
-`threat_report` items, while Rapid Response `/advisory/` pages become
-`security_advisory` items. Percent-escaped paths and path parameters are not
-accepted. The local-file boundary rejects UNC/network and Windows device
-namespaces before traversal. The adapter derives source-family-separated
-identifiers from canonical URL hashes and retains only plain-text
-author/category metadata. It reads no website pages and uses no Censys API,
-credentials, exposure data, host data, certificates, scan results, search, or
-rescan operation.
+```text
+backend/
+  app/
+    api/v1/routes/       read-only HTTP route groups
+    api/v1/schemas/      allow-listed public response contracts
+    core/                settings, logging, request context, security headers
+    db/                  SQLAlchemy engine/session and declarative metadata
+    models/              ORM persistence model
+    services/            read/query services
+    ingestion/           registry, collectors, normalizers, adapters, CLIs,
+                         source services, and common publication pipeline
+    processing/          deterministic UAE relevance processing
+  alembic/               migration environment and versioned schema
+  tests/                 backend, security, documentation, Compose, and runner tests
+frontend/
+  src/app/               App Router dashboard and detail pages
+  src/components/        dashboard and safe-link presentation components
+  src/services/          browser API clients and response validators
+  src/types/             public frontend data contracts
+  src/utils/             safe URL and display helpers
+compose.prod.yml         production-oriented runtime and manual migration profile
+docker-compose.yml       local development container stack
+run.cmd / run.ps1        Windows setup, test, Docker, and host-development runner
+docs/                    canonical design, security, source, test, and operations guides
+```
 
-The later Censys live integration adds an explicitly invoked bounded collector
-above the same adapter. A closed `arc` or `rapid-response` selector maps to a
-fixed approved public discovery page in code. The collector validates each
-discovery and publication request, bounds redirects, response size, content
-type, timeout, and pacing, and retains only normalized publication metadata.
-The shared Censys ingestion service owns safe run/error auditing and transaction
-handling before candidates enter the existing publication pipeline. It stores
-no raw HTML or JSON-LD and adds no arbitrary URL, scheduler, startup hook,
-background worker, frontend invocation, API credential, scanning, probing,
-search, or rescan capability. The P9-04 reviewed-file path remains supported as
-the local fallback.
+## End-to-end data flow
 
-P9-05 adds a manual shared-feed adapter for the fixed official Google Cloud
-Threat Intelligence RSS feed. The registry now separates collection hosts from
-canonical publication hosts: the collector may fetch only the exact FeedBurner
-RSS host, while persisted publication URLs must use exact host
-`cloud.google.com` and literal path prefix `/blog/topics/threat-intelligence/`.
-Author ownership is source-specific and exact: `Google Threat Intelligence
-Group` maps to `google-threat-intelligence-public-research`, and `Mandiant`
-maps to `mandiant-public-threat-research`. The adapter emits only safe
-`PublicationCandidate` metadata and leaves all persistence, duplicate handling,
-item-type derivation, and database mutation to the common publication pipeline.
-Stored summaries are taken only from feed `summary` or `description` fields;
-feed `content`, article bodies, attachments, media links, reports, and PDFs are
-ignored. Known-owner validation failures are attributed only to the resolved
-source run. Entries that cannot be attributed to an approved author are kept out
-of source-owned fetched/failed counters and recorded as sanitized shared-feed
-error evidence on both logical runs. The adapter does not fetch article bodies,
-scrape HTML, ingest developer documentation, use GTI/VirusTotal APIs, use
-credentials, extract IOCs, download reports, submit or retrieve files/samples,
-schedule work, run at startup, or expose public ingestion routes.
+### Vulnerability flow
 
-P9-06 adds a source-specific offline adapter for a strict local JSON catalogue
-of the Anomali Cyber Watch series. The fixed registry source, exact
-`www.anomali.com` host, literal `/blog/anomali-cyber-watch-` path family, exact
-`Anomali Cyber Watch:` title family, and seven-field record schema establish
-scope; author and category text do not establish ownership. The adapter emits
-only plain-text `PublicationCandidate` metadata, and the common pipeline derives
-the `threat_report` item type. The CLI owns one run, per-record nested
-transactions, source-record-free duplicate/conflict audits, and one final
-commit. The reviewed local-file command performs no Anomali request. Its strict
-adapter validates the catalogue schema, file and record bounds, title family,
-canonical URL identity, timestamps, and bounded plain-text fields. The local
-adapter is not a comprehensive automatic IOC detector; catalogue review ensures
-that summaries, authors, and categories contain publication metadata only and
-exclude article-body text, indicators, and raw response or downloadable
-material.
+```text
+Operator runs NVD CLI
+  -> fixed NVD API collector
+  -> NVD vulnerability normalizer
+  -> NVD ingestion service
+  -> CVE identity + vulnerability persistence
+  -> optional later operator-run FIRST EPSS enrichment
+  -> optional later operator-run CISA KEV enrichment
+  -> read-only intelligence/dashboard APIs
+  -> validated frontend lists, trends, and detail view
+```
 
-The later Anomali live integration adds a manually triggered secure collector
-and a separate atomic persistence service above the same adapter and common
-pipeline. The collector accepts only a record bound from 1 through 20 and makes
-one fixed discovery request to `https://www.anomali.com/blog`; it has no
-arbitrary URL input. Every discovery, redirect, and article request must retain
-HTTPS, exact host `www.anomali.com`, and the approved discovery or literal
-`/blog/anomali-cyber-watch-...` article path. Redirects are validated explicitly,
-requests are not automatically retried, request starts are at least ten seconds
-apart, and timeouts and response sizes are bounded. Collection finishes before
-database-session creation. Persistence then owns one atomic, safely audited run,
-and raw HTTP and database errors remain hidden. The live collector does not parse
-article-body prose. It extracts bounded publication metadata and screens
-selected title, summary, author, and category fields for IOC-like URLs, IP
-addresses, domains, hashes, internationalized domains, and common defanged
-forms, rejecting unsafe metadata before adapter invocation. It does not persist
-raw HTML, HTTP headers, cookies, attachments, media, PDFs, downloads, or malware
-samples.
+NVD creates and updates normalized vulnerability items. FIRST EPSS uses local
+CVE identifiers to enrich existing vulnerability records with score,
+percentile, and score-date evidence; it does not create arbitrary CVEs. CISA KEV
+likewise enriches existing local CVEs and skips unknown KEV-only entries. These
+workflows are source-data processing, not active vulnerability scanners.
 
-Reviewed local catalogues must contain operator-prepared publication metadata
-only. Operators and reviewers must exclude article-body text; IOCs and
-observables; hashes, IP addresses, and domains used as indicators; raw HTML;
-HTTP headers and cookies; and attachments, media, PDFs, downloads, or malware
+### Publication flow
+
+```text
+Fixed feed / fixed public discovery page / reviewed local JSON
+  -> source-specific collector or bounded file adapter
+  -> source-specific adapter
+  -> PublicationCandidate
+  -> common PublicationPipeline
+  -> article identity and deduplication
+  -> PostgreSQL
+  -> read-only article/intelligence APIs
+  -> validated frontend feed and detail view
+```
+
+CERT-EU, Google Threat Intelligence/Mandiant, Censys, Anomali Cyber Watch, and
+IBM X-Force use source-specific collection or reviewed-file boundaries described
+in [Data Sources](data-sources.md). Publication item type is derived from the
+registered content family, not supplied by the adapter. Security advisories and
+public OSINT advisories become `security_advisory`; threat and exposure research
+become `threat_report`.
+
+The common `PublicationPipeline` validates and persists candidates using a
+caller-supplied SQLAlchemy session. It does not fetch upstream content and does
+not commit transactions. Transaction ownership is workflow-specific: some
+invoking CLIs own commit/rollback, while Censys local/live and live Anomali
+delegate transaction and audit ownership to their source-specific ingestion
+services. The reviewed local-file Anomali CLI owns its own transaction.
+
+### Audit flow
+
+```text
+Explicit source run
+  -> IngestionRun status and bounded counters
+  -> per-record IngestionRunRecord outcomes
+  -> sanitized IngestionError evidence when needed
+  -> commit or rollback by the owning CLI/service
+```
+
+Audit records use safe trigger/status/outcome fields, counts, timestamps,
+retryability, and sanitized summaries. They do not expose credentials, request
+or response headers, cookies, complete exception objects, stack traces, raw SQL,
+or database URLs. The publication pipeline itself is not the universal audit or
+transaction owner.
+
+## Source-ingestion architecture
+
+The static source registry contains eleven enabled implemented source identities
+for NVD, FIRST EPSS, CISA KEV, CERT-EU, two Censys families, Anomali Cyber Watch,
+two IBM X-Force families, Google Threat Intelligence research, and Mandiant
+research. Its source metadata, access methods, commands, bounds, and exclusions
+are maintained in [Data Sources](data-sources.md). Enabled status only permits
+the reviewed code path to create or validate its `IntelligenceSource`; it does
+not create automatic execution or authorize arbitrary collection.
+
+Collectors enforce controls verified for their source, including fixed HTTPS
+locations/exact hosts, request timeouts, redirect validation where applicable,
+bounded response sizes, record limits, expected content, and sanitized status
+handling. Reviewed-file adapters additionally enforce strict UTF-8 JSON shape,
+file/record limits, direct local paths, and source-specific URL families. No
+generic crawler or arbitrary URL collector is implemented.
+
+Adapters and normalizers treat all upstream values as untrusted. They validate
+source identity, required fields, text length and safety, timezones, source URL,
+and bounded metadata before a value reaches persistence. Raw HTML, attachments,
+headers/cookies, downloaded reports, and malware samples do not cross the
+approved publication-metadata boundary or appear in public APIs.
+
+### Censys boundary
+
+The bounded live and reviewed local-file Censys workflows cover only ARC
+research and Rapid Response publication metadata. A closed selector maps to a
+fixed approved public discovery page in code. The shared Censys ingestion
+service owns audit and transaction handling before candidates enter the common
+pipeline and stores no raw HTML or JSON-LD. The P9-04 reviewed local-file
+importer remains the fallback. Exposure records, hosts, certificates, DNS data,
+scan/search results, scanning, probing, and rescanning are excluded.
+
+### Google Threat Intelligence and Mandiant boundary
+
+One fixed public RSS feed is split into two logical sources only by exact feed
+author: `Google Threat Intelligence Group` and `Mandiant`. The adapter does not
+infer ownership from titles, categories, products, links, threat names, or
+article text. It ignores feed content bodies, reports, PDFs, attachments, and
+media. Google TI/VirusTotal APIs, credentials, file submission/retrieval,
+malware retrieval, and IOC extraction are not implemented.
+
+### Anomali Cyber Watch boundary
+
+Anomali is limited to Cyber Watch publication metadata on the exact approved
+host and literal article path family. The live collector does not parse
+article-body prose. It screens selected title, summary, author, and category
+metadata for IOC-like URLs, IP addresses, domains, hashes, internationalized
+domains, and common defanged forms; unsafe metadata is rejected before adapter
+invocation.
+
+The reviewed local catalogue is a reviewed, operator-prepared input containing
+publication metadata only. The adapter is not a comprehensive automatic IOC
+detector. Reviewers must exclude article-body text, IOCs and observables, raw
+HTML, HTTP headers and cookies, attachments, media, PDFs, downloads, and malware
 samples. The verified five-record catalogue was reviewed and contained safe
-metadata. Neither workflow implements ThreatStream, commercial feeds/APIs,
-STIX/TAXII, or STAXX, or adds scheduling, startup execution, background
-ingestion, a public API trigger, or a frontend trigger.
+metadata.
 
-## UAE Relevance Classification
-
-The backend includes an offline processing component for P4-01 UAE relevance
-classification and P4-02 rule-strength confidence. It runs only when manually
-invoked for existing records or when new NVD/CERT-EU RSS records are persisted
-through the existing manual ingestion commands. It uses normalized title,
-summary, controlled source identity, and existing safe geographic metadata. It
-does not use raw payloads, network calls, machine learning, an LLM, schedulers,
-startup hooks, or public mutation routes.
-
-Automatic confidence is a fixed deterministic mapping from the winning
-classification rule to a nullable `numeric(4,3)` value. It is not exploit
-probability, threat attribution, attacker intent, targeting certainty, source
-reliability in general, or business impact. Records with no direct UAE evidence
-retain `null` confidence rather than a misleading zero score.
-
-The frontend presents that canonical numeric confidence as a label for review
-clarity: High for `0.900`-`1.000`, Medium for `0.750`-`0.899`, Low for
-`0.000`-`0.749`, and no label for `null`. These labels are UI presentation
-levels only. They are not severity, exploit likelihood, statistical
-calibration, or attribution certainty, and P4-02 does not add confidence
-filters.
-
-P4-03 adds backend-driven frontend controls for geographic scope and UAE
-relevance status on the dashboard latest-articles feed and vulnerability table.
-Those controls send the existing read-only backend query parameters, combine
-with search and pagination, and reset the current offset when changed. UAE
-relevance status remains a classification field; it is not threat attribution,
-attacker intent, or targeting certainty.
-
-Manual and source-declared classifications are treated as analyst-owned and are
-not overwritten by automatic rules, including their existing confidence values.
-
-## Backend Responsibilities
-
-- Provide API endpoints for dashboard data.
-- Connect to PostgreSQL.
-- Store normalized threat and vulnerability records.
-- Run or trigger ingestion jobs.
-- Validate query parameters.
-- Handle errors safely.
-
-## Frontend Responsibilities
-
-- Display summary cards.
-- Display threat and vulnerability records.
-- Support search and filters.
-- Display detail pages.
-- Show loading, empty, and error states.
-- Safely render external text.
-
-## Database Responsibilities
-
-- Store normalized intelligence records.
-- Preserve source traceability.
-- Support filtering and future historical analysis.
-
-## Proposed Source-Expansion Architecture
-
-The following roadmap covers remaining source-expansion architecture. It does
-not approve Censys platform/exposure collection, live collection from other
-Anomali families, Recorded Future, or IBM X-Force, or structured VirusTotal /
-Google Threat Intelligence API families. Implemented Censys behavior is limited
-to bounded
-manual live public-publication metadata collection and the P9-04 reviewed local
-fallback. The only implemented Google TI/Mandiant behavior is the P9-05 bounded
-manual shared-RSS publication metadata adapter. Implemented Anomali behavior is
-limited to bounded manual live Cyber Watch metadata collection and the P9-06
-reviewed local fallback described above. P9-07 implements only two
-source-separated IBM X-Force local metadata catalogues; it does not implement
-IBM network collection or the general X-Force Exchange platform.
-
-1. Source assessment
-2. Source registry (P9-02 metadata foundation implemented)
-3. Common publication pipeline (P9-03 foundation implemented)
-4. Censys public research adapter, bounded live collector, and shared service
-   (implemented; reviewed local-file fallback retained)
-5. Google TI/Mandiant public publication RSS adapter (P9-05 implemented)
-6. Anomali Cyber Watch bounded manual live collector and reviewed local
-   publication catalogue (implemented)
-7. IBM X-Force research and OSINT advisory catalogues (P9-07 implemented)
-8. Indicator model
-9. IOC extraction and relationships
-10. Generic STIX/TAXII importer
-11. Threat entity model
-12. Censys exposure enrichment
-13. Commercial API assessment
-14. Threat-intelligence frontend views
-15. Full integration/security review
-
-Source expansion must follow [source-integration-policy.md](source-integration-policy.md)
-and the vendor family decisions in
-[source-assessment-matrix.md](source-assessment-matrix.md). Future structured
-or commercial integrations require current access/licensing verification,
-approved host allow-lists, bounded collection, normalized allow-listed fields,
-sanitized audit records, and read-only public API exposure. Public publication
-ingestion and structured API enrichment must remain separate architecture
-families.
-
-The Censys ARC and Rapid Response registry definitions are enabled only for the
-bounded manual live collector and P9-04 reviewed local-file importer. Google
-Threat Intelligence and Mandiant public threat-research definitions are enabled
-only for the P9-05 manual shared RSS publication adapter. The Anomali Cyber
-Watch definition is enabled only for the bounded manual live collector and
-P9-06 reviewed local-file catalogue; other Anomali families are not implemented.
-The two IBM X-Force definitions are enabled only for P9-07 manual local-file
-metadata: exact IBM Think X-Force research pages and exact Exchange public OSINT
-advisory GUID pages. The general Exchange platform remains unimplemented. No
-registry entry authorizes licensing, API access,
-scraping, IOC extraction, or storage of upstream report bodies. Public
-publication hosts and developer documentation hosts are separate source
-families; documentation hosts are not automatically allowed for public
-threat-research definitions. P9-05 is implemented as metadata-only RSS
-publication ingestion, the Anomali collector approves only its fixed Cyber Watch
-metadata boundary, and P9-07 does not approve IBM scraping, IBMid/guest
-automation, report downloads, indicator/reputation ingestion, paid tiers, or
-STIX/TAXII.
-
-During controlled live validation on 19 July 2026, the fixed Anomali discovery
+During controlled live validation on 19 July 2026, the fixed official discovery
 page returned HTML with no deterministic main-content region and no approved
-Cyber Watch article links. Discovery failed safely before an article request was
-issued and before database-session creation, with no ingestion run or live
-persistence. The request was not rejected with HTTP 403; the observed response
-status was HTTP 200. The reviewed safe local JSON catalogue then successfully
-created and linked 5 records. It remains the currently supported operational
-method while the live discovery-page limitation exists.
+Cyber Watch article links. Discovery failed safely before an article request
+was issued and before database-session creation; no live records were persisted.
+The request was not rejected with HTTP 403; the observed response status was HTTP 200.
+The reviewed local-file workflow remains the currently operational method.
 
-## Current Status
+### IBM X-Force boundary
 
-Phase 1 setup only. Architecture will be refined as implementation progresses.
+IBM X-Force support is limited to two reviewed manual JSON metadata families:
+IBM Think X-Force research and public Exchange OSINT advisory identifiers. The
+application makes no IBM request. IBMid/guest automation, scraping, APIs,
+reputation/indicator queries, collections, comments, paid data, report or
+attachment downloads, malware retrieval, and STIX/TAXII are excluded.
+
+## Normalization, identity, deduplication, and persistence
+
+Normalized records preserve the canonical source, external source identifier,
+safe source link, bounded title/summary, source timestamps, observation times,
+item type/status, and workflow-specific vulnerability or publication metadata.
+The application uses stable content hashes to distinguish created, unchanged,
+and updated evidence.
+
+NVD identity is anchored by the global canonical CVE namespace/value and NVD
+source external ID. EPSS and KEV locate that existing CVE identity rather than
+creating a second vulnerability. Publication source records use a source-owned
+external ID and canonical URL hash. Global canonical-URL and normalized-title
+SHA-256 identifiers can link the same trusted article type across sources;
+conflicting URL/title/type signals fail safely or require analyst review.
+Cross-type merging between `security_advisory` and `threat_report` is refused.
+
+The common publication pipeline derives item type from registry content family,
+normalizes timezone-aware dates to UTC, removes tracking query parameters,
+rejects credentials and sensitive signed-query aliases, and bounds safe shallow
+metadata. Control characters, Unicode surrogates, oversized identities, nested
+payloads, and unsafe database text fail before persistence.
+
+## Database and migration architecture
+
+PostgreSQL is the authoritative persistence layer. SQLAlchemy supplies the
+declarative ORM, synchronous query/persistence sessions, relationships,
+constraints, and indexes. FastAPI’s session dependency lazily creates a pooled
+engine, yields one session per request, and always closes it; query routes do not
+commit. Ingestion transaction ownership remains explicit in the workflow.
+
+The current schema contains:
+
+- `intelligence_items` for lifecycle, normalized content, geographic/UAE fields;
+- `vulnerabilities` for CVSS, EPSS, KEV, and affected-product extensions;
+- `intelligence_sources` and `source_records` for source identity/provenance;
+- `intelligence_item_identifiers` for CVE and publication fingerprints;
+- `tags` and `intelligence_item_tags` for controlled tagging;
+- `ingestion_runs`, `ingestion_run_records`, and `ingestion_errors` for safe
+  execution evidence.
+
+Alembic owns schema migration through `backend/alembic.ini`, the migration
+environment, and versioned revisions. The migration engine uses `NullPool` and
+the same validated settings boundary. Production migrations are manual through
+the profiled one-shot `migrate` service; application startup does not run
+migrations or create tables.
+
+The production `postgres_data` named volume provides persistent storage across
+container recreation. It is not a backup. Automated backup, representative
+restore testing, and disaster recovery are not implemented. `docker compose
+down -v` deletes the persistent PostgreSQL volume and is a destructive operation,
+not routine cleanup; it requires explicit authorization and verified recovery
+evidence.
+
+## Backend API architecture
+
+FastAPI registers these implemented read-only routes:
+
+| Route | Responsibility |
+| --- | --- |
+| `GET /` | Safe service/root metadata |
+| `GET /api/health` | Availability and environment metadata without database access |
+| `GET /api/version` | Safe application name/version metadata |
+| `GET /api/v1/dashboard/summary` | Database-backed KPI summary with bounded `window_days` |
+| `GET /api/v1/articles` | Active article list with search, category, source/tag, date, geography/UAE, limit, and offset filters |
+| `GET /api/v1/articles/{public_id}` | One active article by canonical public UUID |
+| `GET /api/v1/intelligence/items` | Intelligence/vulnerability list with item type, CVE, severity, source, geography/UAE, search, limit, and offset filters |
+| `GET /api/v1/intelligence/items/{item_public_id}` | One intelligence item by canonical public UUID |
+
+Unknown or repeated query parameters are rejected. Search text, enums, source
+slugs, CVE identifiers, UUIDs, pagination, article date ranges, and incompatible
+filter combinations have explicit bounds. Query services use SQLAlchemy
+expressions and serialize only Pydantic response fields; ORM source payloads,
+database errors, internal exceptions, and configuration are excluded.
+
+The application has no write, ingestion, administration, login, authentication,
+or authorization endpoint. Interactive OpenAPI documentation remains enabled,
+but it does not add privileged operations. Until an independently reviewed
+identity/access layer exists, this API must be treated as an unauthenticated
+read-only interface and protected by deployment network controls.
+
+## Frontend architecture
+
+The frontend uses the Next.js App Router and React client components. Implemented
+routes are the dashboard `/`, article details `/articles/[publicId]`, and
+vulnerability details `/vulnerabilities/[publicId]`. Dashboard components load
+backend KPI summaries, bounded trend samples, paginated/filterable
+vulnerabilities, paginated/filterable articles, and backend health. Detail pages
+provide loading, success, not-found, and sanitized error states.
+
+Browser API clients read `NEXT_PUBLIC_API_BASE_URL` (falling back to
+`http://localhost:8000` for local development), send read-only GET requests with
+`cache: no-store`, and validate every JSON response shape before use. In the
+production frontend image, this public URL is a build argument embedded in
+browser assets; changing it requires rebuilding the image. It must never contain
+a secret. These client-side requests originate in the browser and go directly
+to that browser-resolvable backend URL; the Next.js frontend container does not
+proxy them.
+
+Search, severity, geographic-scope, UAE-relevance, and pagination controls call
+the implemented query APIs and reset offsets when filters change. Trend charts
+derive a bounded view from recent API records; they are not a complete
+historical analytics engine. The operational/source-overview preview panels
+remain explicitly labeled synthetic presentation data and do not query the
+database.
+
+React renders source content as text; `dangerouslySetInnerHTML` is not used.
+`SafeExternalLink` accepts only well-formed HTTP/HTTPS URLs without credentials
+or unsafe characters and applies `target="_blank"` with
+`rel="noopener noreferrer"`; invalid links become disabled text. API failures
+produce controlled user messages rather than backend exception details.
+No authentication session or login state exists in the frontend.
+
+## Development runtime architecture
+
+`run.cmd` delegates to `run.ps1` and supports these repository-root commands:
+
+| Command | Implemented behavior |
+| --- | --- |
+| `.\run.cmd setup` | Check prerequisites and create missing local environment files without overwriting existing files |
+| `.\run.cmd install` | Run setup and install missing backend/frontend dependencies |
+| `.\run.cmd test` | Run full backend pytest, frontend Vitest, TypeScript type-check, and production build |
+| `.\run.cmd docker` | Validate, build, start, and smoke-check the full development Compose stack |
+| `.\run.cmd dev` | Run PostgreSQL in Docker while backend and frontend development servers run on the Windows host |
+| `.\run.cmd full` | Setup, install if needed, test/build, then run the Docker workflow |
+| `.\run.cmd help` | Print runner usage |
+
+In `dev` mode, `docker compose up -d db` starts PostgreSQL. The runner waits for
+database health, then starts reload-enabled Uvicorn at `127.0.0.1:8000` and the
+Next.js development server at port `3000` on the host. It reads an existing
+`DATABASE_URL` or `backend/.env` value and structurally rewrites only an exact,
+case-insensitive hostname `db` to `localhost` for the backend child process.
+Local, remote, and IPv6 hosts and all other URL components remain unchanged.
+The parent environment is restored in `finally`, and the credential-bearing URL
+must not be printed or passed on the process command line. Stopping `dev` ends
+only the host process trees; the database container remains running.
+
+The development Compose stack runs `db`, `backend`, and `frontend` containers on
+a shared bridge network and publishes PostgreSQL, backend, and frontend ports to
+the host. Its local defaults, development environment, fixed container names,
+and placeholder credentials are not production controls. Although the
+development Compose environment contains legacy interval/admin feature flags,
+the current application has no scheduler, startup ingestion, or admin ingestion
+route.
+
+## Production Docker architecture
+
+`compose.prod.yml` is a standalone production-oriented baseline, separate from
+development Compose. Normal:
+
+```powershell
+docker compose -f compose.prod.yml config --services
+```
+
+lists `db`, `backend`, and `frontend`. The `migrate` service appears only when
+the `migration` profile is enabled or that service is explicitly targeted; it
+runs `alembic upgrade head` as a manual one-shot operation and is not normal
+startup.
+
+```text
+approved operator/browser
+        |
+        +--> frontend published port or external frontend route
+        |
+        +--> backend URL configured in NEXT_PUBLIC_API_BASE_URL
+                    |
+                    +--> internal database network --> PostgreSQL
+
+manual migrate service -------------------------------> PostgreSQL
+```
+
+The database has no production host port by default. Frontend joins only the
+application network; backend joins application and the internal database
+network; PostgreSQL and `migrate` join only the database network. Backend and
+frontend default host bindings are loopback-only. No application source,
+environment file, or Docker socket is mounted into application containers.
+
+Compose attaches frontend and backend to the `application` network, but that is
+a container-topology property, not the current client-side API request path.
+Browser clients use the browser-resolvable backend URL embedded at frontend
+build time in `NEXT_PUBLIC_API_BASE_URL`; an external browser cannot
+automatically resolve the Docker service hostname `backend`. No included
+reverse proxy combines frontend and backend under one public origin, so
+production CORS must allow the actual browser frontend origin. A separately
+approved TLS/reverse-proxy boundary may provide external routing, but this
+repository does not implement it.
+
+Backend and frontend images run as dedicated non-root users (`appuser` and
+`nextjs`). Application services and `migrate` enable an init process,
+`no-new-privileges`, and drop all Linux capabilities; all services are
+non-privileged. Runtime services use `restart: unless-stopped`, health checks,
+and the bounded local log driver with three 10 MiB files. PostgreSQL uses the
+official image’s `postgres` operating-system user. No development reload server,
+Next.js development server, startup migration, or automatic ingestion command is
+present.
+
+Production requires explicit environment values. `APP_ENV=production`,
+`DEBUG=false`, and `ENABLE_ADMIN_INGESTION=false` are fixed. CORS requires
+explicit non-loopback HTTPS origins. `NEXT_PUBLIC_API_BASE_URL` is public
+build-time configuration. The production Compose file does not provide TLS
+termination, a reverse proxy/load balancer, monitoring, backups, or secret
+management; deployment infrastructure must supply those separately.
+
+### Database-role limitation
+
+`POSTGRES_USER` initializes PostgreSQL through the official image behavior,
+which creates a privileged PostgreSQL role. The current backend and manual
+migration service reuse that privileged role. No separate restricted
+application database role is provisioned, and the current role must not be
+described as least privilege. Introducing a non-superuser application role and
+separate migration ownership is future reviewed database/deployment work.
+
+## Trust boundaries and security controls
+
+1. **External source boundary:** public intelligence locations are outside the
+   application trust domain. Fixed collectors and reviewed-file validators
+   constrain what can enter normalization.
+2. **Normalization boundary:** source-specific code converts untrusted data into
+   bounded internal values; only validated records cross into persistence.
+3. **Database boundary:** backend ingestion/query and migration workflows reach
+   PostgreSQL. Frontend and external sources do not connect to it.
+4. **API boundary:** Pydantic schemas expose allow-listed normalized fields and
+   stable errors. Raw source payloads and internal exception details are not
+   public response fields.
+5. **Browser boundary:** frontend clients validate response shapes, React
+   escapes text, and external links pass scheme/credential/character checks.
+
+Backend settings use environment variables and `SecretStr` for sensitive
+values. Production rejects debug mode and non-HTTPS/loopback CORS origins. CORS
+uses an exact environment-driven allow-list, grants GET only, disables browser
+credentials, and never uses a wildcard.
+
+Security middleware applies `X-Content-Type-Options: nosniff`,
+`X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, a restrictive
+`Permissions-Policy`, and an API Content Security Policy. A server-generated
+`X-Request-ID` correlates responses and safe completion logs. HSTS is not added
+because TLS termination is not implemented by the application stack; an
+approved external TLS boundary must own transport security.
+
+No user authentication, authorization, role-based access control, or audit of
+human API access is implemented. The public read-only API must not be treated as
+an authenticated analyst portal.
+
+## Logging, errors, and auditability
+
+Application logging uses UTC key-value records and an allow-listed log level.
+Uvicorn access logging is disabled because request targets can contain query
+values. Request middleware logs a generated request ID, allow-listed method,
+route template, status, duration, and safe error category—never the raw path
+identifier, query string, body, authorization header, cookie, database URL, or
+exception text.
+
+Unknown exceptions become a stable 500 response; request validation, not-found,
+date-range, and database-query failures have bounded public messages. Security,
+CORS, and request-ID middleware cover successful and handled error responses.
+Ingestion uses separate safe run/record/error evidence as described above.
+Production container logs are size/rotation bounded, but centralized log
+aggregation, monitoring, alerting, and retention governance are not implemented.
+
+## Testing and validation architecture
+
+- Backend pytest covers settings, database sessions, ORM/migrations, API routes,
+  query validation, security middleware, logging/error sanitization, source
+  registry, collectors, adapters, services, CLIs, publication identity, runner,
+  Dockerfiles/Compose, and documentation contracts.
+- Frontend Vitest and Testing Library cover API response validation, loading,
+  empty/error/success states, filters/navigation, detail pages, safe external
+  links, and plain-text rendering.
+- TypeScript validation uses `next typegen` and `tsc --noEmit`.
+- The production build verifies the standalone Next.js output.
+- Compose tests parse the development and production YAML to assert networking,
+  profiles, health, persistence, hardening, and required environment behavior.
+- `git diff --check` protects whitespace integrity. `.\run.cmd test` runs the
+  complete backend/frontend/type-check/build regression.
+
+Automated tests are evidence for code contracts, not proof of production load,
+public-internet safety, live-source availability, backup recovery, or manual QA.
+Manual cases remain `Not Run` until separately executed and recorded.
+
+## Operational workflows
+
+- Source collection/enrichment is invoked through reviewed backend CLIs only;
+  operators choose timing and bounds. No standard refresh interval exists.
+- Development seed data is a separate explicit development-only CLI and is not
+  production ingestion or an API fallback.
+- Development startup uses the Windows runner and local Compose boundaries above.
+- Production migrations use the manual `migrate` profile before normal runtime
+  services are started or updated.
+- Deployment, CORS, smoke, restart, rollback, secret rotation, and destructive
+  actions follow the linked operations guides and require review/authorization.
+
+## Known limitations and absent capabilities
+
+The current repository does not implement:
+
+- user authentication, authorization, roles, or protected analyst sessions;
+- TLS termination, reverse proxy, or load balancer;
+- automated PostgreSQL backups, representative restore tests, or validated
+  disaster recovery;
+- centralized logging, production monitoring, or alerting;
+- CI/CD deployment, Kubernetes, or another orchestration platform;
+- automated secret rotation, a restricted application database role, or
+  zero-downtime deployment;
+- production load testing or validated public-internet deployment;
+- startup ingestion, scheduled/background ingestion, or recurring refresh;
+- a public ingestion API, frontend ingestion trigger, or arbitrary URL ingestion;
+- active scanning/probing, active IOC validation, malware retrieval, file
+  submission, or exploit execution;
+- complete historical analytics, relationship graphs, generic STIX/TAXII, or
+  the broader commercial/platform source capabilities excluded above.
+
+Persistent database storage is not backup. `docker compose down -v` destroys
+the named PostgreSQL volume and is not routine cleanup. Manual approval remains
+required for source collection, migration, rollback, volume deletion, and other
+destructive deployment commands.
+
+## Canonical references
+
+- [Project handover and runner commands](../README.md)
+- [Implemented data sources](data-sources.md)
+- [Source assessment matrix](source-assessment-matrix.md)
+- [Source integration policy](source-integration-policy.md)
+- [Security notes](security-notes.md)
+- [Testing plan](testing-plan.md)
+- [Manual test cases](manual-test-cases.md)
+- [Environment and secrets](environment-and-secrets.md)
+- [Production Docker deployment](production-docker-deployment.md)
+- [Deployment build validation](deployment-build-validation.md)
