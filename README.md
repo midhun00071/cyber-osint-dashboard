@@ -1,52 +1,92 @@
-# Cyber OSINT Dashboard / Alpha Data
+# Alpha Data / Cyber OSINT Dashboard
 
-## Project Overview
+## Project overview
 
-Cyber OSINT Dashboard / Alpha Data is a full-stack cybersecurity dashboard designed to collect, process, store, and display open-source cybersecurity intelligence for defensive awareness.
+Alpha Data is a full-stack defensive cybersecurity OSINT dashboard for
+collecting, normalizing, storing, searching, visualizing, and reviewing approved
+public cybersecurity intelligence. It combines a FastAPI API, PostgreSQL,
+operator-invoked ingestion workflows, and a Next.js analyst interface for
+vulnerability and publication awareness, including UAE/global context.
 
-The project focuses on vulnerabilities, known exploited vulnerabilities, threat intelligence reports, cyberattack updates, and UAE/global cybersecurity context.
+This repository is an internship project prepared for mentor and senior-reviewer
+handover. It provides a tested local development workflow and a hardened
+production-oriented Docker Compose baseline. It is not a claim of a complete,
+public-internet-ready production platform.
 
-## Project Goal
+## Defensive and ethical-use boundary
 
-Build a deployment-ready full-stack cybersecurity OSINT dashboard with:
+Use this project only for defensive, ethical, authorized, educational, or
+lab-safe cybersecurity work. It must not be used for exploit execution,
+unauthorized scanning or probing, phishing, credential theft, persistence,
+evasion, stealth, bypass activity, malware retrieval, or steps to compromise
+real systems.
 
-- Backend API
-- Frontend dashboard
-- PostgreSQL database
-- Automated open-source intelligence ingestion
-- Threat and vulnerability detail pages
-- Search, filtering, and summary views
-- Testing and deployment documentation
+External OSINT content is untrusted data. The implemented collectors use fixed,
+developer-controlled sources and bounded inputs; the backend returns allow-listed
+fields, and the frontend renders external text through defensive controls. A
+source-registry entry does not grant collection authorization, licensing, API
+access, storage rights, or redistribution rights. Future source work requires a
+separate review of access, terms, rate limits, and project approval.
 
-## Ethical Use Statement
+## Current implementation status
 
-This project is intended only for defensive cybersecurity awareness, vulnerability tracking, educational analysis, and authorized open-source intelligence review.
+The current MVP includes the database schema and migrations, manual defensive
+ingestion and enrichment services, read-only APIs, backend-connected dashboard
+views, security hardening, automated tests, development runners, and
+production-oriented Docker documentation. Ingestion remains manual-only: there
+is no active scheduler, startup ingestion, recurring background ingestion,
+public ingestion API, or frontend ingestion trigger.
 
-The application must not provide exploit instructions, weaponized proof-of-concept content, unauthorized attack guidance, malware downloads, or steps to compromise real systems.
+Key implemented capabilities include:
 
-## Recommended Stack
+- PostgreSQL persistence with normalized intelligence, provenance, identifiers,
+  enrichment data, and sanitized ingestion audit records.
+- Manual, bounded ingestion or enrichment for the approved source families
+  summarized below.
+- Read-only dashboard, article, and intelligence APIs with validated search,
+  filtering, pagination, and safe response fields.
+- Backend-connected dashboard summaries, vulnerability and article lists,
+  detail pages, trends, loading/empty/error states, and safe external links.
+- Exact-origin CORS, API security headers, server-generated request IDs,
+  sanitized error responses, and allow-listed application logging.
+- Backend pytest coverage, frontend Vitest/React Testing Library coverage,
+  TypeScript checking, production builds, manual QA procedures, and deployment
+  validation evidence.
+- Separate development and production-oriented Compose definitions with manual
+  Alembic migrations in the production-oriented workflow.
 
-- Frontend: Next.js with TypeScript
-- Backend: Python FastAPI
-- Database: PostgreSQL
-- Background scheduling: APScheduler for MVP
-- Deployment: Docker and Docker Compose
-- Testing: pytest for the backend; Vitest and React Testing Library for the frontend
+## Technology stack
 
-## Repository Structure
+- Frontend: Next.js, React, and TypeScript.
+- Backend: Python 3.13, FastAPI, Pydantic, and Uvicorn.
+- Persistence: PostgreSQL, SQLAlchemy, and Alembic.
+- Source clients: httpx and feedparser.
+- Containers: Docker and Docker Compose.
+- Testing: pytest; Vitest, jsdom, React Testing Library, and TypeScript checks.
 
-- backend/ - FastAPI backend application
-- frontend/ - Next.js frontend dashboard
-- database/ - PostgreSQL initialization and database notes
-- docs/ - architecture, security, testing, deployment, and data-source documentation
-- scripts/ - developer setup scripts
+`apscheduler` remains in the shared backend dependency file, but no scheduler is
+implemented, active, or approved for the current ingestion workflows.
 
-## Current Phase
+## Repository structure
 
-Phase 1 project setup and repository structure are complete. The project is now
-in the MVP ingestion and backend foundation stage.
+| Path | Purpose |
+| --- | --- |
+| [`backend/`](backend/) | FastAPI application, database models, migrations, ingestion and processing services, and pytest tests. |
+| [`frontend/`](frontend/) | Next.js App Router dashboard, service layer, types, styles, and Vitest component/page tests. |
+| [`database/`](database/) | PostgreSQL initialization material and database notes. |
+| [`docs/`](docs/) | Architecture, source, security, testing, environment, and deployment documentation. |
+| [`scripts/`](scripts/) | Safe local developer setup helper. |
+| [`run.cmd`](run.cmd) / [`run.ps1`](run.ps1) | Windows entry point and PowerShell implementation for setup, validation, and local execution. |
+| [`docker-compose.yml`](docker-compose.yml) | Local development Compose stack. |
+| [`compose.prod.yml`](compose.prod.yml) | Standalone production-oriented Compose baseline. |
 
-Current focus:
+## Ingestion control and source scope
+
+All implemented collection and enrichment remains explicitly invoked by an
+operator. No command below runs on FastAPI startup, from a scheduler, through a
+public write endpoint, or from the frontend.
+
+Implemented source workflows:
 
 - Manual, bounded NVD CVE ingestion
 - Manual, bounded FIRST EPSS enrichment for existing CVEs
@@ -80,16 +120,16 @@ Current focus:
 - Frontend article detail page connected to the read-only article detail API
 - Frontend recent trends panel connected to existing read-only APIs, with
   bounded stored-data severity, category, and timeline visualizations
-- Remaining dashboard integration work in later stages
-
-## Setup Status
+- Some dashboard preview panels remain deterministic frontend preview data until
+  their dedicated backend views are implemented.
 
 The local development environment, backend foundation, database schema, and
-initial frontend shell are implemented. NVD ingestion, FIRST EPSS enrichment,
+backend-connected frontend are implemented. NVD ingestion, FIRST EPSS enrichment,
 CISA KEV enrichment, CERT-EU RSS ingestion, Censys publication metadata
-ingestion, and both Anomali publication workflows remain manual-only: they are
-not scheduled and are not connected to FastAPI startup, background ingestion,
-API routes, or the frontend dashboard.
+ingestion, Google TI/Mandiant publication ingestion, both Anomali publication
+workflows, and IBM X-Force catalogue imports remain manual-only: they are not
+scheduled and are not connected to FastAPI startup, background ingestion, API
+routes, or the frontend dashboard.
 
 ### Source registry foundation
 
@@ -279,21 +319,97 @@ repository does not yet define trusted HTTPS termination or a trusted reverse
 proxy. The backend does not trust arbitrary forwarded headers to make that
 decision, and local HTTP development remains unaffected.
 
-## Running the Project
+## Local development
 
-Run these commands from the repository root:
+### Prerequisites
+
+Use the documented Windows workflow with Git, PowerShell, Python 3.13, Node.js
+and npm, and Docker Desktop with the Docker Compose v2 plugin. Ports `3000`,
+`8000`, and the configured local PostgreSQL port must be available for the
+corresponding workflow. Never use real production data or secrets for local
+development.
+
+From the repository root, inspect prerequisites and create only missing ignored
+local environment files:
+
+```powershell
+.\run.cmd setup
+```
+
+The setup helper copies the committed examples to `.env`, `backend/.env`, and
+`frontend/.env.local` only when the destination is absent; it does not overwrite
+an existing local file. Review the placeholders locally without printing or
+committing completed values. Install backend and frontend dependencies with:
 
 ```powershell
 .\run.cmd install
-.\run.cmd test
-.\run.cmd docker
-.\run.cmd dev
 ```
 
-`install` prepares the backend and frontend dependencies, while `test` runs the
-backend pytest suite, frontend Vitest suite, frontend type check, and frontend
-production build. `docker` builds, starts, and verifies the complete Docker
-Compose application.
+### Runner commands
+
+Run these commands from the repository root. They are development and local
+validation commands, not production deployment commands.
+
+| Command | Implemented behavior |
+| --- | --- |
+| `.\run.cmd setup` | Check prerequisites and create missing local environment files without installing dependencies. |
+| `.\run.cmd install` | Run setup, create the Python virtual environment when absent, and install backend and frontend dependencies. |
+| `.\run.cmd test` | Run the complete backend pytest suite, frontend Vitest suite, frontend type-check, and frontend production build. |
+| `.\run.cmd docker` | Validate development Compose, build and start its `db`, `backend`, and `frontend` services, check local endpoints, and show service status. |
+| `.\run.cmd dev` | Start PostgreSQL with development Compose, then run the backend and frontend on the host with reload support. |
+| `.\run.cmd full` | Run setup, install missing dependencies, execute the complete test workflow, then run the development Docker workflow. |
+| `.\run.cmd help` | Display the runner command reference. |
+
+With no argument, `run.cmd` defaults to `full`. For day-to-day development,
+`dev` starts only PostgreSQL in Docker, then runs FastAPI at
+`http://127.0.0.1:8000/` and Next.js at `http://127.0.0.1:3000/` on the host.
+The host backend loads `backend/.env`; when a configured `DATABASE_URL` uses the
+exact Compose hostname `db`, the runner gives only the child backend process an
+equivalent `localhost` URL without printing it. Press Ctrl+C to stop the local
+backend and frontend. The database container remains running for reuse.
+
+## Production-oriented deployment
+
+Local development and production-oriented deployment are separate workflows.
+Do not use `.\run.cmd dev`, `.\run.cmd docker`, `docker-compose.yml`, reload
+servers, or development environment values for production. The standalone
+[`compose.prod.yml`](compose.prod.yml) baseline uses production application
+images, private database networking, loopback-default application bindings,
+health checks, bounded local logs, and a manual Alembic migration profile.
+
+Use the canonical guides rather than duplicating or improvising secret and
+deployment procedures here:
+
+- [Environment and secret handling](docs/environment-and-secrets.md)
+- [Production Docker deployment](docs/production-docker-deployment.md)
+- [Deployment build validation](docs/deployment-build-validation.md)
+
+This is a hardened production-oriented baseline, not a complete or validated
+public-internet production platform. In particular, the official PostgreSQL
+image initializes `POSTGRES_USER` with superuser privileges, and current Compose
+reuses that privileged role for backend and migration access; no separate
+restricted application role is provisioned. The named `postgres_data` volume is
+persistent storage, not a backup. Automated backup and tested recovery are not
+implemented.
+
+Routine shutdown and destructive recovery procedures belong in the production
+deployment guide. `docker compose down -v` deletes the persistent PostgreSQL
+volume and its database data; it is not routine cleanup and requires exact
+target verification, a verified backup and recovery plan, and explicit
+authorization.
+
+## Tests and validation
+
+From the repository root, the authoritative complete local regression is:
+
+```powershell
+.\run.cmd test
+```
+
+It runs backend pytest, frontend Vitest, frontend type-checking, and the frontend
+production build. Tests use synthetic or mocked inputs and must not contact live
+OSINT sources unless a separately documented manual smoke command is explicitly
+invoked.
 
 ### Frontend component tests
 
@@ -357,11 +473,6 @@ problems and remains outside the repository. Full project validation remains
 `.\run.cmd test`. The current dependency set can emit the known
 `StarletteDeprecationWarning` about the FastAPI/Starlette test client and
 `httpx`; this does not indicate a test failure.
-
-For day-to-day development, `dev` starts only PostgreSQL in Docker, then runs the
-FastAPI backend and Next.js frontend locally with reload support. Press Ctrl+C to
-stop the local backend and frontend processes. The database container remains
-running so it can be reused; stop it manually with Docker Compose when needed.
 
 ### Manual NVD smoke test
 
@@ -743,19 +854,68 @@ not threat severity, exploit probability, statistical calibration, attribution
 certainty, or proof that low-confidence items are not relevant. P4-03 frontend
 filters use the relevance status values only and do not add confidence filters.
 
-## Documentation
+## Canonical documentation
 
-See the docs/ folder for:
+Use the root README as the entry point and the following documents as the
+authoritative detailed references:
 
-- architecture.md
-- data-sources.md
-- source-assessment-matrix.md
-- source-integration-policy.md
-- security-notes.md
-- testing-plan.md
-- manual-test-cases.md
-- deployment-notes.md
-- [Deployment build validation](docs/deployment-build-validation.md)
-- [Production Docker deployment](docs/production-docker-deployment.md)
-- [Environment and secret handling](docs/environment-and-secrets.md)
-- uae-classification.md
+| Area | Canonical document |
+| --- | --- |
+| System design and data flow | [Architecture](docs/architecture.md) |
+| Implemented and candidate sources | [Data sources](docs/data-sources.md) |
+| Vendor-family decisions | [Source assessment matrix](docs/source-assessment-matrix.md) |
+| Source authorization and safety rules | [Source integration policy](docs/source-integration-policy.md) |
+| Application security controls | [Security notes](docs/security-notes.md) |
+| Automated testing strategy | [Testing plan](docs/testing-plan.md) |
+| Human-executed QA cases | [Manual test cases](docs/manual-test-cases.md) |
+| Environment variables and secrets | [Environment and secret handling](docs/environment-and-secrets.md) |
+| Production-oriented operation | [Production Docker deployment](docs/production-docker-deployment.md) |
+| Verified local deployment-build evidence | [Deployment build validation](docs/deployment-build-validation.md) |
+| Development deployment notes | [Deployment notes](docs/deployment-notes.md) |
+| UAE classification semantics | [UAE classification](docs/uae-classification.md) |
+
+## Known limitations
+
+- Ingestion is manual-only. There is no scheduler, recurring worker, startup
+  ingestion, public ingestion route, or frontend ingestion control.
+- Some dashboard preview panels still use deterministic preview data; the
+  implemented article, vulnerability, summary, detail, and recent-trend views
+  use read-only backend APIs as described above.
+- TLS termination, HSTS trust, a reverse proxy, and a load balancer are not
+  included.
+- Automated PostgreSQL backups, representative restore testing, and validated
+  disaster recovery are not included. The persistent volume is not a backup.
+- Logs are bounded locally, but centralized logging, production monitoring, and
+  alerting are not integrated.
+- CI/CD deployment, Kubernetes or another orchestration platform, autoscaling,
+  zero-downtime deployment, and automated secret rotation are not implemented.
+- Current production Compose reuses the privileged PostgreSQL initialization
+  role; it does not provision a separate restricted application role.
+- Production load, capacity, failover, and public-internet deployment have not
+  been validated.
+- The backend production image currently installs the shared requirements file,
+  which includes development and test dependencies.
+- Manual QA cases remain `Not Run` until a tester executes them and records
+  evidence; automated regression does not change their status.
+
+## Reviewer and mentor handover path
+
+1. Read this README for scope, implemented behavior, local commands, and known
+   limitations.
+2. Review [Architecture](docs/architecture.md), [Data sources](docs/data-sources.md),
+   and the [Source integration policy](docs/source-integration-policy.md) before
+   evaluating data-collection claims.
+3. Review [Security notes](docs/security-notes.md) and
+   [Environment and secret handling](docs/environment-and-secrets.md) before
+   evaluating configuration or deployment.
+4. Use [Testing plan](docs/testing-plan.md),
+   [Manual test cases](docs/manual-test-cases.md), and
+   [Deployment build validation](docs/deployment-build-validation.md) to
+   distinguish automated, manual, and deployment evidence.
+5. Use [Production Docker deployment](docs/production-docker-deployment.md) only
+   with protected external configuration and the documented operational
+   controls. Do not infer full production readiness from a successful local
+   Compose build.
+
+Before staging any handover update, independently review the complete changed
+files together with the focused and full-regression evidence.
