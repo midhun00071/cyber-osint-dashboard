@@ -128,8 +128,9 @@ docs/                    canonical design, security, source, test, and operation
 ### Vulnerability flow
 
 ```text
-Operator runs NVD CLI
+Operator runs NVD CLI (incremental or curated)
   -> fixed NVD API collector
+  -> bounded modification window or publication-year candidate selection
   -> NVD vulnerability normalizer
   -> NVD ingestion service
   -> CVE identity + vulnerability persistence
@@ -139,11 +140,28 @@ Operator runs NVD CLI
   -> validated frontend lists, trends, and detail view
 ```
 
-NVD creates and updates normalized vulnerability items. FIRST EPSS uses local
-CVE identifiers to enrich existing vulnerability records with score,
-percentile, and score-date evidence; it does not create arbitrary CVEs. CISA KEV
-likewise enriches existing local CVEs and skips unknown KEV-only entries. These
-workflows are source-data processing, not active vulnerability scanners.
+The curated path is a deterministic bounded representative sample, not complete
+NVD coverage. It defaults to 2020 through the current UTC year, applies explicit
+severity quotas after CVSS v3/v4 normalization, prioritizes NVD candidates with
+CISA KEV metadata, and reports page/request caps or quota shortfalls as
+incomplete. Retained-candidate ceilings are reported the same way. The collector
+enforces its 20 MiB limit while streaming decoded bytes rather than
+materializing an unbounded response. Candidate memory is also bounded per
+severity and year; the default retained limits equal the 10/5/3/2 quotas.
+
+Every inspected curated observation reconciles into a persistence outcome or a
+skipped category, including malformed, duplicate, retention-discarded, and
+valid unselected candidates. Completion time is obtained after processing, not
+copied from the start time. Both NVD paths create or update normalized
+vulnerability items through the same identity and persistence service; neither
+deletes unselected CVEs. FIRST EPSS uses local CVE identifiers to enrich
+existing vulnerability records with score, percentile, and score-date evidence;
+it does not create arbitrary CVEs. CISA KEV likewise enriches bounded listed
+matches and skips unknown KEV-only entries, but the current workflow does not
+prove a `not_listed` result for every local CVE. These workflows are source-data
+processing, not active vulnerability scanners.
+
+> This product uses data from the NVD API but is not endorsed or certified by the NVD.
 
 ### Publication flow
 

@@ -58,6 +58,7 @@ def test_all_operator_entry_points_and_fixed_source_boundaries_are_documented() 
 
     for module in (
         "app.ingestion.nvd_cli",
+        "app.ingestion.nvd_curated_cli",
         "app.ingestion.epss_cli",
         "app.ingestion.cisa_kev_cli",
         "app.ingestion.rss_cli",
@@ -83,6 +84,15 @@ def test_vulnerability_and_enrichment_roles_and_fields_are_traceable() -> None:
         "uppercase CVE identifier",
         "CVSS score, vector, and version",
         "affected-product configuration",
+        "does not mirror, NVD",
+        "10 Critical, 5 High, 3 Medium, and 2 Low",
+        "CISA KEV metadata first",
+        "unselected records are not deleted",
+        "incrementally reads decoded body bytes",
+        "Default retained full-candidate limits per year",
+        "valid unselected candidates as skipped",
+        "does not prove a `not_listed` result",
+        "This product uses data from the NVD API but is not endorsed or certified by the NVD",
         "FIRST EPSS enriches existing local CVE vulnerability records",
         "EPSS probability",
         "percentile",

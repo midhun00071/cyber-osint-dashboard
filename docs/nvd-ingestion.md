@@ -94,6 +94,150 @@ only. Raw payloads, descriptions, references, headers, keys, environment values,
 stack traces, SQL errors, and database URLs are never printed. The command is not
 connected to FastAPI startup, a scheduler, an API route, or the dashboard.
 
+## Curated multi-year representative dataset
+
+`app.ingestion.nvd_curated_cli` is a separate manual workflow. It does not
+replace or change the incremental last-modified-window command. It builds a
+bounded representative dataset, not the complete NVD, and defaults to UTC
+publication years 2020 through the current UTC year.
+
+The default quota for each year is:
+
+| Normalized severity | Target | Default maximum retained per year |
+|---|---:|---:|
+| Critical | 10 | 10 |
+| High | 5 | 5 |
+| Medium | 3 | 3 |
+| Low | 2 | 2 |
+| **Total** | **20** | **20** |
+
+Only non-rejected candidates with a valid uppercase CVE identity and usable
+preferred CVSS v3 or v4 score/severity can fill a slot. The existing normalizer
+selects CVSS 4.0 before 3.1 and 3.0, so the stored score, version, vector, and
+severity use the same persistence contract as incremental NVD ingestion.
+
+Within a severity, selection is deterministic:
+
+1. NVD candidates carrying CISA KEV metadata first.
+2. Preferred CVSS base score descending.
+3. NVD last-modified timestamp descending.
+4. Normalized CVE ID ascending.
+
+Duplicate results across CVSS versions, pages, or date chunks collapse by
+uppercase CVE ID before selection. Missing quota capacity is reported exactly;
+the command does not invent or relabel severity.
+
+### Planning and execution
+
+Preview the default plan from `backend` without loading runtime settings,
+contacting NVD, or opening a database session:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.ingestion.nvd_curated_cli --plan
+```
+
+An explicit example for the current 2026 UTC year is:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.ingestion.nvd_curated_cli `
+    --start-year 2020 `
+    --end-year 2026 `
+    --chunk-days 90 `
+    --results-per-page 50 `
+    --max-pages-per-query 2 `
+    --max-requests 400 `
+    --retention-multiplier 1
+```
+
+Supported bounds and defaults:
+
+- start year: 2020 by default and never earlier than 2020;
+- end year: current UTC year by default and never in the future;
+- date chunks: 90 days by default, 1–120 days;
+- candidate page size: 50 by default, 1–200;
+- candidate pages per query: 2 by default, 1–10;
+- total NVD requests: 400 by default, 1–1,000;
+- retention multiplier: 1 by default, 1–5; it multiplies each severity quota
+  to calculate the maximum retained full candidates per severity and year;
+- automatic retries: 0.
+
+Chunks use millisecond UTC boundaries with no gaps or overlaps. A completed past
+year ends at `23:59:59.999Z` on 31 December; the current year ends at the
+captured current UTC time. Each chunk requests a bounded KEV-only candidate page
+set plus CVSS v4 and v3 candidate pages for Critical, High, Medium, and Low.
+Only typed allow-listed parameters are available; callers cannot provide an
+arbitrary URL, host, or query dictionary.
+
+The shared client applies bounded timeouts and a true streaming response-body
+limit. It validates HTTP status before parsing, rejects a valid oversized
+`Content-Length` before consuming the body, and otherwise reads decoded bytes
+incrementally. Reading stops immediately when the cumulative body would exceed
+20 MiB; partial oversized content is discarded and JSON parsing occurs only
+after a bounded read completes. Each accepted normalized CVE payload remains
+capped at 512 KiB.
+
+Candidate memory is separately bounded. The default multiplier retains only the
+best 10 Critical, 5 High, 3 Medium, and 2 Low full normalized candidates per
+year. A candidate outside a full top-ranked severity pool is discarded
+promptly; a better candidate evicts the current worst retained candidate.
+Duplicate replacement remains deterministic. Any eviction or valid candidate
+discarded by this ceiling adds `maximum retained candidate limit reached` to
+the affected year, so the result is partial/incomplete rather than a claim of
+exhaustive consideration. Planning and execution summaries display the
+configured retained limits.
+
+Candidate page and total-request ceilings are hard limits. If unseen upstream
+pages remain, a request fails, or a quota cannot be filled, the affected year is
+reported as capped or incomplete and the command returns a controlled
+non-success result. Successfully selected records may still be committed with
+sanitized audit evidence. The summary reports requested years, yearly quotas,
+candidates inspected, selections and shortfalls by year/severity, KEV-prioritized
+count, persistence outcomes, request count, and incomplete years.
+
+The CLI owns the outer transaction and retains per-record savepoints. It sends
+selected records through `NvdIngestionService`, so existing CVEs follow the
+normal update/unchanged path, no duplicate CVE rows are created, EPSS/KEV and
+analyst-owned fields are preserved, and unselected existing CVEs are not
+deleted. It deliberately does not advance the incremental NVD source
+checkpoint.
+
+Run counters reconcile every inspected observation:
+
+```text
+records_fetched =
+  records_created + records_updated + records_unchanged
+  + records_skipped + records_failed
+```
+
+`records_skipped` includes malformed or rejected observations, duplicate
+observations, candidates discarded or evicted by retention limits, and valid
+retained candidates outside the final quotas. `started_at` is captured once
+before collection and `completed_at` is captured from a fresh timezone-aware
+UTC clock after processing; a backward or invalid completion time fails safely
+without persisting raw error details.
+
+FIRST EPSS and CISA KEV enrichment remain separate later operator steps:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.ingestion.epss_cli `
+    --max-cves 25 `
+    --batch-size 25
+
+.\.venv\Scripts\python.exe -m app.ingestion.cisa_kev_cli --max-records 25
+```
+
+The current CISA command processes a bounded catalogue subset and marks listed
+matches. It does not establish `not_listed` for every local CVE, so the absence
+of KEV enrichment must not be interpreted as a completed negative check.
+
+> This product uses data from the NVD API but is not endorsed or certified by the NVD.
+
+Known limitations: the bounded candidate pool is not exhaustive, NVD page
+ordering and upstream data availability constrain representativeness, quota
+shortfalls are possible, and live execution duration reflects official pacing.
+Planning and automated tests are offline; neither performs live NVD, FIRST EPSS,
+or CISA requests.
+
 ## Out of scope
 
 - Migrations and schema changes.
@@ -103,5 +247,5 @@ connected to FastAPI startup, a scheduler, an API route, or the dashboard.
 - FastAPI ingestion routes.
 - Dashboard and frontend changes.
 - Automatic retries or historical backfills.
-- CISA KEV, EPSS, RSS, and vendor advisory ingestion.
+- Redesign of CISA KEV, EPSS, RSS, or vendor advisory ingestion.
 - Automatic vendor, product, CWE, or CPE tag creation.

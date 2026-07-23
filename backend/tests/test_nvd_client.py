@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta, timezone, tzinfo
+import json
 import secrets
 
 import httpx
 import pytest
 from pydantic import SecretStr
 
+from app.ingestion.collectors import nvd_client as nvd_client_module
 from app.ingestion.collectors.nvd_client import (
     AUTHENTICATED_DELAY_SECONDS,
     NvdClient,
@@ -32,6 +34,17 @@ class NoOffsetTimezone(tzinfo):
 
     def tzname(self, value: datetime | None) -> str:
         return "no-offset"
+
+
+class TrackingStream(httpx.SyncByteStream):
+    def __init__(self, chunks: list[bytes]) -> None:
+        self.chunks = chunks
+        self.chunks_consumed = 0
+
+    def __iter__(self):
+        for chunk in self.chunks:
+            self.chunks_consumed += 1
+            yield chunk
 
 
 def make_payload(
@@ -161,6 +174,97 @@ def test_query_params_are_complete_and_datetimes_are_utc() -> None:
     assert params["lastModEndDate"] == "2026-01-02T00:00:00.000Z"
     assert params["startIndex"] == "25"
     assert params["resultsPerPage"] == "50"
+
+
+@pytest.mark.parametrize(
+    ("filter_name", "argument_name"),
+    [
+        ("cvssV3Severity", "cvss_v3_severity"),
+        ("cvssV4Severity", "cvss_v4_severity"),
+    ],
+)
+def test_publication_page_uses_allow_listed_cvss_severity_filter(
+    filter_name: str,
+    argument_name: str,
+) -> None:
+    captured: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        return httpx.Response(200, json=make_payload(), request=request)
+
+    client, http_client = make_client(handler)
+    try:
+        page = client.fetch_publication_page(
+            START,
+            END,
+            start_index=25,
+            results_per_page=50,
+            **{argument_name: "high"},
+        )
+    finally:
+        http_client.close()
+
+    assert page.total_results == 1
+    params = captured[0].url.params
+    assert params["pubStartDate"] == "2026-01-01T00:00:00.000Z"
+    assert params["pubEndDate"] == "2026-01-02T00:00:00.000Z"
+    assert params["startIndex"] == "25"
+    assert params["resultsPerPage"] == "50"
+    assert params[filter_name] == "HIGH"
+    other_filter = (
+        "cvssV4Severity" if filter_name == "cvssV3Severity" else "cvssV3Severity"
+    )
+    assert other_filter not in params
+
+
+def test_publication_page_supports_presence_only_kev_filter() -> None:
+    captured: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        return httpx.Response(200, json=make_payload(), request=request)
+
+    client, http_client = make_client(handler)
+    try:
+        client.fetch_publication_page(START, END, has_kev=True)
+    finally:
+        http_client.close()
+
+    assert "hasKev" in captured[0].url.params
+    assert captured[0].url.params["hasKev"] == ""
+
+
+@pytest.mark.parametrize("severity", ["", "unknown", "extreme", 7])
+def test_publication_page_rejects_invalid_severity_filter(severity: object) -> None:
+    with NvdClient() as client:
+        with pytest.raises(NvdResponseError, match="severity filter is invalid"):
+            client.fetch_publication_page(
+                START,
+                END,
+                cvss_v3_severity=severity,  # type: ignore[arg-type]
+            )
+
+
+def test_publication_page_rejects_two_cvss_version_filters() -> None:
+    with NvdClient() as client:
+        with pytest.raises(NvdResponseError, match="Only one"):
+            client.fetch_publication_page(
+                START,
+                END,
+                cvss_v3_severity="HIGH",
+                cvss_v4_severity="HIGH",
+            )
+
+
+def test_publication_page_rejects_non_boolean_kev_filter() -> None:
+    with NvdClient() as client:
+        with pytest.raises(NvdResponseError, match="KEV filter must be a boolean"):
+            client.fetch_publication_page(
+                START,
+                END,
+                has_kev="true",  # type: ignore[arg-type]
+            )
 
 
 def test_rejects_naive_datetimes() -> None:
@@ -304,6 +408,64 @@ def test_invalid_json_is_response_error() -> None:
             client.fetch_page(START, END)
     finally:
         http_client.close()
+
+
+def test_oversized_content_length_is_rejected_before_body_consumption(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(nvd_client_module, "MAX_RESPONSE_BYTES", 10)
+    stream = TrackingStream([b'{"private":"payload"}'])
+    client, http_client = make_client(
+        lambda request: httpx.Response(
+            200,
+            headers={"Content-Length": "11"},
+            stream=stream,
+            request=request,
+        )
+    )
+    try:
+        with pytest.raises(NvdResponseError, match="approved size limit") as exc_info:
+            client.fetch_page(START, END)
+    finally:
+        http_client.close()
+
+    assert stream.chunks_consumed == 0
+    assert "private" not in str(exc_info.value)
+
+
+def test_incrementally_oversized_body_stops_before_all_chunks_are_consumed(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(nvd_client_module, "MAX_RESPONSE_BYTES", 10)
+    stream = TrackingStream([b"12345", b"67890", b"x", b"not-consumed"])
+    client, http_client = make_client(
+        lambda request: httpx.Response(200, stream=stream, request=request)
+    )
+    try:
+        with pytest.raises(NvdResponseError, match="approved size limit"):
+            client.fetch_page(START, END)
+    finally:
+        http_client.close()
+
+    assert stream.chunks_consumed == 3
+    assert stream.chunks_consumed < len(stream.chunks)
+
+
+def test_bounded_streamed_body_parses_after_complete_read() -> None:
+    encoded = json.dumps(make_payload()).encode("utf-8")
+    split_at = len(encoded) // 2
+    stream = TrackingStream([encoded[:split_at], encoded[split_at:]])
+    client, http_client = make_client(
+        lambda request: httpx.Response(200, stream=stream, request=request)
+    )
+    try:
+        parsed = client.fetch_page(START, END)
+    finally:
+        http_client.close()
+
+    assert parsed.total_results == 1
+    assert parsed.vulnerabilities[0]["cve"]["id"] == "CVE-2026-0001"
+    assert stream.chunks_consumed == 2
 
 
 @pytest.mark.parametrize("payload", [[], "invalid", False])

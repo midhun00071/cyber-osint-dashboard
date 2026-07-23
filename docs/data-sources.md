@@ -91,6 +91,14 @@ scheduled refresh instructions.
   .\.venv\Scripts\python.exe -m app.ingestion.nvd_cli --window-minutes 60 --results-per-page 25 --max-records 25
   ```
 
+  The separate representative multi-year workflow can be previewed and then
+  invoked explicitly:
+
+  ```powershell
+  .\.venv\Scripts\python.exe -m app.ingestion.nvd_curated_cli --plan
+  .\.venv\Scripts\python.exe -m app.ingestion.nvd_curated_cli --start-year 2020 --end-year 2026 --chunk-days 90 --results-per-page 50 --max-pages-per-query 2 --max-requests 400 --retention-multiplier 1
+  ```
+
 - **Normalized persistence:** uppercase CVE identifier; bounded canonical title
   and English description; canonical NVD detail URL; source publication and
   modification timestamps; active or archived status; severity; selected CVSS
@@ -101,13 +109,38 @@ scheduled refresh instructions.
   supported CLI bounds are 1–1440 minutes and 1–100 records. CVE namespace/value
   plus the NVD source external ID identify records; a canonical content hash
   separates unchanged data from updates.
+- **Curated selection:** the curated command represents, but does not mirror,
+  NVD. It defaults to publication years 2020 through the current UTC year and
+  targets 10 Critical, 5 High, 3 Medium, and 2 Low CVEs per year. It requires a
+  usable preferred CVSS v3/v4 result and ranks each severity by CISA KEV
+  metadata first, CVSS score descending, NVD modification time descending, and
+  uppercase CVE ID ascending. Duplicate candidates collapse by CVE ID.
+  Existing records use the same update/unchanged path; unselected records are
+  not deleted and the incremental checkpoint is not advanced. EPSS and KEV
+  enrichment remain separate subsequent manual workflows. Default retained
+  full-candidate limits per year are 10 Critical, 5 High, 3 Medium, and 2 Low.
+  The 1–5 retention multiplier scales those per-severity limits. An eviction or
+  valid candidate discarded at the configured ceiling marks the year
+  incomplete.
 - **Controls and limitations:** HTTPS is fixed to `services.nvd.nist.gov`;
   date-window and pagination metadata are validated; normalized source evidence
-  is capped at 512 KiB per CVE; client timeouts apply. Consecutive official API
-  request starts are delayed 6 seconds without an API key or 0.6 seconds with
-  the optional `NVD_API_KEY`. The key is secret-managed and never documented or
-  logged. The workflow does not execute exploits, retrieve malware, or scan
-  affected systems.
+  is capped at 512 KiB per CVE. The client rejects an oversized valid
+  `Content-Length` before body consumption, incrementally reads decoded body
+  bytes, stops immediately above 20 MiB, discards the partial body, and parses
+  JSON only after the bounded stream completes. Client timeouts apply.
+  Consecutive official API request starts are delayed 6 seconds without an API
+  key or 0.6 seconds with the optional `NVD_API_KEY`. The key is secret-managed
+  and never documented or logged. The workflow does not execute exploits,
+  retrieve malware, or scan affected systems. Curated chunks default to 90 days
+  and cannot exceed the NVD 120-day limit. Candidate pages (default 2 per
+  query), page size (default 50), total requests (default 400), retention, and
+  retries (0) are bounded. Caps, retention discards, request failures, and exact
+  quota shortfalls are reported as incomplete; therefore the curated result
+  must not be treated as complete NVD coverage. Audit counters reconcile every
+  fetched observation, including valid unselected candidates as skipped, and
+  completion time is captured after processing.
+
+  > This product uses data from the NVD API but is not endorsed or certified by the NVD.
 
 ### `first-epss` — FIRST EPSS
 
@@ -155,6 +188,8 @@ scheduled refresh instructions.
   catalogue URL, at most three validated redirects, bounded timeouts, JSON
   content, and a 2 MiB response. Individual normalized evidence is capped at 16
   KiB. It does not claim that items absent from a bounded run are not exploited.
+  The current bounded workflow marks listed matches but does not prove a
+  `not_listed` result or a completed KEV check for every local CVE.
 
 ## Advisory and research publication sources
 

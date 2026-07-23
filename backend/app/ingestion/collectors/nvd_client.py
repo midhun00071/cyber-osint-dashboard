@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+import json
 import time
 from typing import Any
 
@@ -18,9 +19,11 @@ NVD_SOURCE_SLUG = "nvd"
 NVD_CVE_API_URL = get_required_source_base_url(NVD_SOURCE_SLUG)
 MAX_RESULTS_PER_PAGE = 2000
 MAX_DATE_WINDOW = timedelta(days=120)
+MAX_RESPONSE_BYTES = 20 * 1024 * 1024
 DEFAULT_TIMEOUT = httpx.Timeout(30.0, connect=10.0)
 UNAUTHENTICATED_DELAY_SECONDS = 6.0
 AUTHENTICATED_DELAY_SECONDS = 0.6
+CVSS_SEVERITIES = frozenset({"LOW", "MEDIUM", "HIGH", "CRITICAL"})
 
 
 class NvdClientError(Exception):
@@ -96,30 +99,56 @@ class NvdClient:
             "resultsPerPage": results_per_page,
         }
 
-        try:
-            response = self._http_client.get(
-                NVD_CVE_API_URL,
-                params=params,
-                headers=self._headers,
+        return self._request_page(params)
+
+    def fetch_publication_page(
+        self,
+        publication_start: datetime,
+        publication_end: datetime,
+        *,
+        start_index: int = 0,
+        results_per_page: int = MAX_RESULTS_PER_PAGE,
+        cvss_v3_severity: str | None = None,
+        cvss_v4_severity: str | None = None,
+        has_kev: bool = False,
+    ) -> NvdPage:
+        """Fetch one page using only approved publication candidate filters."""
+
+        self._validate_request(
+            publication_start,
+            publication_end,
+            start_index,
+            results_per_page,
+            date_filter_name="publication",
+        )
+        normalized_v3 = self._validate_severity(
+            cvss_v3_severity,
+            "CVSS v3",
+        )
+        normalized_v4 = self._validate_severity(
+            cvss_v4_severity,
+            "CVSS v4",
+        )
+        if normalized_v3 is not None and normalized_v4 is not None:
+            raise NvdResponseError(
+                "Only one NVD CVSS version severity filter may be used per request."
             )
-        except httpx.TimeoutException as exc:
-            raise NvdRequestError("The NVD request timed out.") from exc
-        except httpx.TransportError as exc:
-            raise NvdRequestError("The NVD request failed during transport.") from exc
+        if not isinstance(has_kev, bool):
+            raise NvdResponseError("The NVD KEV filter must be a boolean.")
 
-        if response.status_code == 429:
-            raise NvdRateLimitError("The NVD API rate limit was reached (HTTP 429).")
-        if not response.is_success:
-            raise NvdHttpError(
-                f"The NVD API returned HTTP {response.status_code}."
-            )
-
-        try:
-            payload = response.json()
-        except ValueError as exc:
-            raise NvdResponseError("The NVD API returned invalid JSON.") from exc
-
-        return self._parse_page(payload)
+        params: dict[str, str | int] = {
+            "pubStartDate": self._format_datetime(publication_start),
+            "pubEndDate": self._format_datetime(publication_end),
+            "startIndex": start_index,
+            "resultsPerPage": results_per_page,
+        }
+        if normalized_v3 is not None:
+            params["cvssV3Severity"] = normalized_v3
+        if normalized_v4 is not None:
+            params["cvssV4Severity"] = normalized_v4
+        if has_kev:
+            params["hasKev"] = ""
+        return self._request_page(params)
 
     def iter_vulnerabilities(
         self,
@@ -172,6 +201,8 @@ class NvdClient:
         last_modified_end: datetime,
         start_index: int,
         results_per_page: int,
+        *,
+        date_filter_name: str = "modification",
     ) -> None:
         if (
             last_modified_start.tzinfo is None
@@ -182,10 +213,12 @@ class NvdClient:
             raise NvdResponseError("NVD date filters must be timezone-aware.")
         if last_modified_start > last_modified_end:
             raise NvdResponseError(
-                "The NVD modification start date must not be after the end date."
+                f"The NVD {date_filter_name} start date must not be after the end date."
             )
         if last_modified_end - last_modified_start > MAX_DATE_WINDOW:
-            raise NvdResponseError("The NVD modification window cannot exceed 120 days.")
+            raise NvdResponseError(
+                f"The NVD {date_filter_name} window cannot exceed 120 days."
+            )
         if not isinstance(start_index, int) or isinstance(start_index, bool):
             raise NvdResponseError("The NVD start index must be an integer.")
         if start_index < 0:
@@ -198,6 +231,74 @@ class NvdClient:
             raise NvdResponseError(
                 "NVD results per page must be between 1 and 2000."
             )
+
+    @staticmethod
+    def _validate_severity(value: str | None, label: str) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise NvdResponseError(f"The NVD {label} severity filter is invalid.")
+        normalized = value.strip().upper()
+        if normalized not in CVSS_SEVERITIES:
+            raise NvdResponseError(f"The NVD {label} severity filter is invalid.")
+        return normalized
+
+    def _request_page(self, params: dict[str, str | int]) -> NvdPage:
+        try:
+            with self._http_client.stream(
+                "GET",
+                NVD_CVE_API_URL,
+                params=params,
+                headers=self._headers,
+            ) as response:
+                if response.status_code == 429:
+                    raise NvdRateLimitError(
+                        "The NVD API rate limit was reached (HTTP 429)."
+                    )
+                if not response.is_success:
+                    raise NvdHttpError(
+                        f"The NVD API returned HTTP {response.status_code}."
+                    )
+
+                content_length = self._valid_content_length(
+                    response.headers.get("Content-Length")
+                )
+                if (
+                    content_length is not None
+                    and content_length > MAX_RESPONSE_BYTES
+                ):
+                    raise NvdResponseError(
+                        "The NVD response exceeded the approved size limit."
+                    )
+
+                response_body = bytearray()
+                for chunk in response.iter_bytes():
+                    if len(response_body) + len(chunk) > MAX_RESPONSE_BYTES:
+                        response_body.clear()
+                        raise NvdResponseError(
+                            "The NVD response exceeded the approved size limit."
+                        )
+                    response_body.extend(chunk)
+        except httpx.TimeoutException as exc:
+            raise NvdRequestError("The NVD request timed out.") from exc
+        except httpx.TransportError as exc:
+            raise NvdRequestError("The NVD request failed during transport.") from exc
+
+        try:
+            payload = json.loads(response_body)
+        except (UnicodeDecodeError, ValueError) as exc:
+            raise NvdResponseError("The NVD API returned invalid JSON.") from exc
+
+        return self._parse_page(payload)
+
+    @staticmethod
+    def _valid_content_length(value: str | None) -> int | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized.isascii() or not normalized.isdecimal():
+            return None
+        return int(normalized)
 
     @staticmethod
     def _format_datetime(value: datetime) -> str:

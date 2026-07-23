@@ -104,6 +104,13 @@ def test_vulnerability_publication_and_audit_flows_are_documented() -> None:
 
     for phrase in (
         "Operator runs NVD CLI",
+        "deterministic bounded representative sample",
+        "reports page/request caps or quota shortfalls as incomplete",
+        "streaming decoded bytes",
+        "Candidate memory is also bounded per severity and year",
+        "valid unselected candidates",
+        "does not prove a `not_listed` result for every local CVE",
+        "This product uses data from the NVD API but is not endorsed or certified by the NVD",
         "optional later operator-run FIRST EPSS enrichment",
         "optional later operator-run CISA KEV enrichment",
         "skips unknown KEV-only entries",

@@ -68,6 +68,26 @@ def test_readme_states_manual_only_ingestion_without_stale_scheduler_claims() ->
     assert "no scheduler is implemented, active, or approved" in readme
 
 
+def test_readme_documents_curated_nvd_as_bounded_manual_sample() -> None:
+    readme = normalized_readme()
+
+    for required_phrase in (
+        "manual curated multi-year nvd dataset",
+        "representative sample rather than a complete nvd mirror",
+        "10 critical, 5 high, 3 medium, and 2 low",
+        "app.ingestion.nvd_curated_cli --plan",
+        "capped or incomplete",
+        "unrelated cves are never deleted",
+        "first epss and cisa kev commands separately",
+        "stops its decoded streaming read immediately above 20 mib",
+        "retains at most 10 critical, 5 high, 3 medium, and 2 low",
+        "valid unselected observations as skipped",
+        "does not prove a not-listed kev result for every local cve",
+        "this product uses data from the nvd api but is not endorsed or certified by the nvd",
+    ):
+        assert required_phrase in readme
+
+
 def test_documented_runner_commands_match_the_runner_switch() -> None:
     readme = readme_text()
     runner = RUN_SCRIPT.read_text(encoding="utf-8")

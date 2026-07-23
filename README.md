@@ -503,6 +503,55 @@ It runs only when explicitly invoked, stores bounded normalized public data and
 sanitized audit records, and is not connected to application startup or a
 scheduler.
 
+### Manual curated multi-year NVD dataset
+
+The separate curated command builds a representative sample rather than a
+complete NVD mirror. Its defaults target 20 CVEs per UTC publication year from
+2020 through the current UTC year: 10 Critical, 5 High, 3 Medium, and 2 Low.
+Within each severity it prioritizes NVD records carrying CISA KEV metadata, then
+orders by CVSS score, NVD last-modified time, and CVE ID.
+
+Preview the validated plan without network or database access:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.ingestion.nvd_curated_cli --plan
+```
+
+Run the network- and database-active workflow only through explicit operator
+invocation:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.ingestion.nvd_curated_cli `
+    --start-year 2020 `
+    --end-year 2026 `
+    --chunk-days 90 `
+    --results-per-page 50 `
+    --max-pages-per-query 2 `
+    --max-requests 400 `
+    --retention-multiplier 1
+```
+
+Replace `2026` with the current UTC year. Candidate requests use only the fixed
+NVD endpoint and typed publication, CVSS v3/v4 severity, pagination, and KEV
+filters. The client rejects an oversized valid `Content-Length` before body
+consumption and otherwise stops its decoded streaming read immediately above
+20 MiB. By default, each year retains at most 10 Critical, 5 High, 3 Medium, and
+2 Low full candidates; discarded or evicted valid candidates make that year
+incomplete. Page/request caps and quota shortfalls are likewise explicit, and
+the summary identifies every capped or incomplete year.
+
+Audit counts include malformed, duplicate, retention-discarded, and valid
+unselected observations as skipped, and the completion timestamp is captured
+after processing. Existing CVEs use the normal update/unchanged path, unrelated
+CVEs are never deleted, and the incremental NVD checkpoint is not advanced.
+Run FIRST EPSS and CISA KEV commands separately as operator workflows. The current bounded
+CISA run does not prove a not-listed KEV result for every local CVE.
+
+> This product uses data from the NVD API but is not endorsed or certified by the NVD.
+
+See [the NVD ingestion guide](docs/nvd-ingestion.md) for limits and known
+limitations.
+
 ### Manual FIRST EPSS enrichment
 
 From the `backend` directory, a developer can enrich existing stored CVEs with
