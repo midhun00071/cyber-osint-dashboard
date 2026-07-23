@@ -50,6 +50,36 @@ const relevanceOptions: readonly {
   { label: "Unknown", value: "unknown" },
 ] as const;
 
+const sourceOptions = [
+  { label: "All sources", value: "" },
+  {
+    label: "CERT-EU Security Advisories",
+    value: "cert-eu-security-advisories",
+  },
+  { label: "Censys ARC Research", value: "censys-arc-research" },
+  {
+    label: "Censys Rapid Response Advisories",
+    value: "censys-rapid-response-advisories",
+  },
+  { label: "Anomali Cyber Watch", value: "anomali-cyber-watch" },
+  {
+    label: "IBM X-Force Public Research",
+    value: "ibm-x-force-public-research",
+  },
+  {
+    label: "IBM X-Force Public OSINT Advisories",
+    value: "ibm-x-force-public-osint-advisories",
+  },
+  {
+    label: "Google Threat Intelligence Public Research",
+    value: "google-threat-intelligence-public-research",
+  },
+  {
+    label: "Mandiant Public Threat Research",
+    value: "mandiant-public-threat-research",
+  },
+] as const;
+
 const limit = 6;
 
 type FeedState =
@@ -121,6 +151,8 @@ export function LatestArticlesFeed() {
   const [queryInput, setQueryInput] = useState("");
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<ArticleCategory | "">("");
+  const [sourceInput, setSourceInput] = useState("");
+  const [source, setSource] = useState("");
   const [scope, setScope] = useState<GeographicScope | "">("");
   const [relevance, setRelevance] = useState<UaeRelevanceStatus | "">("");
   const [offset, setOffset] = useState(0);
@@ -140,6 +172,7 @@ export function LatestArticlesFeed() {
             limit,
             offset,
             q: query,
+            source_slug: source || undefined,
             uae_relevance_status: relevance || undefined,
           },
           controller.signal,
@@ -163,7 +196,7 @@ export function LatestArticlesFeed() {
     void loadArticles();
 
     return () => controller.abort();
-  }, [category, offset, query, relevance, scope]);
+  }, [category, offset, query, relevance, scope, source]);
 
   const articles = useMemo(
     () => (state.status === "success" ? state.data.items : []),
@@ -181,19 +214,26 @@ export function LatestArticlesFeed() {
     event.preventDefault();
     setOffset(0);
     setQuery(queryInput.trim());
+    setSource(sourceInput);
   }
 
   function clearFilters() {
     setQueryInput("");
     setQuery("");
     setCategory("");
+    setSourceInput("");
+    setSource("");
     setScope("");
     setRelevance("");
     setOffset(0);
   }
 
   const hasActiveFilters =
-    query !== "" || category !== "" || scope !== "" || relevance !== "";
+    query !== "" ||
+    category !== "" ||
+    source !== "" ||
+    scope !== "" ||
+    relevance !== "";
 
   return (
     <div className="articleFeedShell">
@@ -218,6 +258,19 @@ export function LatestArticlesFeed() {
             value={category}
           >
             {categoryOptions.map((option) => (
+              <option key={option.label} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Source</span>
+          <select
+            onChange={(event) => setSourceInput(event.target.value)}
+            value={sourceInput}
+          >
+            {sourceOptions.map((option) => (
               <option key={option.label} value={option.value}>
                 {option.label}
               </option>
@@ -287,7 +340,7 @@ export function LatestArticlesFeed() {
           </h3>
           <p>
             {hasActiveFilters
-              ? "Try a different search term, category, scope, or UAE relevance filter."
+              ? "Try a different search term, category, source, scope, or UAE relevance filter."
               : "Stored article records will appear here after manual ingestion writes them to the database."}
           </p>
         </div>

@@ -53,9 +53,11 @@ class FakeSession:
         self.items = items or []
         self.error_message = error_message
         self.execute_calls = 0
+        self.last_statement = None
 
-    def execute(self, _statement):
+    def execute(self, statement):
         self.execute_calls += 1
+        self.last_statement = statement
         if self.error_message is not None:
             raise SQLAlchemyError(self.error_message)
         return FakeExecuteResult(self.items)
@@ -96,6 +98,7 @@ def make_vulnerability_item(
     severity: str = "high",
     source_slug: str = "nvd",
     source_name: str = "National Vulnerability Database",
+    source_published_at: datetime = NOW,
     source_modified_at: datetime | None = None,
     last_seen_at: datetime | None = None,
     first_seen_at: datetime | None = None,
@@ -135,7 +138,7 @@ def make_vulnerability_item(
         canonical_title=title,
         summary=summary,
         canonical_url=f"https://nvd.nist.gov/vuln/detail/{cve_id}",
-        source_published_at=NOW,
+        source_published_at=source_published_at,
         source_modified_at=item_source_modified_at,
         collected_at=NOW,
         last_seen_at=item_last_seen_at,
@@ -191,7 +194,7 @@ def make_vulnerability_item(
         payload_collected_at=NOW,
         first_seen_at=item_first_seen_at,
         last_seen_at=item_last_seen_at,
-        source_published_at=NOW,
+        source_published_at=source_published_at,
         source_modified_at=item_source_modified_at,
         processing_status="processed",
         last_processed_at=NOW,
@@ -575,6 +578,168 @@ def test_geographic_and_uae_relevance_filters_combine_after_search(client) -> No
     assert data["items"][0]["cve_id"] == "CVE-2026-02120"
 
 
+def test_published_year_uses_utc_boundaries_and_filtered_total(client) -> None:
+    current_year = datetime.now(UTC).year
+    start = datetime(current_year, 1, 1, tzinfo=UTC)
+    next_year = datetime(current_year + 1, 1, 1, tzinfo=UTC)
+    included_start = make_vulnerability_item(
+        cve_id=f"CVE-{current_year}-10000",
+        source_published_at=start,
+    )
+    included_end = make_vulnerability_item(
+        cve_id=f"CVE-{current_year}-10001",
+        source_published_at=datetime(
+            current_year,
+            12,
+            31,
+            23,
+            59,
+            59,
+            999999,
+            tzinfo=UTC,
+        ),
+    )
+    excluded_next_year = make_vulnerability_item(
+        cve_id=f"CVE-{current_year + 1}-10002",
+        source_published_at=next_year,
+    )
+    session = FakeSession([included_start, included_end, excluded_next_year])
+
+    response = client(session).get(
+        f"/api/v1/intelligence/items?published_year={current_year}&limit=1"
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 2
+    assert len(data["items"]) == 1
+    assert session.last_statement is not None
+    sql = str(session.last_statement)
+    assert "intelligence_items.source_published_at >=" in sql
+    assert "intelligence_items.source_published_at <" in sql
+    assert set(session.last_statement.compile().params.values()) == {start, next_year}
+
+
+def test_no_published_year_preserves_existing_results(client) -> None:
+    older = make_vulnerability_item(
+        cve_id="CVE-2020-10000",
+        source_published_at=datetime(2020, 6, 1, tzinfo=UTC),
+    )
+    current = make_vulnerability_item(
+        cve_id=f"CVE-{datetime.now(UTC).year}-10001",
+        source_published_at=datetime(datetime.now(UTC).year, 6, 1, tzinfo=UTC),
+    )
+
+    response = client(FakeSession([older, current])).get(
+        "/api/v1/intelligence/items"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 2
+
+
+def test_published_year_composes_with_search_severity_and_scope(client) -> None:
+    current_year = datetime.now(UTC).year
+    matching = make_vulnerability_item(
+        cve_id=f"CVE-{current_year}-11000",
+        title="Exchange gateway issue",
+        severity="critical",
+        source_published_at=datetime(current_year, 4, 1, tzinfo=UTC),
+        geographic_scope="global",
+        uae_relevance_status="confirmed",
+    )
+    wrong_year = make_vulnerability_item(
+        cve_id=f"CVE-{current_year - 1}-11001",
+        title="Exchange gateway issue",
+        severity="critical",
+        source_published_at=datetime(current_year - 1, 4, 1, tzinfo=UTC),
+        geographic_scope="global",
+        uae_relevance_status="confirmed",
+    )
+    wrong_severity = make_vulnerability_item(
+        cve_id=f"CVE-{current_year}-11002",
+        title="Exchange gateway issue",
+        severity="high",
+        source_published_at=datetime(current_year, 4, 1, tzinfo=UTC),
+        geographic_scope="global",
+        uae_relevance_status="confirmed",
+    )
+    wrong_scope = make_vulnerability_item(
+        cve_id=f"CVE-{current_year}-11003",
+        title="Exchange gateway issue",
+        severity="critical",
+        source_published_at=datetime(current_year, 4, 1, tzinfo=UTC),
+        geographic_scope="uae",
+        uae_relevance_status="confirmed",
+    )
+
+    response = client(
+        FakeSession([matching, wrong_year, wrong_severity, wrong_scope])
+    ).get(
+        "/api/v1/intelligence/items"
+        f"?published_year={current_year}"
+        "&q=exchange"
+        "&severity=critical"
+        "&geographic_scope=global"
+        "&uae_relevance_status=confirmed"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert response.json()["items"][0]["cve_id"] == f"CVE-{current_year}-11000"
+
+
+@pytest.mark.parametrize(
+    ("year", "published_at"),
+    [
+        (2020, datetime(2020, 1, 1, tzinfo=UTC)),
+        (
+            datetime.now(UTC).year,
+            datetime(datetime.now(UTC).year, 1, 1, tzinfo=UTC),
+        ),
+    ],
+)
+def test_published_year_supported_boundaries_are_accepted(
+    client,
+    year: int,
+    published_at: datetime,
+) -> None:
+    item = make_vulnerability_item(
+        cve_id=f"CVE-{year}-12000",
+        source_published_at=published_at,
+    )
+
+    response = client(FakeSession([item])).get(
+        f"/api/v1/intelligence/items?published_year={year}"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+
+
+@pytest.mark.parametrize(
+    "published_year",
+    [
+        "2019",
+        str(datetime.now(UTC).year + 1),
+        "true",
+        "20x6",
+        "2020.0",
+        "02020",
+    ],
+)
+def test_invalid_published_year_returns_safe_422(client, published_year: str) -> None:
+    session = FakeSession([make_vulnerability_item()])
+
+    response = client(session).get(
+        f"/api/v1/intelligence/items?published_year={published_year}"
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": VALIDATION_ERROR_DETAIL}
+    assert session.execute_calls == 0
+
+
 def test_q_search_matches_title_summary_and_cve_id(client) -> None:
     title_match = make_vulnerability_item(
         cve_id="CVE-2026-03000",
@@ -725,7 +890,14 @@ def test_cve_id_filter_normalizes_to_uppercase(client) -> None:
     ]
 
 
-@pytest.mark.parametrize("query", ["severity=high", "cve_id=CVE-2026-12345"])
+@pytest.mark.parametrize(
+    "query",
+    [
+        "severity=high",
+        "cve_id=CVE-2026-12345",
+        "published_year=2020",
+    ],
+)
 def test_vulnerability_filters_with_explicit_article_item_type_return_400(
     client,
     query: str,
@@ -956,6 +1128,7 @@ def test_detail_endpoint_rejects_query_parameters_before_lookup(client) -> None:
     "query",
     [
         "severity=critical&severity=low",
+        "published_year=2020&published_year=2021",
         "q=first&q=second",
         "offset=0&offset=1",
     ],

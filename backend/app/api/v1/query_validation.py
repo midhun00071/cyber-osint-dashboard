@@ -31,6 +31,7 @@ CANONICAL_PUBLIC_UUID_PATTERN = re.compile(
 MAX_ARTICLE_DATE_RANGE_YEARS = 5
 MAX_PAGINATION_OFFSET = 10_000
 MAX_SEARCH_LENGTH = 120
+MIN_PUBLISHED_YEAR = 2020
 VALIDATION_ERROR_DETAIL = "Request validation failed."
 
 
@@ -46,6 +47,25 @@ def _validate_canonical_public_uuid(value: object) -> object:
 CanonicalPublicUUID = Annotated[
     UUID,
     BeforeValidator(_validate_canonical_public_uuid),
+]
+
+
+def _validate_published_year(value: object) -> int:
+    if type(value) is int:
+        year = value
+    elif isinstance(value, str) and re.fullmatch(r"[0-9]{4}", value) is not None:
+        year = int(value)
+    else:
+        raise ValueError(VALIDATION_ERROR_DETAIL)
+
+    if year < MIN_PUBLISHED_YEAR or year > datetime.now(UTC).year:
+        raise ValueError(VALIDATION_ERROR_DETAIL)
+    return year
+
+
+PublishedYear = Annotated[
+    int,
+    BeforeValidator(_validate_published_year),
 ]
 
 
@@ -160,12 +180,13 @@ def validate_vulnerability_filter_combination(
     item_type: str | None,
     severity: str | None,
     cve_id: str | None,
+    published_year: int | None,
 ) -> None:
     """Reject vulnerability-only filters with explicit non-vulnerability type."""
 
     if item_type is None or item_type == "vulnerability":
         return
-    if severity is not None or cve_id is not None:
+    if severity is not None or cve_id is not None or published_year is not None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Vulnerability filters require item_type=vulnerability.",

@@ -103,12 +103,45 @@ describe("LatestArticlesFeed", () => {
     expect(screen.queryByRole("img")).not.toBeInTheDocument();
   });
 
+  test("shows only enabled canonical publication source options", async () => {
+    render(<LatestArticlesFeed />);
+    await screen.findByText("Synthetic defensive advisory");
+
+    const sourceSelect = screen.getByLabelText("Source");
+    const optionValues = within(sourceSelect)
+      .getAllByRole("option")
+      .map((option) => option.getAttribute("value"));
+
+    expect(optionValues).toEqual([
+      "",
+      "cert-eu-security-advisories",
+      "censys-arc-research",
+      "censys-rapid-response-advisories",
+      "anomali-cyber-watch",
+      "ibm-x-force-public-research",
+      "ibm-x-force-public-osint-advisories",
+      "google-threat-intelligence-public-research",
+      "mandiant-public-threat-research",
+    ]);
+    expect(
+      within(sourceSelect).getByRole("option", { name: "All sources" }),
+    ).toBeVisible();
+    expect(optionValues).not.toEqual(
+      expect.arrayContaining(["nvd", "first-epss", "cisa-kev"]),
+    );
+  });
+
   test("keeps typed search local until Apply and submits trimmed combined filters", async () => {
     const user = userEvent.setup();
     render(<LatestArticlesFeed />);
     await screen.findByText("Synthetic defensive advisory");
 
     await user.type(screen.getByLabelText("Search articles"), "  cloud alert  ");
+    expect(fetchArticlesMock).toHaveBeenCalledTimes(1);
+    await user.selectOptions(
+      screen.getByLabelText("Source"),
+      "censys-arc-research",
+    );
     expect(fetchArticlesMock).toHaveBeenCalledTimes(1);
 
     await user.selectOptions(screen.getByLabelText("Category"), "threat_report");
@@ -124,6 +157,7 @@ describe("LatestArticlesFeed", () => {
           limit: 6,
           offset: 0,
           q: "cloud alert",
+          source_slug: "censys-arc-research",
           uae_relevance_status: "probable",
         },
         expect.any(AbortSignal),
@@ -137,6 +171,10 @@ describe("LatestArticlesFeed", () => {
     await screen.findByText("Synthetic defensive advisory");
 
     await user.selectOptions(screen.getByLabelText("Category"), "cyber_news");
+    await user.selectOptions(
+      screen.getByLabelText("Source"),
+      "cert-eu-security-advisories",
+    );
     await user.type(screen.getByLabelText("Search articles"), "alert");
     await user.click(screen.getByRole("button", { name: "Apply" }));
     await user.click(screen.getByRole("button", { name: "Clear" }));
@@ -149,11 +187,13 @@ describe("LatestArticlesFeed", () => {
           limit: 6,
           offset: 0,
           q: "",
+          source_slug: undefined,
           uae_relevance_status: undefined,
         },
         expect.any(AbortSignal),
       ),
     );
+    expect(screen.getByLabelText("Source")).toHaveValue("");
   });
 
   test("distinguishes no stored articles from a filtered empty response", async () => {
@@ -207,6 +247,51 @@ describe("LatestArticlesFeed", () => {
     expect(fetchArticlesMock).toHaveBeenLastCalledWith(
       expect.objectContaining({ offset: 0 }),
       expect.any(AbortSignal),
+    );
+  });
+
+  test("Apply resets pagination and the source filter persists across pages", async () => {
+    const user = userEvent.setup();
+    fetchArticlesMock.mockResolvedValue({
+      status: "success",
+      data: makeArticleList({ total: 13 }),
+    });
+    render(<LatestArticlesFeed />);
+    await screen.findByText("Showing 1-6 of 13 stored articles");
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() =>
+      expect(fetchArticlesMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ offset: 6 }),
+        expect.any(AbortSignal),
+      ),
+    );
+
+    const callCountBeforeSelection = fetchArticlesMock.mock.calls.length;
+    await user.selectOptions(
+      screen.getByLabelText("Source"),
+      "mandiant-public-threat-research",
+    );
+    expect(fetchArticlesMock).toHaveBeenCalledTimes(callCountBeforeSelection);
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() =>
+      expect(fetchArticlesMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          offset: 0,
+          source_slug: "mandiant-public-threat-research",
+        }),
+        expect.any(AbortSignal),
+      ),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() =>
+      expect(fetchArticlesMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          offset: 6,
+          source_slug: "mandiant-public-threat-research",
+        }),
+        expect.any(AbortSignal),
+      ),
     );
   });
 

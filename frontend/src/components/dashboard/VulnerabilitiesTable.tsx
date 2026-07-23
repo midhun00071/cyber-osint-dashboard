@@ -51,6 +51,11 @@ const relevanceOptions: readonly {
 ] as const;
 
 const limitOptions = [10, 25, 50] as const;
+const currentUtcYear = new Date().getUTCFullYear();
+const publishedYearOptions = Array.from(
+  { length: currentUtcYear - 2019 },
+  (_value, index) => currentUtcYear - index,
+);
 
 type TableState =
   | { status: "loading" }
@@ -160,6 +165,8 @@ export function VulnerabilitiesTable() {
   const [queryInput, setQueryInput] = useState("");
   const [query, setQuery] = useState("");
   const [severity, setSeverity] = useState<VulnerabilitySeverity | "">("");
+  const [publishedYearInput, setPublishedYearInput] = useState<number | "">("");
+  const [publishedYear, setPublishedYear] = useState<number | "">("");
   const [scope, setScope] = useState<GeographicScope | "">("");
   const [relevance, setRelevance] = useState<UaeRelevanceStatus | "">("");
   const [limit, setLimit] = useState<number>(10);
@@ -178,6 +185,7 @@ export function VulnerabilitiesTable() {
             geographic_scope: scope || undefined,
             limit,
             offset,
+            published_year: publishedYear || undefined,
             q: query,
             severity: severity || undefined,
             uae_relevance_status: relevance || undefined,
@@ -203,7 +211,7 @@ export function VulnerabilitiesTable() {
     void loadVulnerabilities();
 
     return () => controller.abort();
-  }, [limit, offset, query, relevance, scope, severity]);
+  }, [limit, offset, publishedYear, query, relevance, scope, severity]);
 
   const total = state.status === "success" ? state.data.total : 0;
   const pageStart = total === 0 ? 0 : offset + 1;
@@ -220,6 +228,7 @@ export function VulnerabilitiesTable() {
   function applyFilters(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setOffset(0);
+    setPublishedYear(publishedYearInput);
     setQuery(queryInput.trim());
   }
 
@@ -227,13 +236,19 @@ export function VulnerabilitiesTable() {
     setQueryInput("");
     setQuery("");
     setSeverity("");
+    setPublishedYearInput("");
+    setPublishedYear("");
     setScope("");
     setRelevance("");
     setOffset(0);
   }
 
   const hasActiveFilters =
-    query !== "" || severity !== "" || scope !== "" || relevance !== "";
+    query !== "" ||
+    severity !== "" ||
+    publishedYear !== "" ||
+    scope !== "" ||
+    relevance !== "";
 
   return (
     <div className="vulnerabilityTableShell">
@@ -260,6 +275,23 @@ export function VulnerabilitiesTable() {
             {severityOptions.map((option) => (
               <option key={option.label} value={option.value}>
                 {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Publication year</span>
+          <select
+            onChange={(event) => {
+              const value = event.target.value;
+              setPublishedYearInput(value ? Number(value) : "");
+            }}
+            value={publishedYearInput}
+          >
+            <option value="">All years</option>
+            {publishedYearOptions.map((year) => (
+              <option key={year} value={year}>
+                {year}
               </option>
             ))}
           </select>
@@ -343,7 +375,7 @@ export function VulnerabilitiesTable() {
           </h3>
           <p>
             {hasActiveFilters
-              ? "Try a different search term, severity, scope, or UAE relevance filter."
+              ? "Try a different search term, severity, publication year, scope, or UAE relevance filter."
               : "Stored vulnerability records will appear here after manual ingestion writes them to the database."}
           </p>
         </div>

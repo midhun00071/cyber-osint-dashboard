@@ -77,12 +77,41 @@ describe("VulnerabilitiesTable", () => {
     }
   });
 
+  test("shows All years and the current UTC year down through 2020", async () => {
+    render(<VulnerabilitiesTable />);
+    await screen.findByText("CVE-2026-12345");
+
+    const yearSelect = screen.getByLabelText("Publication year");
+    const options = within(yearSelect).getAllByRole("option");
+    const currentYear = new Date().getUTCFullYear();
+
+    expect(options.map((option) => option.textContent)).toEqual([
+      "All years",
+      ...Array.from(
+        { length: currentYear - 2019 },
+        (_value, index) => String(currentYear - index),
+      ),
+    ]);
+    expect(options.map((option) => option.getAttribute("value"))).not.toContain(
+      String(currentYear + 1),
+    );
+    expect(options.map((option) => option.getAttribute("value"))).not.toContain(
+      "2019",
+    );
+  });
+
   test("does not apply typed search until Apply and submits trimmed combined filters", async () => {
     const user = userEvent.setup();
+    const currentYear = new Date().getUTCFullYear();
     render(<VulnerabilitiesTable />);
     await screen.findByText("CVE-2026-12345");
 
     await user.type(screen.getByLabelText("Search CVEs"), "  CVE-2026  ");
+    expect(fetchVulnerabilitiesMock).toHaveBeenCalledTimes(1);
+    await user.selectOptions(
+      screen.getByLabelText("Publication year"),
+      String(currentYear),
+    );
     expect(fetchVulnerabilitiesMock).toHaveBeenCalledTimes(1);
     await user.selectOptions(screen.getByLabelText("Severity"), "high");
     await user.selectOptions(screen.getByLabelText("Geographic scope"), "uae");
@@ -96,6 +125,7 @@ describe("VulnerabilitiesTable", () => {
           geographic_scope: "uae",
           limit: 25,
           offset: 0,
+          published_year: currentYear,
           q: "CVE-2026",
           severity: "high",
           uae_relevance_status: "confirmed",
@@ -107,11 +137,17 @@ describe("VulnerabilitiesTable", () => {
 
   test("Clear removes filters while preserving the selected row limit", async () => {
     const user = userEvent.setup();
+    const currentYear = new Date().getUTCFullYear();
     render(<VulnerabilitiesTable />);
     await screen.findByText("CVE-2026-12345");
 
     await user.selectOptions(screen.getByLabelText("Severity"), "medium");
+    await user.selectOptions(
+      screen.getByLabelText("Publication year"),
+      String(currentYear),
+    );
     await user.selectOptions(screen.getByLabelText("Rows"), "25");
+    await user.click(screen.getByRole("button", { name: "Apply" }));
     await user.click(screen.getByRole("button", { name: "Clear" }));
 
     await waitFor(() =>
@@ -120,6 +156,7 @@ describe("VulnerabilitiesTable", () => {
           geographic_scope: undefined,
           limit: 25,
           offset: 0,
+          published_year: undefined,
           q: "",
           severity: undefined,
           uae_relevance_status: undefined,
@@ -127,6 +164,7 @@ describe("VulnerabilitiesTable", () => {
         expect.any(AbortSignal),
       ),
     );
+    expect(screen.getByLabelText("Publication year")).toHaveValue("");
   });
 
   test("distinguishes unfiltered and filtered empty states", async () => {
@@ -197,6 +235,52 @@ describe("VulnerabilitiesTable", () => {
     await waitFor(() =>
       expect(fetchVulnerabilitiesMock).toHaveBeenLastCalledWith(
         expect.objectContaining({ limit: 25, offset: 0 }),
+        expect.any(AbortSignal),
+      ),
+    );
+  });
+
+  test("Apply resets pagination and the applied year persists across pages", async () => {
+    const user = userEvent.setup();
+    const currentYear = new Date().getUTCFullYear();
+    fetchVulnerabilitiesMock.mockResolvedValue({
+      status: "success",
+      data: makeVulnerabilityList({ total: 22 }),
+    });
+    render(<VulnerabilitiesTable />);
+    await screen.findByText("Showing 1-10 of 22 stored CVEs");
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() =>
+      expect(fetchVulnerabilitiesMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ offset: 10 }),
+        expect.any(AbortSignal),
+      ),
+    );
+
+    const callCountBeforeSelection = fetchVulnerabilitiesMock.mock.calls.length;
+    await user.selectOptions(
+      screen.getByLabelText("Publication year"),
+      String(currentYear),
+    );
+    expect(fetchVulnerabilitiesMock).toHaveBeenCalledTimes(callCountBeforeSelection);
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() =>
+      expect(fetchVulnerabilitiesMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          offset: 0,
+          published_year: currentYear,
+        }),
+        expect.any(AbortSignal),
+      ),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() =>
+      expect(fetchVulnerabilitiesMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          offset: 10,
+          published_year: currentYear,
+        }),
         expect.any(AbortSignal),
       ),
     );

@@ -10,6 +10,7 @@ from app.api.v1.query_validation import (
     ITEM_TYPE_VALUES,
     MAX_PAGINATION_OFFSET,
     MAX_SEARCH_LENGTH,
+    PublishedYear,
     SEVERITY_VALUES,
     UAE_RELEVANCE_STATUS_VALUES,
     CanonicalPublicUUID,
@@ -38,6 +39,7 @@ validate_intelligence_list_query = validate_query_parameters(
     {
         "limit",
         "offset",
+        "published_year",
         "q",
         "severity",
         "source_slug",
@@ -58,6 +60,7 @@ validate_no_query_parameters = validate_query_parameters(set())
 def list_intelligence_items(
     limit: int = Query(default=25, ge=1, le=100),
     offset: int = Query(default=0, ge=0, le=MAX_PAGINATION_OFFSET),
+    published_year: PublishedYear | None = Query(default=None),
     q: str | None = Query(
         default=None,
         min_length=1,
@@ -90,12 +93,14 @@ def list_intelligence_items(
         item_type=normalized_item_type,
         severity=normalized_severity,
         cve_id=normalized_cve_id,
+        published_year=published_year,
     )
     filters = IntelligenceQueryFilters(
         q=normalize_search_text(q),
         severity=normalized_severity,
         source_slug=normalize_slug_filter(source_slug, field_name="source_slug"),
         item_type=normalized_item_type,
+        published_year=published_year,
         cve_id=normalized_cve_id,
         geographic_scope=normalize_enum_filter(
             geographic_scope,

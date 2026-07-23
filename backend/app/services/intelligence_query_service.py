@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -37,6 +38,7 @@ class IntelligenceQueryFilters:
     severity: str | None = None
     source_slug: str | None = None
     item_type: str | None = None
+    published_year: int | None = None
     cve_id: str | None = None
     geographic_scope: str | None = None
     uae_relevance_status: str | None = None
@@ -101,7 +103,7 @@ class IntelligenceQueryService:
         self,
         filters: IntelligenceQueryFilters,
     ) -> IntelligenceItemListResponse:
-        items = self._load_items()
+        items = self._load_items(filters)
         filtered = [item for item in items if self._matches_filters(item, filters)]
         filtered.sort(key=self._sort_key, reverse=True)
         page = filtered[filters.offset : filters.offset + filters.limit]
@@ -118,7 +120,10 @@ class IntelligenceQueryService:
                 return self._serialize_item(item)
         raise IntelligenceNotFoundError("Intelligence item not found.")
 
-    def _load_items(self) -> list[IntelligenceItem]:
+    def _load_items(
+        self,
+        filters: IntelligenceQueryFilters | None = None,
+    ) -> list[IntelligenceItem]:
         statement = (
             select(IntelligenceItem)
             .options(selectinload(IntelligenceItem.vulnerability))
@@ -129,6 +134,12 @@ class IntelligenceQueryService:
                 )
             )
         )
+        if filters is not None and filters.published_year is not None:
+            start, end = self._published_year_boundaries(filters.published_year)
+            statement = statement.where(
+                IntelligenceItem.source_published_at >= start,
+                IntelligenceItem.source_published_at < end,
+            )
         try:
             return list(self._session.execute(statement).scalars().all())
         except SQLAlchemyError as exc:
@@ -143,6 +154,16 @@ class IntelligenceQueryService:
     ) -> bool:
         if item.item_type != filters.normalized_item_type:
             return False
+
+        if filters.published_year is not None:
+            start, end = self._published_year_boundaries(filters.published_year)
+            published_at = item.source_published_at
+            if published_at is None:
+                return False
+            if published_at.tzinfo is None:
+                published_at = published_at.replace(tzinfo=UTC)
+            if not start <= published_at < end:
+                return False
 
         vulnerability = item.vulnerability
         if filters.normalized_severity is not None:
@@ -183,6 +204,13 @@ class IntelligenceQueryService:
             return False
 
         return True
+
+    @staticmethod
+    def _published_year_boundaries(year: int) -> tuple[datetime, datetime]:
+        return (
+            datetime(year, 1, 1, tzinfo=UTC),
+            datetime(year + 1, 1, 1, tzinfo=UTC),
+        )
 
     @staticmethod
     def _matches_query(

@@ -65,6 +65,13 @@ Implementation note as of July 13, 2026: P4-03 adds single-value
 `GET /api/v1/intelligence/items` endpoint. They use the same approved enum
 values as the article endpoint and are applied before offset pagination.
 
+Implementation note as of July 23, 2026: the dashboard vulnerability list adds
+an optional `published_year` filter from 2020 through the current UTC year.
+The dashboard article list exposes canonical source choices backed by the
+existing `source_slug` filter. Both controls keep draft selections local until
+Apply is used; Apply resets pagination to offset zero, and Clear removes the
+new filter.
+
 Implementation note as of July 10, 2026: P2-10 adds the implemented dashboard
 summary endpoint at `GET /api/v1/dashboard/summary`. It returns database-backed
 counts, latest article previews, and latest ingestion-run status without
@@ -225,7 +232,7 @@ lowercase where applicable, and rejects whitespace-only input with `422`.
 | Parameter | Rules |
 |---|---|
 | `category` | Exact `item_type` match. Allowed values are the five article types above. Maximum 40 characters. `vulnerability` is rejected. |
-| `source_slug` | Exact canonical slug match against any linked provenance source record, including non-primary records. Maximum 80 characters. Slugs allow lowercase letters, digits, and single hyphens between components only. |
+| `source_slug` | Exact canonical slug match against any linked provenance source record, including non-primary records. Maximum 80 characters. Slugs allow lowercase letters, digits, and single hyphens between components only. A well-formed slug with no stored match returns an empty result rather than initiating source access. |
 | `tag_slug` | Exact canonical tag slug match against assigned tags. Maximum 100 characters. Uses the same slug format as `source_slug`. Tag assignment metadata and IDs are not returned. |
 | `published_from` | ISO date `YYYY-MM-DD`; inclusive lower boundary on `source_published_at`, interpreted as the start of that UTC day. Null publication dates do not match when supplied. |
 | `published_to` | ISO date `YYYY-MM-DD`; inclusive upper boundary on `source_published_at`, implemented as `<` the start of the following UTC day. Maximum supported value is `9999-12-30`. Null publication dates do not match when supplied. |
@@ -273,6 +280,11 @@ Implemented `GET /api/v1/intelligence/items` validation:
   CVE identifier only; SQL wildcard and escape characters remain literal text.
 - `severity` is optional, normalizes to lowercase, and allows only `unknown`,
   `none`, `low`, `medium`, `high`, or `critical`.
+- `published_year` is optional and accepts an ASCII four-digit year from 2020
+  through the current UTC year. It filters `IntelligenceItem.source_published_at`
+  with an index-friendly half-open UTC range: greater than or equal to January
+  1 of the requested year and less than January 1 of the following year. It
+  does not derive the year from the CVE identifier.
 - `source_slug` is optional, normalizes to lowercase, has maximum length 80,
   and uses the canonical slug format described above.
 - `item_type` is optional, normalizes to lowercase, and allows only the
@@ -285,9 +297,18 @@ Implemented `GET /api/v1/intelligence/items` validation:
   `global`, `regional`, `uae`, or `unknown`.
 - `uae_relevance_status` is optional, normalizes to lowercase, and allows only
   `confirmed`, `probable`, `possible`, `not_relevant`, or `unknown`.
-- Supplying `severity` or `cve_id` with an explicit non-vulnerability
+- Supplying `severity`, `cve_id`, or `published_year` with an explicit non-vulnerability
   `item_type` returns `400` with
   `Vulnerability filters require item_type=vulnerability.`.
+
+The dashboard year selector generates the current UTC year down through 2020
+and uses `All years` to omit `published_year`. The article source selector uses
+`All sources` to omit `source_slug` and offers only enabled publication sources
+implemented in the controlled source registry; vulnerability and enrichment
+sources are not offered. Selecting either value does not issue a request until
+Apply is used. Apply preserves the other dashboard filters and resets `offset`
+to zero. Clear restores the corresponding `All ...` option and omits the filter
+from subsequent requests.
 
 Both implemented list endpoints use offset pagination with `limit` default
 `25`, minimum `1`, maximum `100`, and `offset` default `0`, minimum `0`, maximum
