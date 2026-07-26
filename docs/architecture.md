@@ -156,10 +156,33 @@ copied from the start time. Both NVD paths create or update normalized
 vulnerability items through the same identity and persistence service; neither
 deletes unselected CVEs. FIRST EPSS uses local CVE identifiers to enrich
 existing vulnerability records with score, percentile, and score-date evidence;
-it does not create arbitrary CVEs. CISA KEV likewise enriches bounded listed
-matches and skips unknown KEV-only entries, but the current workflow does not
-prove a `not_listed` result for every local CVE. These workflows are source-data
-processing, not active vulnerability scanners.
+it does not create arbitrary CVEs. The catalog-driven CISA KEV workflow likewise
+enriches bounded listed matches and skips unknown KEV-only entries; it does not
+prove a `not_listed` result for every local CVE. The separate local
+reconciliation workflow first validates every declared catalog entry, then
+assigns `listed` or `not_listed` to bounded local vulnerability rows in one
+caller-owned transaction. A partial, capped, malformed, or failed catalog
+cannot produce `not_listed`, and a database failure rolls back all selected
+status and audit changes. A skipped selected row or one that remains `unknown`
+is a controlled partial run: valid reconciliation and safe audit changes commit,
+but the command returns exit code 1. `unknown_remaining` counts selected rows
+still in the `unknown` state.
+
+The reconciliation `IngestionRun` counters describe local rows and satisfy
+fetched = created + updated + unchanged + skipped + failed; catalog raw-entry
+and unique-CVE counts remain separate summary/checkpoint evidence. Its start,
+checked, and completion timestamps are captured before fetch, after complete
+catalog validation immediately before reconciliation, and after local
+reconciliation plus audit processing, respectively. Local selection always
+starts at the lowest vulnerability IDs and produces one outcome per unique
+vulnerability row. Each bounded batch loads global CVE identifiers separately.
+Missing or ambiguous global CVE identity is skipped, and ambiguous identity
+never selects a CVE based on identifier query order. A skipped row that remains
+`unknown` causes the controlled partial result. Catalog-version evidence is a
+bounded safe ASCII token containing only letters, digits, periods, underscores,
+and hyphens. The 500-row cap therefore requires a future cursor/resume
+enhancement for databases containing more than 500 local vulnerabilities.
+These workflows are source-data processing, not active vulnerability scanners.
 
 > This product uses data from the NVD API but is not endorsed or certified by the NVD.
 

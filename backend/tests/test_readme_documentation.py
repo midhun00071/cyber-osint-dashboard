@@ -83,6 +83,18 @@ def test_readme_documents_curated_nvd_as_bounded_manual_sample() -> None:
         "retains at most 10 critical, 5 high, 3 medium, and 2 low",
         "valid unselected observations as skipped",
         "does not prove a not-listed kev result for every local cve",
+        "app.ingestion.cisa_kev_reconcile_cli",
+        "validates every declared catalog entry",
+        "controlled `partial` result",
+        "`unknown_remaining` count includes only selected rows",
+        "formal `ingestionrun` counters describe local rows",
+        "catalog raw-record and unique-cve counts remain separate",
+        "checked time after complete validation immediately before local reconciliation",
+        "lowest local vulnerability ids",
+        "future cursor/resume enhancement",
+        "exactly one outcome per unique vulnerability row",
+        "ambiguous identity never selects a cve based on identifier query order",
+        "catalog-version evidence is restricted to a non-empty, bounded ascii token",
         "this product uses data from the nvd api but is not endorsed or certified by the nvd",
     ):
         assert required_phrase in readme

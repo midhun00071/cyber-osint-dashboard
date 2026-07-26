@@ -544,8 +544,9 @@ Audit counts include malformed, duplicate, retention-discarded, and valid
 unselected observations as skipped, and the completion timestamp is captured
 after processing. Existing CVEs use the normal update/unchanged path, unrelated
 CVEs are never deleted, and the incremental NVD checkpoint is not advanced.
-Run FIRST EPSS and CISA KEV commands separately as operator workflows. The current bounded
-CISA run does not prove a not-listed KEV result for every local CVE.
+Run FIRST EPSS and CISA KEV commands separately as operator workflows. The
+catalog-driven bounded CISA run does not prove a not-listed KEV result for every
+local CVE; only the separate complete-catalog local reconciliation can do so.
 
 > This product uses data from the NVD API but is not endorsed or certified by the NVD.
 
@@ -567,6 +568,53 @@ This command runs only when explicitly invoked. It matches EPSS records only to
 existing global CVE identifiers, stores latest-value score metadata with
 non-primary FIRST EPSS provenance, records sanitized audit outcomes, and never
 creates new CVE intelligence items from EPSS data.
+
+### Manual CISA KEV local reconciliation
+
+The existing `app.ingestion.cisa_kev_cli` command is catalog-driven and marks
+bounded matched catalog entries as listed. The separate command below fetches
+and validates every declared catalog entry before assigning listed or
+not-listed status to bounded local vulnerability rows:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.ingestion.cisa_kev_reconcile_cli `
+    --max-cves 500 `
+    --batch-size 100
+```
+
+Use `--plan` to show the fixed source and bounds without network or database
+access. `--max-cves` accepts 1 through 500 local rows and `--batch-size` accepts
+1 through 100. An empty, partial, malformed, interrupted, or oversized catalog
+cannot produce a not-listed result. The database-active command commits once
+after all selected batches and safe audit records complete. A clean result is
+`succeeded` with exit code 0. A skipped selected row or any selected row still
+in `unknown` state produces a controlled `partial` result with exit code 1;
+valid status changes and safe audit records are still committed. The
+`unknown_remaining` count includes only selected rows that remain in the
+`unknown` state.
+
+Formal `IngestionRun` counters describe local rows and reconcile exactly:
+fetched equals created plus updated plus unchanged plus skipped plus failed,
+with created fixed at zero. Catalog raw-record and unique-CVE counts remain
+separate summary and checkpoint evidence. The start time is captured before
+catalog fetch, the checked time after complete validation immediately before
+local reconciliation, and the completion time after local reconciliation and
+audit processing. Repeated successful runs are idempotent apart from refreshing
+the KEV checked timestamp.
+
+Selection produces exactly one outcome per unique vulnerability row and always
+starts with the lowest local vulnerability IDs. Global CVE identifiers are
+loaded separately for each bounded batch. A row with no usable global CVE or
+more than one distinct usable global CVE is skipped; ambiguous identity never
+selects a CVE based on identifier query order. A skipped row still in the
+`unknown` state makes the run a controlled partial result. Catalog-version
+evidence is restricted to a non-empty, bounded ASCII token containing only
+letters, digits, periods, underscores, and hyphens.
+
+Because the command is capped at 500 rows, a database with more than 500
+vulnerabilities requires a future cursor/resume enhancement to reconcile later
+IDs. This remains manual-only: no scheduler, startup execution, public
+ingestion API, or frontend trigger invokes it.
 
 ### Manual CERT-EU RSS ingestion
 

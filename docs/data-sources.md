@@ -168,10 +168,20 @@ scheduled refresh instructions.
 ### `cisa-kev` — CISA Known Exploited Vulnerabilities Catalog
 
 - **Role and path:** CISA KEV enriches existing local CVE vulnerability records
-  from the fixed official JSON catalogue. Invoke:
+  from the fixed official JSON catalogue. The existing catalog-driven command
+  processes a bounded catalog slice:
 
   ```powershell
   .\.venv\Scripts\python.exe -m app.ingestion.cisa_kev_cli --max-records 25
+  ```
+
+  The separate local-reconciliation command validates the complete catalog
+  before comparing bounded local rows:
+
+  ```powershell
+  .\.venv\Scripts\python.exe -m app.ingestion.cisa_kev_reconcile_cli `
+      --max-cves 500 `
+      --batch-size 100
   ```
 
 - **Normalized persistence:** CVE identifier; listed status and last-checked
@@ -188,8 +198,35 @@ scheduled refresh instructions.
   catalogue URL, at most three validated redirects, bounded timeouts, JSON
   content, and a 2 MiB response. Individual normalized evidence is capped at 16
   KiB. It does not claim that items absent from a bounded run are not exploited.
-  The current bounded workflow marks listed matches but does not prove a
-  `not_listed` result or a completed KEV check for every local CVE.
+  The catalog-driven workflow marks listed matches but does not prove a
+  `not_listed` result. Only the separate reconciliation workflow assigns
+  `not_listed`, and only after every declared catalog entry passes validation.
+  Its `--max-cves` limit (1–500) applies to local rows, its `--batch-size` bound
+  is 1–100, and one caller-owned transaction rolls back all selected status and
+  audit changes after an uncaught database failure. Repeated runs are
+  idempotent apart from refreshing the KEV checked timestamp. A skipped row or
+  selected row still in `unknown` state produces a controlled partial result
+  with exit code 1 while valid changes and safe audits commit;
+  `unknown_remaining` counts only selected rows still in that state.
+- **Local identity safety:** Reconciliation emits one outcome per unique
+  vulnerability row. Each bounded batch loads only global `cve` identifiers
+  with `source_id IS NULL`, then normalizes and deduplicates them. Missing or
+  ambiguous identity is skipped without changing KEV status or checked time;
+  ambiguous identity never selects a CVE based on identifier query order. A
+  skipped unknown row causes the controlled partial result.
+- **Reconciliation evidence:** Formal `IngestionRun` counters describe local
+  rows and reconcile as fetched = created + updated + unchanged + skipped +
+  failed, with created fixed at zero. Catalog raw-record and unique-CVE counts
+  are separate summary/checkpoint evidence. Start, checked, and completion times
+  are captured before fetch, after complete validation immediately before local
+  reconciliation, and after reconciliation plus audit processing. Catalog
+  version evidence is restricted to a non-empty, bounded ASCII token containing
+  only letters, digits, periods, underscores, and hyphens.
+- **Current pagination limit:** The query always begins with the lowest local
+  vulnerability IDs. The 500-row command therefore requires a future
+  cursor/resume enhancement for databases with more than 500 vulnerabilities.
+  Neither command is scheduled or connected to startup, an API route, or the
+  frontend.
 
 ## Advisory and research publication sources
 
