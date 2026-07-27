@@ -8,6 +8,7 @@ alembic
 python-dotenv
 httpx
 idna
+stix2>=3.0,<4.0
 feedparser
 apscheduler
 pytest

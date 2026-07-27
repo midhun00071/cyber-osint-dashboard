@@ -165,6 +165,73 @@ All fixtures are synthetic. No IBM website, X-Force Exchange, API, login,
 guest-browser, report/PDF, indicator/reputation, STIX/TAXII, or external network
 request occurs.
 
+The first internal P9-10 unit adds fully offline tests for immutable approved
+source policies and the intentionally empty production registry; explicit STIX
+bundle and TAXII-envelope fixture shapes; UTF-8/BOM, duplicate-key, constant,
+byte, depth, node, collection, string, and object bounds; direct regular-file,
+UNC/device/pipe, link/reparse, descriptor identity/growth/closure protections;
+official STIX 2.1 parsing with custom content disabled; the supported object
+allow-list and whole-document rejection; timestamps, identifiers, text,
+markings, external IDs, relationships, simple Indicator patterns, and file
+hashes; deterministic safe staging; duplicate-version ordering; create,
+unchanged, update, stale, and conflict behavior; P9-08 indicator reuse;
+source-record-specific provenance; false-positive suppression; caller-owned
+commit/rollback and atomic rollback simulation; sanitized failures; and blocked
+network primitives. Fixtures are synthetic. The production STIX policy remains
+empty, no live TAXII client is exercised, and P9-10 is not yet complete.
+
+P9-10 hardening coverage additionally verifies all four exact standard TLP
+identifiers; incorrect, mismatched, custom, and unapproved markings; canonical
+optional bundle UUIDs; encoded/traversing/repeated/oversized policy paths and
+default-port identity; immutable mapped-observable fingerprints; rejection of
+identity-changing updates without record, Indicator, or provenance mutation;
+same-identity pattern, confidence, and marking updates; revoked-Indicator
+suppression across every local lifecycle; stable created time and creator
+identity; terminal revocation; and malformed stored-version consistency
+failures.
+
+Existing-reference trust-boundary coverage rejects incomplete, mismatched,
+wrong-version, wrong-type, unsupported, control-bearing, unapproved TLP, and
+malformed statement safe payloads. Persistence tests reject failed, pending,
+missing, unavailable, error-bearing, payload-less, non-dictionary,
+hash-less/malformed/mismatched, and source-inconsistent SourceRecords before any
+incoming persistence or flush. Positive processed/present relationship and
+marking records are content-hash verified. Policy tests cover canonical modern
+IDNA A-label acceptance, malformed punycode and Unicode-alias rejection, and
+blocked DNS/socket primitives.
+
+The final offline-unit hardening also covers complete revalidation of the
+current object's existing SourceRecord before comparison or mutation; canonical
+URL and URL-hash identity; recomputed hashes and canonical payload equality;
+exact per-type and nested safe-payload schemas; correctly hashed extra-field
+rejection for current, relationship, and marking records; conservative
+external-reference identifier tokens; and omission of descriptions containing
+URLs, credentials, commands, flags, exploit-like instructions, or payload
+names. Failed records have no automatic repair path. The fixed-policy TAXII
+client remains unimplemented and no network request is part of these tests.
+
+Persistence-boundary regressions manually construct public validation
+dataclasses and verify rejection of extra payload keys, forged hashes,
+injected or mismatched observables, post-construction mutable payload changes,
+staged type/ID/timestamp mismatches, duplicate IDs, false object/relationship/
+marking counters, relationship-first ordering, unresolved relationships, and
+unapproved markings. Positive coverage confirms that accepted mutable input is
+copied into a new canonical payload before persistence. Current and external
+SourceRecord tests reject IntelligenceItem ownership, primary-reference use,
+STIX source timestamp mismatches, non-versioned source timestamps, missing or
+naive processing metadata, and reversed seen-time ranges without persistence,
+flush, commit, or rollback.
+
+Version-lineage coverage verifies chronological and reverse-order versions of
+one Identity, same-identity Indicator versions, multiple relationship versions,
+mixed single- and multi-version IDs, and a terminal revoked version. Results
+count every safely inspected version while creating one latest SourceRecord per
+STIX ID and no duplicate Indicator or provenance. Fabricated lineage tests
+reject omitted versions, a supplied latest tuple not derived from lineage,
+inflated or reduced counters, forged lineage hashes/payloads/observables/IDs/
+timestamps, duplicate modified values, changed created or creator identity, and
+versions following revocation.
+
 ## Frontend Testing
 
 Planned frontend tests:

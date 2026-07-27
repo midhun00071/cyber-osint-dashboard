@@ -232,6 +232,68 @@ writes. Historical evidence is audit-preserving: a later source-text change
 does not automatically delete prior indicators, relationships, or provenance.
 The detailed rules and limits are documented in [IOC Extraction](ioc-extraction.md).
 
+### Offline STIX/TAXII foundation
+
+The first internal P9-10 unit adds bounded offline STIX 2.1 bundle and synthetic
+TAXII-envelope processing under an immutable approved-source policy. The
+production policy registry is intentionally empty. Bounded JSON is validated
+before the OASIS parser runs with custom content disabled; unsupported content
+rejects the whole document. Safe fields stage into existing `SourceRecord`
+rows, while approved observables pass through P9-08 normalization into
+`Indicator` and exact `IndicatorProvenance` records. Object markings,
+relationships, versions, conflicts, and same-source reference resolution are
+validated without creating P9-11 entity tables.
+
+Staged mapped observables retain only deterministic type, hash-algorithm, and
+identity fingerprints. A newer STIX object cannot replace a SourceRecord when
+that normalized identity set changes. Created time and creator identity are
+stable across versions, and revocation is terminal. Revoked Indicator versions
+remain safely staged but suppress all local Indicator and provenance
+automation. This conservative one-record design has no STIX version-history
+schema.
+
+Existing-object mappings and database rows are separate untrusted boundaries.
+Markings and relationship endpoints are revalidated as minimal canonical safe
+STIX 2.1 identities. Exact per-type and nested key allow-lists reject arbitrary
+extra fields; external-reference names and IDs are identifier tokens, never
+URLs. Descriptions are deliberately omitted from P9-10 staging. An external
+database reference is authoritative only when its exact same-source
+SourceRecord has the canonical policy URL and URL hash, is processed, present,
+error-free, safely staged, and verified against its canonical content hash.
+The current object's existing SourceRecord receives the same complete
+revalidation before stale, unchanged, conflict, or update comparison, and
+same-version equality compares canonical safe payloads rather than trusting a
+stored hash. Malformed or failed records cannot authorize mutation and are not
+automatically repaired. Fixed policy hosts must already be canonical
+modern-IDNA lowercase ASCII; no DNS lookup is performed.
+
+Publicly constructible `ValidatedStixDocument`, `StagedStixObject`, and mapped
+observable dataclasses are also untrusted at the persistence boundary. After
+the source identity lookup and before any SourceRecord query or mutation, the
+service builds a new immutable canonical document from exact safe-payload
+schemas. It recomputes content hashes and mapped observables, verifies staged
+identity and timestamps, counters, relationship-last ordering, and
+same-document references, then uses only reconstructed values. The validation
+result retains immutable safe `validated_versions` lineage for every inspected
+version alongside its latest-object tuple. Persistence revalidates the complete
+lineage, reruns cross-version invariants, independently derives the latest
+tuple, and computes version, relationship, and marking counters from that
+lineage. Only the derived latest object per STIX ID reaches SourceRecord
+staging. External references are resolved against fully revalidated same-source
+records.
+
+P9-10 SourceRecords are staging-only: they cannot link to an IntelligenceItem
+or act as a primary publication reference. Their source created/modified fields
+must match canonical safe STIX timestamps, while collection, processing, and
+seen timestamps must be timezone-aware and ordered. Malformed ownership or
+audit metadata fails closed without repair.
+
+The service receives the caller's SQLAlchemy session and never commits or rolls
+back. This unit has no HTTP, DNS, socket, arbitrary-server, CLI, API, frontend,
+scheduler, startup, or background execution path. Its fixed-policy TAXII 2.1
+collection client remains a second P9-10 implementation unit. Detailed limits
+and exclusions are in [Offline STIX/TAXII Import](stix-taxii-import.md).
+
 ### Audit flow
 
 ```text
@@ -348,13 +410,14 @@ integrity; provenance must be deliberately removed or migrated through a
 separately reviewed operation first. Public UUIDs are the safe external
 identifiers; internal bigint identities remain database-only.
 
-This P9-08 foundation performs syntax validation only. It does not resolve
+The P9-08 normalization module performs syntax validation only. It does not resolve
 domains, connect to indicators, retrieve URLs or files, download malware, scan,
-probe, enrich, or import STIX/TAXII data. It adds no ingestion trigger,
-scheduler, startup processing, public API route, or frontend exposure. P9-09
-builds on it with a separately reviewed, bounded offline title/summary
-extraction service and `mentioned` publication relationships; P9-10 and later
-enrichment and analyst-review tasks remain unimplemented.
+probe, enrich, or itself import STIX/TAXII data. P9-09 builds on it with a
+separately reviewed offline title/summary extraction service. The first P9-10
+unit now reuses the boundary for approved offline STIX observables, without an
+ingestion trigger, live TAXII client, scheduler, startup processing, public API
+route, or frontend exposure. P9-10 is not complete, and P9-11 threat entities
+remain unimplemented.
 
 ## Normalization, identity, deduplication, and persistence
 
@@ -665,8 +728,9 @@ The current repository does not implement:
 - a public ingestion API, frontend ingestion trigger, or arbitrary URL ingestion;
 - active scanning/probing, active IOC validation, malware retrieval, file
   submission, or exploit execution;
-- complete historical analytics, relationship graphs, generic STIX/TAXII, or
-  the broader commercial/platform source capabilities excluded above.
+- complete historical analytics, relationship graphs, a live fixed-policy
+  TAXII collection client, P9-11 threat entities, or the broader commercial and
+  platform source capabilities excluded above.
 
 Persistent database storage is not backup. `docker compose down -v` destroys
 the named PostgreSQL volume and is not routine cleanup. Manual approval remains
@@ -679,6 +743,7 @@ destructive deployment commands.
 - [Implemented data sources](data-sources.md)
 - [Source assessment matrix](source-assessment-matrix.md)
 - [Source integration policy](source-integration-policy.md)
+- [Offline STIX/TAXII import](stix-taxii-import.md)
 - [Security notes](security-notes.md)
 - [Testing plan](testing-plan.md)
 - [Manual test cases](manual-test-cases.md)

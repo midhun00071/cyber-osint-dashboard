@@ -80,6 +80,60 @@ Restrictions:
 - do not ingest arbitrary user-supplied bundles without a separate validation and approval model;
 - do not add unsupported dependencies such as STAXX.
 
+Current implementation boundary:
+
+- the first internal P9-10 unit accepts only reviewed local STIX 2.1 bundles
+  and offline TAXII 2.1 envelope fixtures;
+- the immutable production approved-policy registry is empty, so no live feed
+  or production source is enabled;
+- bounded JSON validation precedes the official STIX parser, custom types and
+  properties are disabled, and an unsupported object rejects the whole input;
+- object markings and same-source relationships must resolve and remain within
+  policy; granular markings are rejected because their selectors are not
+  preserved by the safe mapper;
+- exact per-type and nested key allow-lists govern safe source-record payloads;
+  arbitrary extra keys fail closed, external reference values are identifier
+  tokens rather than URLs, and descriptions are omitted during P9-10;
+- approved observables reuse the P9-08 Indicator and IndicatorProvenance
+  boundary;
+- the importer owns neither commit nor rollback and adds no CLI, API, frontend,
+  scheduler, startup task, or automatic processing;
+- no network request, DNS, socket, server discovery, arbitrary endpoint,
+  malware retrieval, scan, probe, STAXX, or `taxii2-client` exists in this unit;
+- the fixed-policy TAXII 2.1 collection client requires a separate second
+  P9-10 implementation unit and source onboarding approval;
+- bundle IDs, when present, are canonical lowercase RFC 4122 STIX IDs; policy
+  bases use canonical HTTPS hosts and unreserved path segments without percent
+  escapes, traversal, empty segments, credentials, queries, or fragments;
+- staged observable identity fingerprints prevent a newer version from
+  changing exact provenance under the one-record-per-STIX-ID design;
+- created time and creator identity remain stable, revocation is terminal, and
+  revoked Indicator versions suppress local Indicator/provenance automation;
+- caller-provided existing-object mappings are revalidated rather than trusted;
+  existing markings and relationship endpoints require exact canonical safe
+  STIX identity and use-specific fields;
+- same-source database records satisfy external references only when processed,
+  present, error-free, safely staged, bound to the canonical policy URL and URL
+  hash, and verified against their canonical content hash;
+- the current object's existing SourceRecord is revalidated to the same
+  complete schema and hash boundary before version comparison; failed, missing,
+  malformed, hash-inconsistent, and extra-field records are neither trusted nor
+  automatically repaired;
+- public validation dataclasses are independently canonicalized before any
+  SourceRecord lookup; safe payloads are deep-copied and frozen, while content
+  hashes, observables, object counts, relationship/marking counts, ordering,
+  and same-document references are reconstructed or verified;
+- P9-10 SourceRecords remain staging-only with no IntelligenceItem link and no
+  primary-reference role; stored STIX version timestamps and timezone-aware
+  collection/seen/processing audit timestamps must remain internally
+  consistent, and malformed records fail closed without repair;
+- policy hosts must already be canonical lowercase ASCII under UTS #46, STD3,
+  non-transitional IDNA processing; validation performs no DNS resolution.
+
+See [Offline STIX/TAXII Import](stix-taxii-import.md) for supported objects,
+limits, marking behavior, version rules, and conservative exclusions. This
+offline foundation does not complete P9-10 or implement P9-11 entities.
+
 ### D. Manual Catalogue Metadata
 
 Examples:
