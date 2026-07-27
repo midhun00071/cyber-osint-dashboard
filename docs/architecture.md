@@ -90,7 +90,7 @@ ingestion trigger, or public ingestion API.
 | Adapters and normalizers | Convert source-specific untrusted structures into normalized CVE/enrichment records or `PublicationCandidate` values | Validate schema, plain text, timestamps, URLs, and source ownership before persistence |
 | Ingestion services and CLIs | Orchestrate explicit source runs, database sessions, workflow-specific transactions, and sanitized run/error evidence | No startup, scheduler, background, frontend, or public-API invocation |
 | Common publication pipeline | Validate candidates, derive item type, normalize safe metadata, apply identity/deduplication rules, and persist through the supplied session | Fetches no upstream content and does not universally own commit/rollback |
-| Processing | Deterministic UAE relevance classification for normalized records | No network, LLM, machine learning, or public mutation route |
+| Processing | Deterministic UAE relevance classification and bounded IOC extraction from normalized publication title/summary fields | No network, active validation, raw-payload access, LLM, machine learning, or public mutation route |
 | PostgreSQL and SQLAlchemy | Store normalized intelligence, provenance, identifiers, tags, vulnerabilities, and ingestion audit records | Persistence is not backup; access is through backend/migration sessions |
 | FastAPI | Validate read-only queries and serialize allow-listed health, version, dashboard, article, and intelligence responses | No write, ingestion, administration, authentication, or authorization endpoint |
 | Next.js | Fetch validated API data and present dashboard/list/detail states safely | No source collection, database connection, credentials, or raw HTML rendering |
@@ -214,6 +214,24 @@ invoking CLIs own commit/rollback, while Censys local/live and live Anomali
 delegate transaction and audit ownership to their source-specific ingestion
 services. The reviewed local-file Anomali CLI owns its own transaction.
 
+### Publication IOC extraction
+
+P9-09 adds an offline, explicitly invoked processing foundation after normalized
+publication persistence. It considers only `canonical_title` and `summary` for
+allow-listed `security_advisory` and `threat_report` items. Bounded deterministic
+rules identify supported observables, normalize them through the P9-08 boundary,
+and store only a `mentioned` publication relationship plus exact source-record
+provenance. A mention is not a claim that an observable is malicious, active,
+confirmed, exploited, or attributed.
+
+The service uses its caller's SQLAlchemy session and may flush a new indicator
+identity, but it never commits or rolls back. It reads no raw payload and makes
+no DNS, HTTP, socket, scanning, probing, file, or malware request. Existing
+`false_positive` indicators suppress automatic relationship and provenance
+writes. Historical evidence is audit-preserving: a later source-text change
+does not automatically delete prior indicators, relationships, or provenance.
+The detailed rules and limits are documented in [IOC Extraction](ioc-extraction.md).
+
 ### Audit flow
 
 ```text
@@ -270,7 +288,9 @@ author: `Google Threat Intelligence Group` and `Mandiant`. The adapter does not
 infer ownership from titles, categories, products, links, threat names, or
 article text. It ignores feed content bodies, reports, PDFs, attachments, and
 media. Google TI/VirusTotal APIs, credentials, file submission/retrieval,
-malware retrieval, and IOC extraction are not implemented.
+malware retrieval, and source-specific IOC extraction are not implemented in
+this ingestion workflow. Eligible normalized publications may be processed
+separately by the offline P9-09 title/summary extraction foundation.
 
 ### Anomali Cyber Watch boundary
 
@@ -328,12 +348,13 @@ integrity; provenance must be deliberately removed or migrated through a
 separately reviewed operation first. Public UUIDs are the safe external
 identifiers; internal bigint identities remain database-only.
 
-This foundation performs syntax validation only. It does not resolve domains,
-connect to indicators, retrieve URLs or files, download malware, scan, probe,
-enrich, or import STIX/TAXII data. P9-08 adds no ingestion trigger, scheduler,
-startup processing, public API route, or frontend exposure. The future P9-09
-task remains responsible for a separately reviewed publication relationship and
-indicator extraction layer; it is not implemented here.
+This P9-08 foundation performs syntax validation only. It does not resolve
+domains, connect to indicators, retrieve URLs or files, download malware, scan,
+probe, enrich, or import STIX/TAXII data. It adds no ingestion trigger,
+scheduler, startup processing, public API route, or frontend exposure. P9-09
+builds on it with a separately reviewed, bounded offline title/summary
+extraction service and `mentioned` publication relationships; P9-10 and later
+enrichment and analyst-review tasks remain unimplemented.
 
 ## Normalization, identity, deduplication, and persistence
 

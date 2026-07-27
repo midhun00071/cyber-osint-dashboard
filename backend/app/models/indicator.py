@@ -15,6 +15,7 @@ from app.models.common import BigIntPrimaryKeyMixin, PublicIdMixin, TimestampMix
 
 if TYPE_CHECKING:
     from app.models.indicator_provenance import IndicatorProvenance
+    from app.models.intelligence_item_indicator import IntelligenceItemIndicator
 
 
 OBSERVABLE_TYPE_VALUES = ("ipv4", "ipv6", "domain", "url", "file_hash")
@@ -111,5 +112,12 @@ class Indicator(BigIntPrimaryKeyMixin, PublicIdMixin, TimestampMixin, Base):
         "IndicatorProvenance",
         back_populates="indicator",
         cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    intelligence_item_relationships: Mapped[
+        list[IntelligenceItemIndicator]
+    ] = relationship(
+        "IntelligenceItemIndicator",
+        back_populates="indicator",
         passive_deletes=True,
     )

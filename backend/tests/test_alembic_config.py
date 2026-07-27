@@ -19,6 +19,7 @@ APPROVED_TABLES = {
     "ingestion_run_records",
     "ingestion_runs",
     "intelligence_item_identifiers",
+    "intelligence_item_indicators",
     "intelligence_item_tags",
     "intelligence_items",
     "intelligence_sources",
@@ -310,14 +311,16 @@ def test_migration_chain_is_linear_with_one_head_and_known_base():
     script_directory = ScriptDirectory.from_config(config)
     revisions = list(script_directory.walk_revisions())
 
-    assert len(revisions) == 2
-    assert script_directory.get_heads() == ["a6c9d4e2f107"]
+    assert len(revisions) == 3
+    assert script_directory.get_heads() == ["c4e8b2a91d30"]
     assert [revision.revision for revision in revisions] == [
+        "c4e8b2a91d30",
         "a6c9d4e2f107",
         "f8d739439ed0",
     ]
-    assert revisions[0].down_revision == "f8d739439ed0"
-    assert revisions[1].down_revision is None
+    assert revisions[0].down_revision == "a6c9d4e2f107"
+    assert revisions[1].down_revision == "f8d739439ed0"
+    assert revisions[2].down_revision is None
     for revision in revisions:
         assert revision.is_branch_point is False
         assert revision.is_merge_point is False

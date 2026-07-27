@@ -29,6 +29,7 @@ from app.models.common import (
 
 if TYPE_CHECKING:
     from app.models.ingestion_run_record import IngestionRunRecord
+    from app.models.intelligence_item_indicator import IntelligenceItemIndicator
     from app.models.intelligence_item_identifier import IntelligenceItemIdentifier
     from app.models.intelligence_item_tag import IntelligenceItemTag
     from app.models.source_record import SourceRecord
@@ -240,5 +241,11 @@ class IntelligenceItem(
     ingestion_run_records: Mapped[list[IngestionRunRecord]] = relationship(
         "IngestionRunRecord",
         back_populates="intelligence_item",
+        passive_deletes=True,
+    )
+    indicator_relationships: Mapped[list[IntelligenceItemIndicator]] = relationship(
+        "IntelligenceItemIndicator",
+        back_populates="intelligence_item",
+        cascade="all, delete-orphan",
         passive_deletes=True,
     )

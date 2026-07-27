@@ -7,6 +7,7 @@ from app.models.indicator import Indicator
 from app.models.indicator_provenance import IndicatorProvenance
 from app.models.intelligence_item import IntelligenceItem
 from app.models.intelligence_item_identifier import IntelligenceItemIdentifier
+from app.models.intelligence_item_indicator import IntelligenceItemIndicator
 from app.models.intelligence_item_tag import IntelligenceItemTag
 from app.models.intelligence_source import IntelligenceSource
 from app.models.source_record import SourceRecord
@@ -21,6 +22,7 @@ __all__ = [
     "IndicatorProvenance",
     "IntelligenceItem",
     "IntelligenceItemIdentifier",
+    "IntelligenceItemIndicator",
     "IntelligenceItemTag",
     "IntelligenceSource",
     "SourceRecord",

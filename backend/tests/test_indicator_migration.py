@@ -109,19 +109,13 @@ def _operation_sequence(function_name: str) -> list[tuple[str, str]]:
     ]
 
 
-def test_indicator_revision_directly_follows_base_with_one_linear_head():
+def test_indicator_revision_directly_follows_base_independently():
     directory = script_directory()
-    revisions = list(directory.walk_revisions())
     revision = indicator_revision()
 
     assert revision.down_revision == BASE_REVISION_ID
-    assert directory.get_heads() == [INDICATOR_REVISION_ID]
-    assert [item.revision for item in revisions] == [
-        INDICATOR_REVISION_ID,
-        BASE_REVISION_ID,
-    ]
-    assert all(not item.is_branch_point for item in revisions)
-    assert all(not item.is_merge_point for item in revisions)
+    assert revision.is_branch_point is False
+    assert revision.is_merge_point is False
     assert Path(revision.path).parent.resolve() == VERSIONS_DIR
 
 
