@@ -85,20 +85,21 @@ PARTIAL_INDEX_PREDICATES = {
 }
 
 FK_DELETE_ACTIONS = {"CASCADE", "RESTRICT", "SET NULL"}
+BASE_REVISION_ID = "f8d739439ed0"
 
 
 def script_directory() -> ScriptDirectory:
     return ScriptDirectory.from_config(Config(str(ALEMBIC_INI)))
 
 
-def single_revision():
-    revisions = list(script_directory().walk_revisions())
-    assert len(revisions) == 1
-    return revisions[0]
+def base_revision():
+    revision = script_directory().get_revision(BASE_REVISION_ID)
+    assert revision is not None
+    return revision
 
 
 def revision_source() -> str:
-    return Path(single_revision().path).read_text(encoding="utf-8")
+    return Path(base_revision().path).read_text(encoding="utf-8")
 
 
 def revision_tree() -> ast.Module:
@@ -136,10 +137,11 @@ def op_calls(method_name: str) -> list[ast.Call]:
     return calls
 
 
-def test_revision_is_single_base_revision():
+def test_original_revision_remains_the_known_base_revision():
     directory = script_directory()
-    revision = single_revision()
+    revision = base_revision()
 
+    assert revision.revision == BASE_REVISION_ID
     assert revision.down_revision is None
     assert len(directory.get_heads()) == 1
     assert revision.is_branch_point is False

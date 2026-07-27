@@ -13,6 +13,8 @@ from app.db.base import Base
 
 
 APPROVED_TABLES = {
+    "indicator_provenances",
+    "indicators",
     "ingestion_errors",
     "ingestion_run_records",
     "ingestion_runs",
@@ -303,18 +305,23 @@ def test_online_migrations_dispose_engine_when_connection_entry_fails(monkeypatc
     assert db_session.get_engine.call_count == 0
 
 
-def test_single_initial_migration_revision_exists():
+def test_migration_chain_is_linear_with_one_head_and_known_base():
     config = Config(str(ALEMBIC_INI))
     script_directory = ScriptDirectory.from_config(config)
     revisions = list(script_directory.walk_revisions())
 
-    assert len(revisions) == 1
-    revision = revisions[0]
-    assert revision.down_revision is None
-    assert len(script_directory.get_heads()) == 1
-    assert revision.is_branch_point is False
-    assert revision.is_merge_point is False
-    assert Path(revision.path).parent.resolve() == VERSIONS_DIR
+    assert len(revisions) == 2
+    assert script_directory.get_heads() == ["a6c9d4e2f107"]
+    assert [revision.revision for revision in revisions] == [
+        "a6c9d4e2f107",
+        "f8d739439ed0",
+    ]
+    assert revisions[0].down_revision == "f8d739439ed0"
+    assert revisions[1].down_revision is None
+    for revision in revisions:
+        assert revision.is_branch_point is False
+        assert revision.is_merge_point is False
+        assert Path(revision.path).parent.resolve() == VERSIONS_DIR
 
 
 def test_gitkeep_is_not_required_after_initial_revision_exists():
@@ -324,7 +331,8 @@ def test_gitkeep_is_not_required_after_initial_revision_exists():
 def test_initial_revision_file_does_not_store_database_url_or_credentials():
     config = Config(str(ALEMBIC_INI))
     script_directory = ScriptDirectory.from_config(config)
-    revision = next(iter(script_directory.walk_revisions()))
+    revision = script_directory.get_revision("f8d739439ed0")
+    assert revision is not None
     content = Path(revision.path).read_text(encoding="utf-8").lower()
 
     assert "postgresql://" not in content

@@ -303,6 +303,38 @@ application makes no IBM request. IBMid/guest automation, scraping, APIs,
 reputation/indicator queries, collections, comments, paid data, report or
 attachment downloads, malware retrieval, and STIX/TAXII are excluded.
 
+## Normalized indicator foundation (P9-08)
+
+P9-08 adds a metadata-only foundation for normalized defensive indicators. The
+supported observable types are IPv4 addresses, IPv6 addresses, domains, HTTP or
+HTTPS URLs, and MD5, SHA-1, SHA-256, or SHA-512 file-hash metadata. A pure
+offline validation boundary canonicalizes each value. Internationalized domain
+names use the maintained IDNA implementation with UTS #46 processing, STD3
+rules, and non-transitional behavior. The boundary derives a lowercase SHA-256
+identity fingerprint from an unambiguous representation of the observable type,
+optional hash algorithm, and normalized value. The fingerprint provides bounded
+duplicate protection without creating a unique index over a potentially long
+canonical URL.
+
+Indicators carry an explicit lifecycle status, optional bounded context,
+confidence from zero through one, and timezone-aware observation, revocation,
+and expiry metadata. Source provenance links an indicator to an approved
+`intelligence_sources` row and optionally to a `source_records` row, with
+partial unique indexes preventing duplicate source attribution both with and
+without a source record. A composite database foreign key requires any linked
+source record to belong to that same registered intelligence source. Source
+records referenced by indicator provenance are deletion-restricted for audit
+integrity; provenance must be deliberately removed or migrated through a
+separately reviewed operation first. Public UUIDs are the safe external
+identifiers; internal bigint identities remain database-only.
+
+This foundation performs syntax validation only. It does not resolve domains,
+connect to indicators, retrieve URLs or files, download malware, scan, probe,
+enrich, or import STIX/TAXII data. P9-08 adds no ingestion trigger, scheduler,
+startup processing, public API route, or frontend exposure. The future P9-09
+task remains responsible for a separately reviewed publication relationship and
+indicator extraction layer; it is not implemented here.
+
 ## Normalization, identity, deduplication, and persistence
 
 Normalized records preserve the canonical source, external source identifier,
@@ -338,6 +370,8 @@ The current schema contains:
 - `intelligence_items` for lifecycle, normalized content, geographic/UAE fields;
 - `vulnerabilities` for CVSS, EPSS, KEV, and affected-product extensions;
 - `intelligence_sources` and `source_records` for source identity/provenance;
+- `indicators` and `indicator_provenances` for canonical observable metadata
+  and bounded source attribution;
 - `intelligence_item_identifiers` for CVE and publication fingerprints;
 - `tags` and `intelligence_item_tags` for controlled tagging;
 - `ingestion_runs`, `ingestion_run_records`, and `ingestion_errors` for safe

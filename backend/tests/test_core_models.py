@@ -22,6 +22,8 @@ from app.db.base import Base
 
 
 IMPLEMENTED_TABLES = {
+    "indicator_provenances",
+    "indicators",
     "ingestion_errors",
     "ingestion_run_records",
     "ingestion_runs",
@@ -92,6 +94,8 @@ def test_importing_models_registers_only_implemented_tables_without_engine(monke
         "IngestionError",
         "IngestionRun",
         "IngestionRunRecord",
+        "Indicator",
+        "IndicatorProvenance",
         "IntelligenceItem",
         "IntelligenceItemIdentifier",
         "IntelligenceItemTag",

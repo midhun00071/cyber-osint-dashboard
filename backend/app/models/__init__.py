@@ -3,6 +3,8 @@
 from app.models.ingestion_error import IngestionError
 from app.models.ingestion_run import IngestionRun
 from app.models.ingestion_run_record import IngestionRunRecord
+from app.models.indicator import Indicator
+from app.models.indicator_provenance import IndicatorProvenance
 from app.models.intelligence_item import IntelligenceItem
 from app.models.intelligence_item_identifier import IntelligenceItemIdentifier
 from app.models.intelligence_item_tag import IntelligenceItemTag
@@ -15,6 +17,8 @@ __all__ = [
     "IngestionError",
     "IngestionRun",
     "IngestionRunRecord",
+    "Indicator",
+    "IndicatorProvenance",
     "IntelligenceItem",
     "IntelligenceItemIdentifier",
     "IntelligenceItemTag",

@@ -21,6 +21,8 @@ from app.db.base import Base
 
 
 IMPLEMENTED_TABLES = {
+    "indicator_provenances",
+    "indicators",
     "ingestion_errors",
     "ingestion_run_records",
     "ingestion_runs",
@@ -36,6 +38,8 @@ EXPECTED_MODEL_EXPORTS = {
     "IngestionError",
     "IngestionRun",
     "IngestionRunRecord",
+    "Indicator",
+    "IndicatorProvenance",
     "IntelligenceItem",
     "IntelligenceItemIdentifier",
     "IntelligenceItemTag",

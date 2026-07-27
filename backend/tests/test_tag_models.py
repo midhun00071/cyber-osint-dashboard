@@ -20,6 +20,8 @@ from app.db.base import Base
 
 
 IMPLEMENTED_TABLES = {
+    "indicator_provenances",
+    "indicators",
     "ingestion_errors",
     "ingestion_run_records",
     "ingestion_runs",
@@ -105,6 +107,8 @@ def test_registration_and_mapper_configuration_are_database_free(monkeypatch):
         "IngestionError",
         "IngestionRun",
         "IngestionRunRecord",
+        "Indicator",
+        "IndicatorProvenance",
         "IntelligenceItem",
         "IntelligenceItemIdentifier",
         "IntelligenceItemTag",

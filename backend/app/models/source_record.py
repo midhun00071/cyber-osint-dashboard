@@ -5,7 +5,16 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, String, text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -14,6 +23,7 @@ from app.models.common import BigIntPrimaryKeyMixin, TimestampMixin, utc_now
 
 
 if TYPE_CHECKING:
+    from app.models.indicator_provenance import IndicatorProvenance
     from app.models.ingestion_error import IngestionError
     from app.models.ingestion_run_record import IngestionRunRecord
     from app.models.intelligence_item import IntelligenceItem
@@ -37,6 +47,11 @@ class SourceRecord(BigIntPrimaryKeyMixin, TimestampMixin, Base):
         CheckConstraint(
             "upstream_status IN ('present', 'missing', 'unavailable')",
             name="ck_source_records_upstream_status_allowed",
+        ),
+        UniqueConstraint(
+            "id",
+            "source_id",
+            name="uq_source_records_id_source_id",
         ),
         Index(
             "uq_source_records_external_id",
@@ -131,5 +146,15 @@ class SourceRecord(BigIntPrimaryKeyMixin, TimestampMixin, Base):
     ingestion_errors: Mapped[list[IngestionError]] = relationship(
         "IngestionError",
         back_populates="source_record",
+        passive_deletes=True,
+    )
+    indicator_provenances: Mapped[list[IndicatorProvenance]] = relationship(
+        "IndicatorProvenance",
+        back_populates="source_record",
+        primaryjoin=(
+            "and_(SourceRecord.id == foreign(IndicatorProvenance.source_record_id), "
+            "SourceRecord.source_id == IndicatorProvenance.source_id)"
+        ),
+        foreign_keys="[IndicatorProvenance.source_record_id]",
         passive_deletes=True,
     )

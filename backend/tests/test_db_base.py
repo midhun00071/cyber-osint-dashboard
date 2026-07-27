@@ -20,8 +20,10 @@ def test_naming_convention_includes_required_entries():
     assert set(Base.metadata.naming_convention) == {"pk", "fk", "uq", "ck", "ix"}
 
 
-def test_base_metadata_has_p1_11d_tables_after_model_registration():
+def test_base_metadata_has_all_implemented_tables_after_model_registration():
     assert set(Base.metadata.tables) == {
+        "indicator_provenances",
+        "indicators",
         "ingestion_errors",
         "ingestion_run_records",
         "ingestion_runs",
@@ -35,11 +37,13 @@ def test_base_metadata_has_p1_11d_tables_after_model_registration():
     }
 
 
-def test_p1_11d_domain_models_are_registered():
+def test_implemented_domain_models_are_registered():
     assert {mapper.class_ for mapper in Base.registry.mappers} >= {
         app.models.IngestionError,
         app.models.IngestionRun,
         app.models.IngestionRunRecord,
+        app.models.Indicator,
+        app.models.IndicatorProvenance,
         app.models.IntelligenceItemIdentifier,
         app.models.IntelligenceItemTag,
         app.models.IntelligenceSource,
