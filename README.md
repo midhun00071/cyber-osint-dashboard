@@ -222,6 +222,27 @@ exact `exchange.xforce.ibmcloud.com/osint/guid%3A<32-hex>` URLs and become
 guest browsing, IBMid automation, API access, report/PDF download, IOC or
 reputation ingestion, STIX/TAXII processing, or paid-tier integration.
 
+P9-10 now includes bounded STIX 2.1 validation/persistence and a fixed-policy
+TAXII 2.1 collection client. The separate immutable TAXII policy fixes one
+canonical HTTPS API root, exact collection ID, derived objects endpoint,
+timeouts, total monotonic deadline, and response/page/object/token limits. The
+client permits only exact `httpx.BasicAuth`, revalidates the authenticated
+method, URL, query, fixed header allow-list, and bounded timeout extensions
+immediately before transport, and rejects redirects or invalid media types. It
+requests identity transfer encoding, rejects compressed or malformed content
+encodings, and counts raw streamed bytes. Per-collection thread filters suppress
+HTTPX/HTTPCore transport records so pagination tokens, response headers, and
+cookies do not enter third-party HTTP logs. Opaque pagination tokens travel only
+to the same endpoint, and combined pages are rechecked against aggregate JSON
+tree limits before whole-document STIX validation and the caller-owned import
+transaction. The production STIX and TAXII registries
+remain empty, so no live source or approved live execution is configured.
+Testing uses only synthetic files and `httpx.MockTransport`; no live TAXII
+request was made.
+There is no TAXII CLI, API route, frontend control, scheduler, startup hook, or
+P9-11 threat-entity implementation. See
+[STIX/TAXII Import](docs/stix-taxii-import.md) for the complete boundary.
+
 ## Security Principles
 
 - Do not commit real .env files.

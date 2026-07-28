@@ -24,7 +24,11 @@ MAX_PATH_COMPONENTS = 256
 
 
 class StixBoundedJsonError(ValueError):
-    """An offline STIX document failed bounded safe loading."""
+    """A STIX document failed bounded safe loading."""
+
+
+class StixTaxiiPaginationJsonError(StixBoundedJsonError):
+    """A TAXII envelope failed its local more/next shape invariants."""
 
 
 class StixDocumentFormat(str, Enum):
@@ -57,6 +61,8 @@ def load_stix_json_file(
     """Read one explicit local file safely, then parse its bounded JSON."""
 
     approved = validate_stix_source_policy(policy)
+    if approved.allowed_transport is StixInputTransport.TAXII_21_COLLECTION:
+        raise StixBoundedJsonError("Policy does not allow local STIX file input.")
     data = _read_bounded_regular_file(file_path, approved.maximum_file_bytes)
     return parse_stix_json_bytes(data, approved, document_format)
 
@@ -83,9 +89,9 @@ def parse_stix_json_bytes(
             object_pairs_hook=_unique_object,
             parse_constant=_reject_constant,
         )
-        _validate_json_shape(parsed, approved)
     except (_DuplicateKeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         raise StixBoundedJsonError("STIX JSON is invalid or exceeds safe limits.") from exc
+    validate_bounded_json_tree(parsed, approved)
     if not isinstance(parsed, dict):
         raise StixBoundedJsonError("STIX document must be a JSON object.")
     try:
@@ -97,6 +103,21 @@ def parse_stix_json_bytes(
     except (TypeError, ValueError) as exc:
         raise StixBoundedJsonError("STIX document format is not supported.") from exc
     return _validate_document_shape(parsed, approved, explicit_format)
+
+
+def validate_bounded_json_tree(
+    value: object,
+    policy: ApprovedStixSourcePolicy,
+) -> None:
+    """Validate an already parsed JSON-compatible tree without copying it."""
+
+    approved = validate_stix_source_policy(policy)
+    try:
+        _validate_json_shape(value, approved)
+    except Exception:
+        raise StixBoundedJsonError(
+            "STIX JSON tree is invalid or exceeds safe limits."
+        ) from None
 
 
 def thaw_json(value: object) -> object:
@@ -126,14 +147,19 @@ def _validate_document_shape(
         more = None
         next_token = None
     else:
-        if policy.allowed_transport is not StixInputTransport.TAXII_ENVELOPE_FIXTURE:
-            raise StixBoundedJsonError("Policy does not allow TAXII fixture input.")
+        if policy.allowed_transport not in {
+            StixInputTransport.TAXII_ENVELOPE_FIXTURE,
+            StixInputTransport.TAXII_21_COLLECTION,
+        }:
+            raise StixBoundedJsonError("Policy does not allow TAXII envelope input.")
         if set(parsed) - {"objects", "more", "next"}:
-            raise StixBoundedJsonError("TAXII fixture contains unexpected properties.")
+            raise StixBoundedJsonError("TAXII envelope contains unexpected properties.")
         objects = parsed.get("objects")
         more = parsed.get("more")
         if more is not None and type(more) is not bool:
-            raise StixBoundedJsonError("TAXII more flag must be a boolean.")
+            raise StixTaxiiPaginationJsonError(
+                "TAXII more flag must be a boolean."
+            )
         next_token = parsed.get("next")
         if next_token is not None and (
             not isinstance(next_token, str)
@@ -141,7 +167,7 @@ def _validate_document_shape(
             or len(next_token) > policy.maximum_json_string_length
             or more is not True
         ):
-            raise StixBoundedJsonError("TAXII next token is invalid.")
+            raise StixTaxiiPaginationJsonError("TAXII next token is invalid.")
         bundle_id = None
     if not isinstance(objects, list):
         raise StixBoundedJsonError("STIX objects must be a list.")
@@ -307,14 +333,17 @@ def _validate_json_shape(value: object, policy: ApprovedStixSourcePolicy) -> Non
             raise ValueError("JSON node limit exceeded.")
         if depth > policy.maximum_json_depth:
             raise ValueError("JSON depth limit exceeded.")
-        if isinstance(current, dict):
+        if isinstance(current, Mapping):
             if len(current) > policy.maximum_json_nodes:
                 raise ValueError("JSON object size limit exceeded.")
             for key, item in current.items():
-                if len(key) > policy.maximum_json_string_length:
+                if (
+                    not isinstance(key, str)
+                    or len(key) > policy.maximum_json_string_length
+                ):
                     raise ValueError("JSON key length limit exceeded.")
                 stack.append((item, depth + 1))
-        elif isinstance(current, list):
+        elif isinstance(current, (tuple, list)):
             if len(current) > policy.maximum_json_nodes:
                 raise ValueError("JSON list size limit exceeded.")
             stack.extend((item, depth + 1) for item in current)

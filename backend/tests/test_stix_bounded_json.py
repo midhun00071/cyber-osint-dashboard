@@ -12,6 +12,7 @@ from app.ingestion.stix_taxii.bounded_json import (
     StixDocumentFormat,
     load_stix_json_file,
     parse_stix_json_bytes,
+    validate_bounded_json_tree,
 )
 from app.ingestion.stix_taxii.policy import (
     ApprovedStixSourcePolicy,
@@ -69,6 +70,19 @@ def test_taxii_envelope_fixture_is_explicit_and_bounded():
 
     assert document.more is True
     assert document.next_token == "page-2"
+
+
+def test_live_taxii_transport_parses_bytes_but_cannot_load_a_local_file(tmp_path):
+    live_policy = policy(allowed_transport=StixInputTransport.TAXII_21_COLLECTION)
+    data = json.dumps({"objects": [OBJECT]}).encode()
+
+    assert parse_stix_json_bytes(
+        data, live_policy, StixDocumentFormat.TAXII_ENVELOPE
+    ).objects
+    path = tmp_path / "taxii.json"
+    path.write_bytes(data)
+    with pytest.raises(StixBoundedJsonError, match="local STIX file"):
+        load_stix_json_file(path, live_policy, StixDocumentFormat.TAXII_ENVELOPE)
 
 
 @pytest.mark.parametrize(
@@ -145,6 +159,58 @@ def test_depth_node_object_and_string_limits_are_enforced():
             policy(maximum_json_nodes=4, maximum_objects=1),
             StixDocumentFormat.STIX_BUNDLE,
         )
+
+
+def test_preparsed_immutable_json_tree_reuses_all_structural_bounds():
+    tree = MappingProxyType(
+        {
+            "objects": (
+                MappingProxyType(
+                    {
+                        "value": "safe",
+                        "count": 1,
+                        "score": 1.5,
+                        "enabled": True,
+                        "optional": None,
+                    }
+                ),
+            )
+        }
+    )
+
+    validate_bounded_json_tree(tree, policy())
+
+    exact_tree = MappingProxyType(
+        {"objects": (MappingProxyType({"value": "x"}),)}
+    )
+    validate_bounded_json_tree(
+        exact_tree,
+        policy(maximum_json_nodes=4, maximum_objects=1),
+    )
+    with pytest.raises(StixBoundedJsonError, match="safe limits"):
+        validate_bounded_json_tree(
+            exact_tree,
+            policy(maximum_json_nodes=3, maximum_objects=1),
+        )
+
+
+def test_preparsed_tree_depth_string_numeric_and_type_failures_are_sanitized():
+    secret = "aggregate-secret-value"
+    invalid_cases = (
+        (
+            MappingProxyType({"x": (MappingProxyType({"y": secret}),)}),
+            policy(maximum_json_depth=2),
+        ),
+        (MappingProxyType({"x": (secret,)}), policy(maximum_json_string_length=4)),
+        (MappingProxyType({"x": float("inf")}), policy()),
+        (MappingProxyType({"x": {secret}}), policy()),
+        (MappingProxyType({1: "value"}), policy()),
+    )
+
+    for tree, approved in invalid_cases:
+        with pytest.raises(StixBoundedJsonError) as caught:
+            validate_bounded_json_tree(tree, approved)
+        assert secret not in str(caught.value)
 
 
 def test_bundle_requires_exact_shape_and_explicit_matching_transport():

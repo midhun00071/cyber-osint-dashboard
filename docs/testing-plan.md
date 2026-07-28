@@ -178,7 +178,7 @@ unchanged, update, stale, and conflict behavior; P9-08 indicator reuse;
 source-record-specific provenance; false-positive suppression; caller-owned
 commit/rollback and atomic rollback simulation; sanitized failures; and blocked
 network primitives. Fixtures are synthetic. The production STIX policy remains
-empty, no live TAXII client is exercised, and P9-10 is not yet complete.
+empty, and this first unit performs no TAXII network collection.
 
 P9-10 hardening coverage additionally verifies all four exact standard TLP
 identifiers; incorrect, mismatched, custom, and unapproved markings; canonical
@@ -207,8 +207,9 @@ exact per-type and nested safe-payload schemas; correctly hashed extra-field
 rejection for current, relationship, and marking records; conservative
 external-reference identifier tokens; and omission of descriptions containing
 URLs, credentials, commands, flags, exploit-like instructions, or payload
-names. Failed records have no automatic repair path. The fixed-policy TAXII
-client remains unimplemented and no network request is part of these tests.
+names. Failed records have no automatic repair path. This offline foundation
+performs no network request; the separately tested second unit implements the
+fixed-policy TAXII client.
 
 Persistence-boundary regressions manually construct public validation
 dataclasses and verify rejection of extra payload keys, forged hashes,
@@ -231,6 +232,31 @@ reject omitted versions, a supplied latest tuple not derived from lineage,
 inflated or reduced counters, forged lineage hashes/payloads/observables/IDs/
 timestamps, duplicate modified values, changed created or creator identity, and
 versions following revocation.
+
+The second internal P9-10 unit adds offline `httpx.MockTransport` coverage for
+the fixed-policy TAXII 2.1 collection client: frozen policies and immutable
+registries; the empty production registry; canonical API roots, collection IDs,
+and endpoint derivation; exact initial and same-endpoint paginated requests;
+fixed headers, disabled redirects, disabled environment trust, exact
+`httpx.BasicAuth`, rejection of custom executable authentication, and cookie
+isolation; hostile authentication mutation of the method, URL, query/header
+boundary, and timeout extensions rejected before transport; redirects, HTTP
+429, unsuccessful status, transport, operation-timeout, and total-deadline
+failures; exact TAXII 2.1 media types; identity-only content encoding and
+compressed, multiple, duplicate, parameterized, or malformed encoding
+rejection before raw body iteration; declared and raw-streamed response bounds;
+total bytes, pages, objects, and token limits coherent with STIX JSON bounds;
+invalid integer and timeout policy values; valid one- and multi-page envelopes;
+opaque next-token handling;
+`more`/`next` invariants; repeated token/page and empty-continuation rejection;
+cross-page relationship validation; thread-scoped HTTPX/HTTPCore log
+suppression with unrelated-thread preservation and success/failure cleanup;
+aggregate combined-page node limits, exact-boundary acceptance, depth/string/
+numeric/type tree limits, and semantic-validation short-circuiting; sanitized
+non-disclosure; and reuse of the existing whole-document validator and
+caller-transaction-owned import service.
+All HTTP responses are synthetic. The production TAXII registry remains empty,
+and no live TAXII request is performed.
 
 ## Frontend Testing
 

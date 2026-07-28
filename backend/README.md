@@ -213,3 +213,28 @@ not a CLI option, owns the fixed source slug. Both catalogues are metadata-only,
 request, scraper, guest browser, IBMid login, API credential, indicator or
 reputation lookup, report/PDF download, STIX/TAXII import, scheduler, startup
 hook, worker, or public upload route is added.
+
+## Fixed-Policy STIX/TAXII Foundation
+
+P9-10 provides bounded STIX 2.1 parsing, whole-document validation, safe
+staging, and caller-transaction-owned persistence. Its second internal unit
+adds a synchronous TAXII 2.1 client whose immutable policy fixes the source,
+canonical HTTPS API root, collection ID, derived objects endpoint, timeouts,
+total deadline, and byte/page/object/token limits. It performs no discovery,
+permits only exact `httpx.BasicAuth`, and applies a post-authentication,
+pre-transport guard to the method, URL, query, fixed header allow-list, and
+bounded timeout extensions. It rejects redirects, accepts only the exact TAXII
+2.1 JSON media type, requests identity transfer encoding, rejects compressed or
+malformed content encodings, and counts raw streamed bytes. Scoped filters
+suppress HTTPX/HTTPCore logging from the active collection thread without
+affecting unrelated threads, preventing pagination tokens, response headers,
+and cookies from entering third-party HTTP logs. All pages are combined and
+rechecked against aggregate JSON-tree limits before semantic validation so
+cross-page references can resolve through the existing validator and import
+service.
+
+Both production policy registries remain empty, and all HTTP tests use
+`httpx.MockTransport`; no live TAXII request, source check, or approved live
+execution has occurred. No
+CLI, API route, frontend control, scheduler, startup hook, background worker,
+malware/file retrieval, or P9-11 entity model is included.

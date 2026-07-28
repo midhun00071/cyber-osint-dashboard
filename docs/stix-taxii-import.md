@@ -1,19 +1,20 @@
-# Offline STIX/TAXII Import Foundation
+# STIX/TAXII Import and Fixed-Policy Collection
 
 ## Status and scope
 
-This is the first internal implementation unit of P9-10, not completion of the
-official task. It provides an offline STIX 2.1 validation and persistence
-foundation for reviewed operator-provided files and synthetic TAXII 2.1
-envelope fixtures. The production approved-policy registry is deliberately
-empty, so no production STIX/TAXII source can currently run.
+The first two internal P9-10 units provide bounded STIX 2.1 validation and
+caller-transaction-owned persistence plus a separately controlled fixed-policy
+TAXII 2.1 collection client. Reviewed operator files and synthetic TAXII
+envelopes remain supported by the offline foundation. Both production policy
+registries are deliberately empty, so no production STIX/TAXII source can run.
 
-The second P9-10 unit remains a separately reviewed fixed-policy TAXII 2.1
-collection client. This unit adds no HTTP client, DNS or socket access, server
-discovery, arbitrary URL, redirect handling, CLI, API route, frontend control,
-scheduler, startup task, or background worker. It does not retrieve malware,
-scan, probe, evaluate Indicator patterns against systems, or implement P9-11
-threat-entity tables.
+The network unit adds no API-root or collection discovery, arbitrary server,
+URL, endpoint, redirect target, request header, cookie, CLI, API route, frontend
+control, scheduler, startup task, or background worker. It does not retrieve
+malware, attachments, binaries, or files; scan or probe; evaluate Indicator
+patterns against systems; or implement P9-11 threat-entity tables. Validation
+uses only synthetic responses through `httpx.MockTransport`; no live TAXII
+request or source check has been performed.
 
 The direct dependency is the maintained OASIS `stix2>=3.0,<4.0` library. STAXX,
 `taxii2-client`, STIX 1 conversion, MISP conversion, and vendor-specific STIX
@@ -21,12 +22,13 @@ libraries are not dependencies.
 
 ## Approved source and input boundary
 
-An immutable developer-controlled policy fixes the exact source slug, one
-offline transport, safe object/relationship/marking allow-lists, a synthetic or
-later-approved HTTPS identity base, and processing limits. Runtime production
-policy lookup currently always fails closed because its immutable registry has
-no entries. Tests build isolated synthetic policies without registering a
-runtime source.
+An immutable developer-controlled STIX policy fixes the exact source slug, one
+explicit transport, safe object/relationship/marking allow-lists, a synthetic
+or later-approved HTTPS identity base, and processing limits. A separate
+immutable TAXII collection policy contains that validated semantic policy and
+fixes its network and pagination limits. Runtime production lookup always fails
+closed because both immutable registries have no entries. Tests build isolated
+synthetic policies without registering a runtime source.
 
 The two explicit input shapes are:
 
@@ -41,7 +43,9 @@ accepts only a direct regular file, rejects UNC/device/pipe paths and detectable
 links/reparse points, validates descriptor identity and path stability, bounds
 growth while reading, and returns immutable data. It rejects invalid UTF-8,
 duplicate keys, non-standard numeric constants, and excessive JSON depth,
-nodes, collections, strings, bytes, or objects. Errors omit paths and content.
+nodes, collections, strings, bytes, or objects. A live TAXII transport may use
+the bounded in-memory envelope parser but is explicitly rejected by the local
+file loader. Errors omit paths and content.
 
 Default policy limits are 2 MiB, depth 16, 10,000 JSON nodes, 10,000 characters
 per string, 500 objects, 200 relationships, 20 marking references per object,
@@ -65,6 +69,82 @@ rules, and non-transitional behavior. The submitted host must already equal its
 canonical lowercase ASCII form. Valid canonical A-labels are accepted;
 malformed punycode, Unicode aliases, uppercase or trailing-dot aliases, invalid
 or overlong labels, and IP literals are rejected without DNS resolution.
+
+## Fixed-policy TAXII 2.1 network boundary
+
+The separate frozen collection policy fixes one canonical lowercase-ASCII HTTPS
+API-root URL and one exact unreserved-character collection ID. It derives the
+only permitted request target as:
+
+```text
+<api-root>/collections/<collection-id>/objects/
+```
+
+The production function accepts only an exact approved source slug and optional
+exact `httpx.BasicAuth`; custom or subclassed executable authentication is
+rejected. It has no server, API-root, collection, endpoint, URL, path,
+headers, cookies, or redirect parameters. The client performs no API-root or
+collection discovery and makes GET requests only to the derived objects
+endpoint. Each collection call owns a fresh synchronous `httpx.Client` with
+`follow_redirects=False`, `trust_env=False`, a fixed project User-Agent, and
+fixed `application/taxii+json;version=2.1` Accept and `Accept-Encoding: identity`
+headers. After authentication and immediately before transport, an exact guard
+revalidates the GET method, full URL and query, Host and fixed request-header
+allow-list, absence of cookies and arbitrary headers, and the bounded connect,
+read, write, and pool timeout extensions. A mismatch raises a sanitized typed
+error before the transport handler can run. Redirect responses are rejected
+without following them. Authentication is never included in results, errors,
+logs, or policy dataclasses, and response cookies are cleared between page
+attempts.
+
+Before client construction, each collection call installs one temporary filter
+instance on the `httpx`, `httpcore`, `httpcore.connection`, `httpcore.http11`,
+`httpcore.http2`, `httpcore.proxy`, and `httpcore.socks` loggers. The filter
+rejects only records created or handled by the synchronous collection thread,
+so opaque pagination queries, response headers, and cookies cannot enter
+third-party HTTP logs while unrelated-thread logging remains available. The
+exact filter instance is always removed without changing logger levels,
+handlers, propagation, disabled state, root logging, or global logging. Setup
+or cleanup failure raises a fixed sanitized client error.
+
+Every response body is streamed through `iter_raw()`. A response may omit
+`Content-Encoding` or use only a single valid `identity` value; gzip, deflate,
+Brotli, multiple or duplicate values, parameters, and malformed values fail
+closed before body iteration. A declared `Content-Length` is checked before
+reading, and raw encoded bytes are counted regardless of that header. Defaults are
+2 MiB per response, 8 MiB across the collection, 10 pages, 500 total objects,
+and 1,024 characters per pagination token. Connect, read, write, and pool
+timeouts default to 5, 10, 5, and 5 seconds. A separate 60-second monotonic
+deadline covers all requests and streamed reads; every per-request timeout is
+capped by its remaining duration.
+
+Only the TAXII 2.1 JSON media type is accepted. Case and insignificant
+whitespace are normalized, while missing, malformed, duplicate, conflicting,
+non-2.1, or extra parameters fail closed. Status 429, redirects, unsuccessful
+statuses, timeouts, transport failures, request-policy failures, content-type or
+content-encoding failures, oversize bodies, pagination failures, envelope
+failures, and complete-document STIX failures use typed fixed-message exceptions
+that omit bodies, headers, URLs, query values, cookies, credentials, tokens, raw
+exceptions, and stack traces.
+
+The first request uses the exact derived endpoint without a query. Later
+requests use the same endpoint and carry only the opaque `next` value through
+the `next` query parameter; the token is never interpreted as a URL. Missing or
+contradictory `more`/`next` values, unsafe or oversized tokens, repeated tokens,
+repeated response or object-page identities, empty continuation pages,
+no-progress continuation, and page/object/byte/deadline overflow all fail
+closed. Safely parsed page objects are combined into one immutable bounded
+document. A reusable non-serializing traversal rechecks the lightweight
+`{"objects": combined_objects}` tree against aggregate node, depth, string,
+collection, numeric, and supported-value limits before
+`validate_stix_document` runs, allowing relationships and marking references to
+resolve across page boundaries without bypassing whole-document memory bounds.
+
+The collection result contains safe counters and the immutable
+`ValidatedStixDocument`. Callers may pass that document to
+`StixBundleImportService`; the client does not duplicate mapping, lineage,
+provenance, or persistence logic. The import service still never commits or
+rolls back, so the caller owns the complete database transaction.
 
 ## STIX validation and safe staging
 

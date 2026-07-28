@@ -232,11 +232,12 @@ writes. Historical evidence is audit-preserving: a later source-text change
 does not automatically delete prior indicators, relationships, or provenance.
 The detailed rules and limits are documented in [IOC Extraction](ioc-extraction.md).
 
-### Offline STIX/TAXII foundation
+### STIX/TAXII validation and fixed-policy collection
 
 The first internal P9-10 unit adds bounded offline STIX 2.1 bundle and synthetic
-TAXII-envelope processing under an immutable approved-source policy. The
-production policy registry is intentionally empty. Bounded JSON is validated
+TAXII-envelope processing under an immutable approved-source policy. The second
+adds a separate fixed-policy TAXII 2.1 collection boundary. Both production
+policy registries are intentionally empty. Bounded JSON is validated
 before the OASIS parser runs with custom content disabled; unsupported content
 rejects the whole document. Safe fields stage into existing `SourceRecord`
 rows, while approved observables pass through P9-08 normalization into
@@ -289,10 +290,24 @@ seen timestamps must be timezone-aware and ordered. Malformed ownership or
 audit metadata fails closed without repair.
 
 The service receives the caller's SQLAlchemy session and never commits or rolls
-back. This unit has no HTTP, DNS, socket, arbitrary-server, CLI, API, frontend,
-scheduler, startup, or background execution path. Its fixed-policy TAXII 2.1
-collection client remains a second P9-10 implementation unit. Detailed limits
-and exclusions are in [Offline STIX/TAXII Import](stix-taxii-import.md).
+back. The TAXII network policy fixes a canonical HTTPS API root and collection
+ID, then derives the sole objects endpoint without discovery. The controlled
+synchronous client permits only exact `httpx.BasicAuth` and revalidates the
+authenticated method, URL, query, fixed header allow-list, and bounded timeout
+extensions immediately before transport. It rejects redirects, environment
+proxy state, arbitrary headers/cookies/targets, invalid TAXII media types,
+compressed or malformed content encodings, excessive raw bytes/pages/objects/
+tokens, repeated or no-progress pagination, unsuccessful statuses, and
+collection-wide deadline overflow. Temporary filters on the HTTPX and HTTPCore
+logger namespaces suppress records from only the active synchronous collection
+thread, keeping pagination tokens, response headers, and cookies out of
+third-party transport logs without changing logger configuration for unrelated
+threads. Pages are combined and rechecked against aggregate JSON-tree limits
+before whole-document validation so cross-page references resolve. There is no CLI, API, frontend,
+scheduler, startup, or background execution path, no configured production
+source, no approved live execution, and no live TAXII test. Detailed limits and
+exclusions are in
+[STIX/TAXII Import](stix-taxii-import.md).
 
 ### Audit flow
 
@@ -413,11 +428,12 @@ identifiers; internal bigint identities remain database-only.
 The P9-08 normalization module performs syntax validation only. It does not resolve
 domains, connect to indicators, retrieve URLs or files, download malware, scan,
 probe, enrich, or itself import STIX/TAXII data. P9-09 builds on it with a
-separately reviewed offline title/summary extraction service. The first P9-10
-unit now reuses the boundary for approved offline STIX observables, without an
-ingestion trigger, live TAXII client, scheduler, startup processing, public API
-route, or frontend exposure. P9-10 is not complete, and P9-11 threat entities
-remain unimplemented.
+separately reviewed offline title/summary extraction service. P9-10 reuses the
+boundary for approved STIX observables and now includes a fixed-policy TAXII
+client, without a configured production collection, ingestion trigger,
+scheduler, startup processing, public API route, CLI, or frontend exposure. No
+live TAXII request has been tested, and P9-11 threat entities remain
+unimplemented.
 
 ## Normalization, identity, deduplication, and persistence
 
@@ -728,9 +744,10 @@ The current repository does not implement:
 - a public ingestion API, frontend ingestion trigger, or arbitrary URL ingestion;
 - active scanning/probing, active IOC validation, malware retrieval, file
   submission, or exploit execution;
-- complete historical analytics, relationship graphs, a live fixed-policy
-  TAXII collection client, P9-11 threat entities, or the broader commercial and
-  platform source capabilities excluded above.
+- complete historical analytics, relationship graphs, a configured production
+  TAXII source or approved live TAXII collection execution, P9-11 threat
+  entities, or the broader commercial and platform source capabilities excluded
+  above.
 
 Persistent database storage is not backup. `docker compose down -v` destroys
 the named PostgreSQL volume and is not routine cleanup. Manual approval remains

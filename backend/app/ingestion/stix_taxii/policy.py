@@ -1,4 +1,4 @@
-"""Immutable allow-list policy for offline STIX/TAXII processing."""
+"""Immutable allow-list policies for STIX processing and TAXII collection."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ from dataclasses import dataclass, replace
 from enum import Enum
 import ipaddress
 import idna
+import math
 import re
 from types import MappingProxyType
 import unicodedata
@@ -40,6 +41,10 @@ _HOST_RE = re.compile(
 )
 _PATH_SEGMENT_RE = re.compile(r"^[A-Za-z0-9._~-]+$")
 _MAX_POLICY_BASE_URL_LENGTH = 1700
+_MAX_TAXII_API_ROOT_URL_LENGTH = 1500
+_TAXII_COLLECTION_ID_RE = re.compile(
+    r"^[A-Za-z0-9](?:[A-Za-z0-9._~-]{0,198}[A-Za-z0-9])?$"
+)
 _STIX_ID_RE = re.compile(
     r"^[a-z][a-z0-9-]{0,249}--"
     r"[0-9a-f]{8}-[0-9a-f]{4}-[45][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
@@ -55,10 +60,11 @@ class UnknownStixSourceError(StixPolicyError):
 
 
 class StixInputTransport(str, Enum):
-    """Offline input forms supported by this implementation unit."""
+    """Explicit input forms supported by the STIX processing boundary."""
 
     LOCAL_BUNDLE = "local_bundle"
     TAXII_ENVELOPE_FIXTURE = "taxii_envelope_fixture"
+    TAXII_21_COLLECTION = "taxii_21_collection"
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +96,39 @@ class ApprovedStixSourcePolicy:
             raise StixPolicyError("STIX object identity is invalid.")
         encoded = quote(stix_id, safe="")
         return f"{self.policy_base_url.rstrip('/')}/{encoded}"
+
+
+@dataclass(frozen=True, slots=True)
+class ApprovedTaxiiCollectionPolicy:
+    """Developer-controlled network and pagination policy for one collection."""
+
+    stix_policy: ApprovedStixSourcePolicy
+    api_root_url: str
+    collection_id: str
+    maximum_response_bytes: int = 2 * 1024 * 1024
+    maximum_total_response_bytes: int = 8 * 1024 * 1024
+    maximum_pages: int = 10
+    maximum_total_objects: int = 500
+    maximum_pagination_token_length: int = 1024
+    connect_timeout_seconds: float = 5.0
+    read_timeout_seconds: float = 10.0
+    write_timeout_seconds: float = 5.0
+    pool_timeout_seconds: float = 5.0
+    total_collection_deadline_seconds: float = 60.0
+
+    @property
+    def source_slug(self) -> str:
+        """Expose the closed source identity owned by the semantic policy."""
+
+        return self.stix_policy.source_slug
+
+    @property
+    def objects_endpoint(self) -> str:
+        """Derive the only request endpoint allowed by this policy."""
+
+        return (
+            f"{self.api_root_url}/collections/{self.collection_id}/objects/"
+        )
 
 
 def validate_stix_source_policy(
@@ -188,6 +227,99 @@ def get_production_stix_policy(source_slug: str) -> ApprovedStixSourcePolicy:
         raise UnknownStixSourceError("STIX source is not approved.") from exc
 
 
+def validate_taxii_collection_policy(
+    policy: ApprovedTaxiiCollectionPolicy,
+) -> ApprovedTaxiiCollectionPolicy:
+    """Normalize and validate one fixed TAXII 2.1 collection policy."""
+
+    if not isinstance(policy, ApprovedTaxiiCollectionPolicy):
+        raise StixPolicyError("TAXII collection policy is invalid.")
+    stix_policy = validate_stix_source_policy(policy.stix_policy)
+    if stix_policy.allowed_transport is not StixInputTransport.TAXII_21_COLLECTION:
+        raise StixPolicyError("TAXII collection policy requires the live transport.")
+    api_root_url = _normalize_taxii_api_root_url(policy.api_root_url)
+    if (
+        not isinstance(policy.collection_id, str)
+        or policy.collection_id != policy.collection_id.strip()
+        or _TAXII_COLLECTION_ID_RE.fullmatch(policy.collection_id) is None
+        or policy.collection_id in {".", ".."}
+    ):
+        raise StixPolicyError("TAXII collection identifier is invalid.")
+    integer_limits = (
+        policy.maximum_response_bytes,
+        policy.maximum_total_response_bytes,
+        policy.maximum_pages,
+        policy.maximum_total_objects,
+        policy.maximum_pagination_token_length,
+    )
+    if any(type(limit) is not int or limit <= 0 for limit in integer_limits):
+        raise StixPolicyError("TAXII collection limits must be positive integers.")
+    if (
+        policy.maximum_response_bytes > policy.maximum_total_response_bytes
+        or policy.maximum_response_bytes > stix_policy.maximum_file_bytes
+        or policy.maximum_total_objects > stix_policy.maximum_objects
+        or policy.maximum_pagination_token_length
+        > stix_policy.maximum_json_string_length
+    ):
+        raise StixPolicyError("TAXII collection limits exceed the STIX policy.")
+    timeouts = (
+        policy.connect_timeout_seconds,
+        policy.read_timeout_seconds,
+        policy.write_timeout_seconds,
+        policy.pool_timeout_seconds,
+        policy.total_collection_deadline_seconds,
+    )
+    if any(
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(float(value))
+        or float(value) <= 0
+        for value in timeouts
+    ):
+        raise StixPolicyError("TAXII collection timeouts must be finite and positive.")
+    return replace(
+        policy,
+        stix_policy=stix_policy,
+        api_root_url=api_root_url,
+        connect_timeout_seconds=float(policy.connect_timeout_seconds),
+        read_timeout_seconds=float(policy.read_timeout_seconds),
+        write_timeout_seconds=float(policy.write_timeout_seconds),
+        pool_timeout_seconds=float(policy.pool_timeout_seconds),
+        total_collection_deadline_seconds=float(
+            policy.total_collection_deadline_seconds
+        ),
+    )
+
+
+def build_taxii_policy_registry(
+    policies: tuple[ApprovedTaxiiCollectionPolicy, ...],
+) -> MappingProxyType[str, ApprovedTaxiiCollectionPolicy]:
+    """Return an immutable exact-source registry of validated TAXII policies."""
+
+    if not isinstance(policies, tuple):
+        raise StixPolicyError("TAXII policy registry input is invalid.")
+    registry: dict[str, ApprovedTaxiiCollectionPolicy] = {}
+    for policy in policies:
+        normalized = validate_taxii_collection_policy(policy)
+        if normalized.source_slug in registry:
+            raise StixPolicyError("Duplicate TAXII collection policy.")
+        registry[normalized.source_slug] = normalized
+    return MappingProxyType(registry)
+
+
+def get_production_taxii_policy(
+    source_slug: str,
+) -> ApprovedTaxiiCollectionPolicy:
+    """Return one production collection policy; the registry is empty."""
+
+    if not isinstance(source_slug, str) or _SLUG_RE.fullmatch(source_slug) is None:
+        raise UnknownStixSourceError("TAXII source is not approved.")
+    try:
+        return PRODUCTION_TAXII_COLLECTION_POLICIES[source_slug]
+    except KeyError as exc:
+        raise UnknownStixSourceError("TAXII source is not approved.") from exc
+
+
 def _validated_allow_list(
     values: object,
     supported: frozenset[str],
@@ -278,6 +410,19 @@ def _normalize_policy_base_url(value: object) -> str:
     return urlunsplit(("https", netloc, path, "", ""))
 
 
+def _normalize_taxii_api_root_url(value: object) -> str:
+    if not isinstance(value, str) or len(value) > _MAX_TAXII_API_ROOT_URL_LENGTH:
+        raise StixPolicyError("TAXII API root URL is invalid.")
+    try:
+        normalized = _normalize_policy_base_url(value)
+    except StixPolicyError as exc:
+        raise StixPolicyError("TAXII API root URL is invalid.") from exc
+    parsed = urlsplit(normalized)
+    if not parsed.path or parsed.path == "/":
+        raise StixPolicyError("TAXII API root URL is invalid.")
+    return normalized
+
+
 def _validated_bounded_strings(values: object, label: str) -> frozenset[str]:
     if not isinstance(values, (set, frozenset, tuple, list)):
         raise StixPolicyError(f"{label} allow-list is invalid.")
@@ -297,3 +442,4 @@ def _validated_bounded_strings(values: object, label: str) -> frozenset[str]:
 
 
 PRODUCTION_STIX_SOURCE_POLICIES = build_stix_policy_registry(())
+PRODUCTION_TAXII_COLLECTION_POLICIES = build_taxii_policy_registry(())

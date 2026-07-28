@@ -8,15 +8,20 @@ import pytest
 from app.ingestion.stix_taxii.import_service import StixBundleImportService
 from app.ingestion.stix_taxii.policy import (
     ApprovedStixSourcePolicy,
+    ApprovedTaxiiCollectionPolicy,
     PRODUCTION_STIX_SOURCE_POLICIES,
+    PRODUCTION_TAXII_COLLECTION_POLICIES,
     SUPPORTED_RELATIONSHIP_TYPES,
     SUPPORTED_STIX_TYPES,
     StixInputTransport,
     StixPolicyError,
     UnknownStixSourceError,
     build_stix_policy_registry,
+    build_taxii_policy_registry,
     get_production_stix_policy,
+    get_production_taxii_policy,
     validate_stix_source_policy,
+    validate_taxii_collection_policy,
 )
 
 
@@ -74,7 +79,7 @@ def test_source_slug_must_be_exactly_canonical(slug):
     "transport",
     ["https", "taxii", "remote", "arbitrary_url", "local_file"],
 )
-def test_only_explicit_offline_transports_are_accepted(transport):
+def test_only_explicit_stix_transports_are_accepted(transport):
     with pytest.raises(StixPolicyError, match="transport"):
         validate_stix_source_policy(policy(allowed_transport=transport))
 
@@ -85,6 +90,221 @@ def test_taxii_fixture_transport_is_explicitly_supported_offline():
     )
 
     assert approved.allowed_transport is StixInputTransport.TAXII_ENVELOPE_FIXTURE
+
+
+def taxii_policy(**changes):
+    stix = policy(allowed_transport=StixInputTransport.TAXII_21_COLLECTION)
+    value = ApprovedTaxiiCollectionPolicy(
+        stix_policy=stix,
+        api_root_url="https://taxii.example/api/root-1",
+        collection_id="11111111-1111-4111-8111-111111111111",
+    )
+    return replace(value, **changes)
+
+
+def test_taxii_policy_is_frozen_derived_bounded_and_registry_is_immutable():
+    approved = validate_taxii_collection_policy(taxii_policy())
+    registry = build_taxii_policy_registry((approved,))
+
+    assert approved.objects_endpoint == (
+        "https://taxii.example/api/root-1/collections/"
+        "11111111-1111-4111-8111-111111111111/objects/"
+    )
+    assert approved.maximum_response_bytes == 2 * 1024 * 1024
+    assert approved.maximum_total_response_bytes == 8 * 1024 * 1024
+    assert approved.maximum_pages == 10
+    assert approved.maximum_total_objects == 500
+    assert approved.maximum_pagination_token_length == 1024
+    assert approved.total_collection_deadline_seconds == 60.0
+    assert isinstance(registry, MappingProxyType)
+    with pytest.raises(FrozenInstanceError):
+        approved.collection_id = "changed"  # type: ignore[misc]
+    with pytest.raises(TypeError):
+        registry["other"] = approved  # type: ignore[index]
+
+
+def test_production_taxii_registry_is_empty_and_lookup_is_sanitized():
+    assert dict(PRODUCTION_TAXII_COLLECTION_POLICIES) == {}
+    with pytest.raises(UnknownStixSourceError) as caught:
+        get_production_taxii_policy("unapproved-source")
+    assert "unapproved-source" not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    "api_root_url",
+    [
+        "http://taxii.example/api/root",
+        "https://user:secret@taxii.example/api/root",
+        "https://127.0.0.1/api/root",
+        "https://TAXII.example/api/root",
+        "https://taxii.example.:443/api/root",
+        "https://taxii.example:8443/api/root",
+        "https://taxii.example/api/root?secret=x",
+        "https://taxii.example/api/root#fragment",
+        "https://taxii.example/api/../root",
+        "https://taxii.example/api/%2e%2e/root",
+        "https://taxii.example/api//root",
+        "https://taxii.example",
+        "https://faß.de/api/root",
+    ],
+)
+def test_taxii_api_root_rejects_noncanonical_or_unsafe_values(api_root_url):
+    with pytest.raises(StixPolicyError, match="API root"):
+        validate_taxii_collection_policy(taxii_policy(api_root_url=api_root_url))
+
+
+@pytest.mark.parametrize(
+    "collection_id",
+    [
+        "",
+        ".",
+        "..",
+        "/collection",
+        "../collection",
+        "collection%2fother",
+        "a/b",
+        "a?b",
+        "a#b",
+        " a",
+        "a ",
+        "a\n",
+        "é",
+    ],
+)
+def test_taxii_collection_id_rejects_ambiguous_values(collection_id):
+    with pytest.raises(StixPolicyError, match="identifier"):
+        validate_taxii_collection_policy(taxii_policy(collection_id=collection_id))
+
+
+def test_taxii_policy_requires_live_transport_and_coherent_limits():
+    with pytest.raises(StixPolicyError, match="live transport"):
+        validate_taxii_collection_policy(
+            taxii_policy(stix_policy=policy())
+        )
+    with pytest.raises(StixPolicyError, match="exceed"):
+        validate_taxii_collection_policy(
+            taxii_policy(maximum_total_objects=501)
+        )
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "maximum_response_bytes",
+        "maximum_total_response_bytes",
+        "maximum_pages",
+        "maximum_total_objects",
+        "maximum_pagination_token_length",
+    ],
+)
+@pytest.mark.parametrize(
+    "value",
+    [0, -1, True, 1.5, float("nan"), float("inf"), float("-inf")],
+)
+def test_taxii_integer_limits_reject_non_positive_or_non_integer_values(
+    field,
+    value,
+):
+    with pytest.raises(StixPolicyError, match="positive integers"):
+        validate_taxii_collection_policy(taxii_policy(**{field: value}))
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "connect_timeout_seconds",
+        "read_timeout_seconds",
+        "write_timeout_seconds",
+        "pool_timeout_seconds",
+        "total_collection_deadline_seconds",
+    ],
+)
+@pytest.mark.parametrize(
+    "value",
+    [0, -1, True, float("nan"), float("inf"), float("-inf")],
+)
+def test_taxii_timeouts_reject_non_positive_boolean_or_non_finite_values(
+    field,
+    value,
+):
+    with pytest.raises(StixPolicyError, match="finite and positive"):
+        validate_taxii_collection_policy(taxii_policy(**{field: value}))
+
+
+def test_taxii_policy_rejects_limits_that_exceed_related_stix_boundaries():
+    with pytest.raises(StixPolicyError, match="exceed"):
+        validate_taxii_collection_policy(
+            taxii_policy(
+                maximum_response_bytes=101,
+                maximum_total_response_bytes=100,
+            )
+        )
+
+    byte_limited_stix = replace(
+        taxii_policy().stix_policy,
+        maximum_file_bytes=100,
+    )
+    with pytest.raises(StixPolicyError, match="exceed"):
+        validate_taxii_collection_policy(
+            taxii_policy(
+                stix_policy=byte_limited_stix,
+                maximum_response_bytes=101,
+                maximum_total_response_bytes=101,
+            )
+        )
+
+    object_limited_stix = replace(
+        taxii_policy().stix_policy,
+        maximum_objects=1,
+    )
+    with pytest.raises(StixPolicyError, match="exceed"):
+        validate_taxii_collection_policy(
+            taxii_policy(
+                stix_policy=object_limited_stix,
+                maximum_total_objects=2,
+            )
+        )
+
+    string_limited_stix = replace(
+        taxii_policy().stix_policy,
+        maximum_json_string_length=10,
+    )
+    with pytest.raises(StixPolicyError, match="exceed"):
+        validate_taxii_collection_policy(
+            taxii_policy(
+                stix_policy=string_limited_stix,
+                maximum_pagination_token_length=11,
+            )
+        )
+
+
+def test_taxii_pagination_token_limit_may_equal_stix_string_limit():
+    stix = replace(
+        taxii_policy().stix_policy,
+        maximum_json_string_length=1024,
+    )
+
+    approved = validate_taxii_collection_policy(
+        taxii_policy(
+            stix_policy=stix,
+            maximum_pagination_token_length=1024,
+        )
+    )
+
+    assert approved.maximum_pagination_token_length == 1024
+
+
+def test_production_taxii_entrypoint_has_no_network_target_arguments():
+    from app.ingestion.stix_taxii.taxii_client import (
+        TaxiiCollectionClient,
+        collect_production_taxii_collection,
+    )
+
+    names = set(inspect.signature(TaxiiCollectionClient.collect).parameters)
+    names |= set(inspect.signature(collect_production_taxii_collection).parameters)
+    assert names.isdisjoint(
+        {"server", "api_root", "collection", "endpoint", "url", "path", "headers", "cookies"}
+    )
 
 
 @pytest.mark.parametrize(
