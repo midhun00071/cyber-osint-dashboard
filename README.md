@@ -979,6 +979,7 @@ authoritative detailed references:
 
 | Area | Canonical document |
 | --- | --- |
+| Phase A evidence and Phase B start checkpoint | [Phase A baseline](docs/phase-a-baseline.md) |
 | System design and data flow | [Architecture](docs/architecture.md) |
 | Implemented and candidate sources | [Data sources](docs/data-sources.md) |
 | Vendor-family decisions | [Source assessment matrix](docs/source-assessment-matrix.md) |
