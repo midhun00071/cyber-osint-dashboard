@@ -5,7 +5,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-alpha_data_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_locally}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set for local Compose}
       POSTGRES_DB: ${POSTGRES_DB:-alpha_data_db}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
@@ -28,18 +28,19 @@ services:
     restart: unless-stopped
     environment:
       APP_NAME: ${APP_NAME:-Cyber OSINT Dashboard}
-      APP_ENV: ${APP_ENV:-development}
-      DEBUG: ${DEBUG:-true}
+      APP_ENV: ${APP_ENV:-local}
+      DEBUG: ${DEBUG:-false}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
       POSTGRES_DB: ${POSTGRES_DB:-alpha_data_db}
       POSTGRES_USER: ${POSTGRES_USER:-alpha_data_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_locally}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set for local Compose}
       BACKEND_CORS_ALLOWED_ORIGINS: ${BACKEND_CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      BACKEND_TRUSTED_HOSTS: ${BACKEND_TRUSTED_HOSTS:-localhost,127.0.0.1,[::1],testserver}
       NVD_API_KEY: ${NVD_API_KEY:-}
       FETCH_INTERVAL_MINUTES: ${FETCH_INTERVAL_MINUTES:-30}
-      ENABLE_ADMIN_INGESTION: ${ENABLE_ADMIN_INGESTION:-true}
+      ENABLE_ADMIN_INGESTION: ${ENABLE_ADMIN_INGESTION:-false}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     depends_on:
@@ -52,10 +53,11 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        APP_ENV: local
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-}
     container_name: alpha-data-frontend
     restart: unless-stopped
-    environment:
-      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
     depends_on:

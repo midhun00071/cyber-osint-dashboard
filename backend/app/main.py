@@ -1,11 +1,12 @@
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.api.v1.query_validation import (
     VALIDATION_ERROR_DETAIL,
@@ -16,7 +17,7 @@ from app.api.v1.routes.dashboard import router as dashboard_router
 from app.api.v1.routes.health import router as health_router
 from app.api.v1.routes.intelligence import router as intelligence_router
 from app.api.v1.routes.version import router as version_router
-from app.core.config import get_settings
+from app.core.config import MAX_HTTP_HOST_HEADER_BYTES, Settings, get_settings
 from app.core.logging_config import configure_logging
 from app.core.request_context import (
     RequestContextMiddleware,
@@ -25,9 +26,58 @@ from app.core.request_context import (
 from app.core.security_headers import SecurityHeadersMiddleware
 
 settings = get_settings()
+settings.validate_startup()
 configure_logging(settings.log_level)
 
 logger = logging.getLogger(__name__)
+INVALID_HOST_RESPONSE = "Invalid host header"
+
+
+class ExactHostMiddleware:
+    """Enforce one exact normalized HTTP Host value without redirects."""
+
+    def __init__(self, app: ASGIApp, allowed_hosts: Sequence[str]) -> None:
+        if not allowed_hosts:
+            raise ValueError("At least one trusted host is required.")
+        self.app = app
+        self.allowed_hosts = frozenset(allowed_hosts)
+
+    async def __call__(
+        self,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+    ) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        raw_hosts = [
+            value
+            for name, value in scope.get("headers", [])
+            if name.lower() == b"host"
+        ]
+        normalized_host: str | None = None
+        if len(raw_hosts) == 1 and isinstance(raw_hosts[0], bytes):
+            raw_host = raw_hosts[0]
+            if len(raw_host) <= MAX_HTTP_HOST_HEADER_BYTES:
+                try:
+                    decoded_host = raw_host.decode("ascii")
+                    normalized_host = Settings.normalize_http_host_header(
+                        decoded_host
+                    )
+                except (UnicodeDecodeError, ValueError):
+                    normalized_host = None
+
+        if normalized_host not in self.allowed_hosts:
+            response = PlainTextResponse(
+                INVALID_HOST_RESPONSE,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+            await response(scope, receive, send)
+            return
+
+        await self.app(scope, receive, send)
 
 
 @asynccontextmanager
@@ -58,6 +108,11 @@ app.add_middleware(
     allow_credentials=False,
     allow_methods=["GET"],
     allow_headers=[],
+)
+# Exact Host validation is independent of CORS and protects non-browser clients.
+app.add_middleware(
+    ExactHostMiddleware,
+    allowed_hosts=settings.trusted_hosts_list,
 )
 # Request context wraps CORS so preflight responses also receive correlation IDs.
 app.add_middleware(RequestContextMiddleware)

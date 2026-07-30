@@ -18,6 +18,8 @@ def health_check() -> dict[str, str]:
     return {
         "status": "ok",
         "service": settings.app_name,
-        "environment": settings.app_env,
+        # Kept as a fixed compatibility label for the existing frontend. Never
+        # expose the configured environment identity through this public route.
+        "environment": "not-disclosed",
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }

@@ -7,7 +7,8 @@ defensive cybersecurity OSINT dashboard. It is written for a developer or
 deployment operator who must safely validate, deploy, update, troubleshoot,
 stop, or roll back the currently implemented Docker Compose stack.
 
-The guide documents the repository's existing local production-style baseline.
+The guide documents the repository's existing local production-style baseline
+and the B1-01 fail-closed configuration boundary.
 It does not claim to provide cloud orchestration, TLS termination, automated
 backups, monitoring, or enterprise secret management. A real production
 deployment must supply those controls outside this repository.
@@ -85,17 +86,34 @@ it to Git. The required variables are:
 
 - `POSTGRES_DB`
 - `POSTGRES_USER`
-- `POSTGRES_PASSWORD`
+- `POSTGRES_PASSWORD_SECRET_FILE`
 - `BACKEND_CORS_ALLOWED_ORIGINS`
+- `BACKEND_TRUSTED_HOSTS`
 - `NEXT_PUBLIC_API_BASE_URL`
 
-`POSTGRES_PASSWORD` has no committed default. Use a strong deployment secret.
-It protects the current privileged initialization and runtime database role;
-the security section records that role's known least-privilege limitation.
+`POSTGRES_PASSWORD_SECRET_FILE` contains only the absolute path to a protected
+regular file holding the strong deployment password. Compose mounts that file
+as `/run/secrets/postgres_password` for PostgreSQL, backend, and migration; it
+does not place the password value in container environment metadata. The secret
+protects the current privileged initialization and runtime database role; the
+security section records that role's known least-privilege limitation.
+Direct `POSTGRES_PASSWORD` and credential-bearing `DATABASE_URL` values are not
+production inputs and are rejected by the protected backend boundary.
 `BACKEND_CORS_ALLOWED_ORIGINS` must contain explicit trusted HTTPS origins; a
-wildcard is invalid. `NEXT_PUBLIC_API_BASE_URL` is public browser configuration,
-never a secret. Next.js embeds it in browser-delivered assets during the image
-build, so changing it requires rebuilding and redeploying the frontend image.
+wildcard is invalid. `BACKEND_TRUSTED_HOSTS` must contain exact non-loopback
+hostnames with no wildcard, scheme, port, path, or credentials.
+At runtime the backend requires exactly one Host header. DNS names are compared
+case-insensitively; canonical IPv4 and bracketed canonical IPv6 are supported;
+and an optional decimal port from 1 through 65535 is validated and then removed
+before exact comparison. Missing, duplicate, malformed, ambiguous-numeric, or
+unlisted Host values receive a fixed HTTP `400`. The boundary performs no DNS
+lookup, suffix or wildcard match, rejected-value echo, or implicit `www.`
+redirect.
+`NEXT_PUBLIC_API_BASE_URL` is public configuration, not a secret. It is never a secret.
+Next.js embeds it in browser-delivered assets during the image
+build. Changing it requires a frontend rebuild and redeployment.
+The same build receives explicit `APP_ENV=production`; the validated canonical
+identity is embedded as `NEXT_PUBLIC_APP_ENV` so browser and build checks agree.
 
 Production Compose fixes `APP_ENV=production`, `DEBUG=false`, and
 `ENABLE_ADMIN_INGESTION=false`; do not weaken those controls. The production
@@ -104,6 +122,17 @@ stack does not receive `NVD_API_KEY` and does not expose an ingestion route.
 The template also lists optional image tag, application metadata, log level,
 loopback bind address, and host-port overrides. Do not place API keys, tokens,
 complete database URLs, or other credentials in source-controlled files.
+
+Backend configuration is validated eagerly before FastAPI reports availability.
+Missing database components, unreadable or invalid password files,
+unsafe CORS/trusted-host entries, `DEBUG=true`, or
+`ENABLE_ADMIN_INGESTION=true` stop staging and production startup. The public
+health response does not disclose the configured environment identity.
+
+APR-10 remains `Need Approval`. No secret-management provider or
+provider-specific credential-delivery mechanism is selected by B1-01. Keep
+credential-dependent approval-gated integrations disabled until both approval
+and valid configuration exist.
 
 In the examples below, set `$ProdEnv` to the absolute path of the completed
 external file:
@@ -191,8 +220,9 @@ a suspected stale layer, or following an approved release procedure:
 docker compose -f $ComposeFile --env-file $ProdEnv build --no-cache backend frontend
 ```
 
-`NEXT_PUBLIC_API_BASE_URL` is the only current frontend build argument. It is
-public configuration, not a secret; changing it requires a frontend rebuild.
+`APP_ENV=production` and `NEXT_PUBLIC_API_BASE_URL` are the frontend build
+arguments. Both are non-secret; changing the public API URL requires a frontend
+rebuild.
 Never supply passwords, tokens, keys, database URLs, or other secrets as build
 arguments. Review build logs for accidental disclosure, then identify and record
 the resulting image tags and IDs without recording environment values:
@@ -246,23 +276,38 @@ ps` reports all three runtime services healthy before continuing.
 The backend health route and frontend root are availability checks. The version,
 dashboard, article, and intelligence routes are functional smoke checks. With
 the database migrated, each request below should return HTTP `200`; assignment
-to a variable avoids printing response bodies unnecessarily:
+to a variable avoids printing response bodies unnecessarily. Set
+`$BackendHostHeader` to the first exact approved host in
+`BACKEND_TRUSTED_HOSTS`; direct loopback requests must carry that Host header so
+they exercise the same TrustedHost boundary as deployed traffic:
 
 ```powershell
-$SmokeChecks = @(
+$BackendHostHeader = "api.example.invalid"
+$BackendSmokeChecks = @(
     "http://127.0.0.1:8000/api/health",
     "http://127.0.0.1:8000/api/version",
     "http://127.0.0.1:8000/api/v1/dashboard/summary",
     "http://127.0.0.1:8000/api/v1/articles",
-    "http://127.0.0.1:8000/api/v1/intelligence/items",
-    "http://127.0.0.1:3000/"
+    "http://127.0.0.1:8000/api/v1/intelligence/items"
 )
 
-foreach ($Uri in $SmokeChecks) {
-    $Response = Invoke-WebRequest -UseBasicParsing -Uri $Uri -TimeoutSec 10
+foreach ($Uri in $BackendSmokeChecks) {
+    $Response = Invoke-WebRequest `
+        -UseBasicParsing `
+        -Uri $Uri `
+        -Headers @{ Host = $BackendHostHeader } `
+        -TimeoutSec 10
     if ($Response.StatusCode -ne 200) {
         throw "Deployment smoke check failed for $Uri."
     }
+}
+
+$FrontendResponse = Invoke-WebRequest `
+    -UseBasicParsing `
+    -Uri "http://127.0.0.1:3000/" `
+    -TimeoutSec 10
+if ($FrontendResponse.StatusCode -ne 200) {
+    throw "Deployment smoke check failed for the frontend."
 }
 ```
 
@@ -273,15 +318,17 @@ not evidence that the service is healthy.
 ## CORS validation
 
 Set `$ApprovedOrigin` to the exact trusted HTTPS frontend origin already stored
-in `BACKEND_CORS_ALLOWED_ORIGINS`. Send both checks only to the local backend:
+in `BACKEND_CORS_ALLOWED_ORIGINS`. Reuse the exact approved
+`$BackendHostHeader` defined above. Send both checks only to the local backend:
 
 ```powershell
-$ApprovedOrigin = "https://dashboard.example.com"
+$ApprovedOrigin = "https://dashboard.example.invalid"
 $ApprovedPreflight = Invoke-WebRequest `
     -UseBasicParsing `
     -Method Options `
     -Uri "http://127.0.0.1:8000/api/health" `
     -Headers @{
+        Host = $BackendHostHeader
         Origin = $ApprovedOrigin
         "Access-Control-Request-Method" = "GET"
     }
@@ -299,7 +346,10 @@ if ($ApprovedPreflight.Headers["Access-Control-Allow-Credentials"]) {
 $UnapprovedResponse = Invoke-WebRequest `
     -UseBasicParsing `
     -Uri "http://127.0.0.1:8000/api/health" `
-    -Headers @{ Origin = "https://unapproved.invalid" }
+    -Headers @{
+        Host = $BackendHostHeader
+        Origin = "https://unapproved.invalid"
+    }
 
 if ($UnapprovedResponse.Headers["Access-Control-Allow-Origin"]) {
     throw "An unapproved CORS origin received browser permission."
@@ -324,12 +374,18 @@ by contacting the unapproved domain.
 - No application source, Docker socket, environment file, or host directory is
   mounted into a production container.
 - PostgreSQL data is stored in the named `postgres_data` volume.
+- The database password is mounted as the same read-only Compose secret into
+  PostgreSQL, backend, and the manual migration service; it is not an
+  environment value or image build argument.
 - Runtime services use `restart: unless-stopped`.
 - The local Docker log driver is bounded to three 10 MB files per service.
 - Backend and frontend images define local health checks and contain no reload
   server, Next.js development server, or startup ingestion command.
 - Production requires exact HTTPS CORS origins; wildcard origins and browser
   credentials are disabled.
+- Runtime Host enforcement requires one syntactically valid header and compares
+  its normalized host exactly against `BACKEND_TRUSTED_HOSTS`; ports do not
+  widen the allow-list and unlisted hosts are never redirected.
 - Normal startup does not run Alembic migrations.
 
 The FastAPI startup path performs no ingestion. P7-01 does not add a scheduler,
@@ -372,7 +428,7 @@ restarts.
 
 | Symptom | Safe checks and likely cause |
 | --- | --- |
-| Missing required environment value | Recheck the five required variable names in the protected file; use `config --quiet`, never resolved output. |
+| Missing required environment value | Recheck the six required variable names in the protected file and confirm `POSTGRES_PASSWORD_SECRET_FILE` names a readable protected regular file; use `config --quiet`, never resolved output. |
 | Windows command cannot reach Docker | Confirm Docker Desktop is running, the engine answers `docker version`, and Linux containers are enabled. |
 | Port conflict | Use `Get-NetTCPConnection` to identify the listener; stop only an approved process or use a reviewed host-port override. |
 | Production build fails | Review the bounded build error, disk capacity, dependency retrieval, and checked-out source; do not add secrets as build arguments. |
@@ -530,7 +586,7 @@ resolved Compose output, response bodies, or sensitive logs:
 - No CI/CD deployment workflow is implemented.
 - No orchestration platform, autoscaling, or zero-downtime deployment exists.
 - Enterprise secret management and automated secret rotation are not
-  integrated.
+  integrated; APR-10 remains `Need Approval` and no provider is selected.
 - No separate restricted PostgreSQL application role is provisioned; backend
   and migration reuse the privileged initialization role.
 - The backend production image installs the shared `requirements.txt`, which

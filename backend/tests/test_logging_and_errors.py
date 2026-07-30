@@ -320,6 +320,7 @@ def test_log_level_defaults_and_supported_values_are_normalized(
         _env_file=None,
         APP_ENV="production",
         BACKEND_CORS_ALLOWED_ORIGINS="https://dashboard.example.com",
+        BACKEND_TRUSTED_HOSTS="api.example.invalid",
     )
     assert production.log_level == "INFO"
     assert production.debug is False
@@ -344,6 +345,7 @@ def test_production_rejects_debug_error_pages() -> None:
             APP_ENV="production",
             DEBUG=True,
             BACKEND_CORS_ALLOWED_ORIGINS="https://dashboard.example.com",
+            BACKEND_TRUSTED_HOSTS="api.example.invalid",
         )
 
 
@@ -390,9 +392,10 @@ def test_invalid_logging_configuration_does_not_change_handlers_or_leak() -> Non
 def test_middleware_order_preserves_security_request_context_and_cors() -> None:
     middleware_names = [middleware.cls.__name__ for middleware in app.user_middleware]
 
-    assert middleware_names[:4] == [
+    assert middleware_names[:5] == [
         "SecurityHeadersMiddleware",
         "RequestContextMiddleware",
+        "ExactHostMiddleware",
         "CORSMiddleware",
         "UnexpectedExceptionMiddleware",
     ]

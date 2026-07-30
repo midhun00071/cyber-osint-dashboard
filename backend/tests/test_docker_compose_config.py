@@ -23,7 +23,7 @@ def test_backend_compose_uses_component_database_settings() -> None:
     assert backend_environment["POSTGRES_USER"] == "${POSTGRES_USER:-alpha_data_user}"
     assert (
         backend_environment["POSTGRES_PASSWORD"]
-        == "${POSTGRES_PASSWORD:-change_me_locally}"
+        == "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set for local Compose}"
     )
 
 
@@ -36,3 +36,28 @@ def test_backend_compose_uses_explicit_cors_allow_list_setting() -> None:
         "${BACKEND_CORS_ALLOWED_ORIGINS:-http://localhost:3000,"
         "http://127.0.0.1:3000}"
     )
+    assert backend_environment["BACKEND_TRUSTED_HOSTS"] == (
+        "${BACKEND_TRUSTED_HOSTS:-localhost,127.0.0.1,[::1],testserver}"
+    )
+
+
+def test_local_compose_uses_safe_runtime_controls() -> None:
+    compose_config = load_compose_config()
+    backend_environment = compose_config["services"]["backend"]["environment"]
+
+    assert backend_environment["APP_ENV"] == "${APP_ENV:-local}"
+    assert backend_environment["DEBUG"] == "${DEBUG:-false}"
+    assert backend_environment["ENABLE_ADMIN_INGESTION"] == (
+        "${ENABLE_ADMIN_INGESTION:-false}"
+    )
+
+
+def test_local_frontend_identity_and_api_url_are_build_arguments() -> None:
+    compose_config = load_compose_config()
+    frontend = compose_config["services"]["frontend"]
+
+    assert frontend["build"]["args"] == {
+        "APP_ENV": "local",
+        "NEXT_PUBLIC_API_BASE_URL": "${NEXT_PUBLIC_API_BASE_URL:-}",
+    }
+    assert "environment" not in frontend

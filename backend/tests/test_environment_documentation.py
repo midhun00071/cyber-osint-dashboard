@@ -80,7 +80,7 @@ def test_example_files_use_only_safe_secret_placeholders() -> None:
         assignments = parse_active_assignments(example_file)
         for name, value in assignments.items():
             if name.endswith("PASSWORD"):
-                assert value == "" or value.startswith("replace_with_")
+                assert value in {"", "change-me-in-secret-store"}
             if name.endswith("API_KEY"):
                 assert value == "" or value.startswith("replace_with_")
 
@@ -240,8 +240,9 @@ def test_production_compose_still_requires_sensitive_values() -> None:
     for variable in (
         "POSTGRES_DB",
         "POSTGRES_USER",
-        "POSTGRES_PASSWORD",
+        "POSTGRES_PASSWORD_SECRET_FILE",
         "BACKEND_CORS_ALLOWED_ORIGINS",
+        "BACKEND_TRUSTED_HOSTS",
         "NEXT_PUBLIC_API_BASE_URL",
     ):
         assert f"${{{variable}:?" in compose_text
@@ -249,3 +250,32 @@ def test_production_compose_still_requires_sensitive_values() -> None:
     lowered = compose_text.lower()
     assert "change_me" not in lowered
     assert "password123" not in lowered
+
+
+def test_b1_01_environment_matrix_and_pending_provider_boundary_are_documented() -> None:
+    documentation = ENVIRONMENT_DOCUMENTATION.read_text(encoding="utf-8").lower()
+
+    for identity in ("local", "test", "staging", "production"):
+        assert f"`{identity}`" in documentation
+    for required_phrase in (
+        "b1-01",
+        "development",
+        "compatibility alias",
+        "eager startup validation",
+        "backend-only",
+        "secret reference",
+        "secret value",
+        "apr-10",
+        "need approval",
+        "no secret-management provider",
+    ):
+        assert required_phrase in documentation
+
+
+def test_documentation_examples_do_not_contain_synthetic_canary_secret() -> None:
+    documentation = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (ENVIRONMENT_DOCUMENTATION, PRODUCTION_DOCUMENTATION)
+    )
+
+    assert "SUPER_SECRET_B1_01_CANARY" not in documentation

@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 
 import pytest
 from pydantic import SecretStr, ValidationError
@@ -43,6 +44,121 @@ def test_component_database_url_preserves_reserved_password_characters() -> None
     assert settings.sqlalchemy_database_url.password == password
 
 
+@pytest.mark.parametrize("environment", ["staging", "production"])
+def test_password_file_builds_url_and_removes_only_terminal_line_endings(
+    tmp_path: Path,
+    environment: str,
+) -> None:
+    password_file = tmp_path / "postgres-password"
+    password_file.write_bytes(b"first\nsecond\r\n")
+    settings = make_settings(
+        APP_ENV=environment,
+        POSTGRES_HOST="db.example.invalid",
+        POSTGRES_PORT=5432,
+        POSTGRES_DB="cyber_osint",
+        POSTGRES_USER="cyber_osint_app",
+        POSTGRES_PASSWORD_FILE=str(password_file),
+        BACKEND_CORS_ALLOWED_ORIGINS="https://dashboard.example.invalid",
+        BACKEND_TRUSTED_HOSTS="api.example.invalid",
+    )
+
+    assert settings.sqlalchemy_database_url.password == "first\nsecond"
+
+
+@pytest.mark.parametrize("content", [b"", b"\r\n", b"contains\x00nul"])
+def test_password_file_rejects_empty_or_nul_content(
+    tmp_path: Path,
+    content: bytes,
+) -> None:
+    password_file = tmp_path / "postgres-password"
+    password_file.write_bytes(content)
+    settings = make_settings(
+        POSTGRES_HOST="localhost",
+        POSTGRES_PORT=5432,
+        POSTGRES_DB="cyber_osint",
+        POSTGRES_USER="cyber_osint_app",
+        POSTGRES_PASSWORD_FILE=str(password_file),
+    )
+
+    with pytest.raises(ValueError, match="invalid secret content"):
+        _ = settings.sqlalchemy_database_url
+
+
+def test_password_file_rejects_non_file_missing_and_oversized_references(
+    tmp_path: Path,
+) -> None:
+    oversized_file = tmp_path / "oversized-password"
+    oversized_file.write_bytes(b"x" * 4097)
+    base = {
+        "POSTGRES_HOST": "localhost",
+        "POSTGRES_PORT": 5432,
+        "POSTGRES_DB": "cyber_osint",
+        "POSTGRES_USER": "cyber_osint_app",
+    }
+
+    for reference, expected in (
+        (tmp_path / "missing", "readable regular file"),
+        (tmp_path, "readable regular file"),
+        (oversized_file, "permitted size"),
+    ):
+        settings = make_settings(**base, POSTGRES_PASSWORD_FILE=str(reference))
+        with pytest.raises(ValueError, match=expected) as exc_info:
+            _ = settings.sqlalchemy_database_url
+        assert str(reference) not in str(exc_info.value)
+
+
+def test_password_file_secret_is_not_exposed_in_repr_dump_or_error(
+    tmp_path: Path,
+) -> None:
+    secret = "synthetic-password-file-canary"
+    password_file = tmp_path / "postgres-password"
+    password_file.write_text(secret, encoding="utf-8")
+    settings = make_settings(
+        POSTGRES_PORT=5432,
+        POSTGRES_DB="cyber_osint",
+        POSTGRES_USER="cyber_osint_app",
+        POSTGRES_PASSWORD_FILE=str(password_file),
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        _ = settings.sqlalchemy_database_url
+
+    material = "\n".join(
+        (str(exc_info.value), repr(settings), str(settings.model_dump()))
+    )
+    assert secret not in material
+
+
+@pytest.mark.parametrize("environment", ["staging", "production"])
+def test_protected_environments_reject_direct_database_secrets(
+    environment: str,
+) -> None:
+    network = {
+        "APP_ENV": environment,
+        "BACKEND_CORS_ALLOWED_ORIGINS": "https://dashboard.example.invalid",
+        "BACKEND_TRUSTED_HOSTS": "api.example.invalid",
+    }
+
+    with pytest.raises(ValidationError, match="DATABASE_URL is not permitted"):
+        make_settings(
+            **network,
+            DATABASE_URL="postgresql://user:secret@db.example.invalid/app_db",
+        )
+    with pytest.raises(ValidationError, match="POSTGRES_PASSWORD is not permitted"):
+        make_settings(**network, POSTGRES_PASSWORD="synthetic-secret")
+
+
+def test_direct_password_and_password_file_are_never_ambiguous(tmp_path: Path) -> None:
+    password_file = tmp_path / "postgres-password"
+    password_file.write_text("synthetic-file-secret", encoding="utf-8")
+
+    with pytest.raises(ValidationError, match="Configure only one"):
+        make_settings(
+            POSTGRES_PASSWORD="synthetic-direct-secret",
+            POSTGRES_PASSWORD_FILE=str(password_file),
+        )
+
+
 def test_component_password_is_masked_in_normal_logging(caplog) -> None:
     password = "p@ss:/%#?synthetic-only"
     settings = make_settings(
@@ -63,7 +179,7 @@ def test_component_password_is_masked_in_normal_logging(caplog) -> None:
     assert "**********" in logged_output
 
 
-def test_database_url_override_takes_precedence() -> None:
+def test_database_url_has_explicit_precedence_over_component_settings() -> None:
     settings = make_settings(
         DATABASE_URL="postgresql+psycopg://override_user:override_pass@db:5432/override_db",
         POSTGRES_HOST="localhost",
@@ -93,8 +209,19 @@ def test_unsupported_database_scheme_is_rejected() -> None:
         DATABASE_URL="sqlite:///local.db",
     )
 
-    with pytest.raises(ValueError, match="Unsupported database scheme"):
+    with pytest.raises(ValueError, match="unsupported database scheme"):
         _ = settings.sqlalchemy_database_url
+
+
+def test_malformed_database_url_is_rejected_without_exposing_it() -> None:
+    canary = "synthetic-test-secret"
+    settings = make_settings(DATABASE_URL=f"malformed-{canary}")
+
+    with pytest.raises(ValueError) as exc_info:
+        _ = settings.sqlalchemy_database_url
+
+    assert "DATABASE_URL" in str(exc_info.value)
+    assert canary not in str(exc_info.value)
 
 
 def test_missing_components_report_variable_names_without_secret_values() -> None:
@@ -165,6 +292,64 @@ def test_nvd_api_key_is_masked_in_normal_logging(monkeypatch, caplog) -> None:
 def test_postgres_port_outside_valid_range_is_rejected(port: int) -> None:
     with pytest.raises(ValidationError):
         make_settings(POSTGRES_PORT=port)
+
+
+@pytest.mark.parametrize(
+    "host",
+    [
+        "https://db.example.invalid",
+        "db.example.invalid:5432",
+        "user@db.example.invalid",
+        "db.example.invalid/name",
+        "db.example.invalid?x=1",
+        "db.example.invalid#fragment",
+        "db.example.invalid\n",
+        "2130706433",
+        "0x7f000001",
+        "017700000001",
+        "127.1",
+    ],
+)
+def test_invalid_postgres_hosts_are_rejected_without_echoing_value(host: str) -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        make_settings(POSTGRES_HOST=host)
+
+    assert "POSTGRES_HOST" in str(exc_info.value)
+    assert host not in str(exc_info.value)
+
+
+@pytest.mark.parametrize("field", ["POSTGRES_DB", "POSTGRES_USER"])
+@pytest.mark.parametrize("value", ["bad/name", "bad name", "bad@name", "bad\nname"])
+def test_invalid_database_identifiers_are_rejected(
+    field: str,
+    value: str,
+) -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        make_settings(**{field: value})
+
+    assert field in str(exc_info.value)
+    assert value not in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "host",
+    ["db.example.invalid", "192.0.2.10", "2001:db8::10", "[2001:db8::10]"],
+)
+def test_valid_database_hosts_render_safely(host: str) -> None:
+    settings = make_settings(
+        POSTGRES_HOST=host,
+        POSTGRES_PORT=5432,
+        POSTGRES_DB="cyber_osint",
+        POSTGRES_USER="cyber_osint_app",
+        POSTGRES_PASSWORD="synthetic-secret",
+    )
+
+    rendered_url = settings.sqlalchemy_database_url.render_as_string(
+        hide_password=False
+    )
+    assert "@/" not in rendered_url
+    assert "?" not in rendered_url
+    assert "#" not in rendered_url
 
 
 def test_existing_non_database_settings_still_behave_correctly() -> None:

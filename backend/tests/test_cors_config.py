@@ -117,13 +117,14 @@ def test_invalid_or_non_origin_configuration_is_rejected(
 
 
 def test_production_requires_explicit_non_loopback_https_origins() -> None:
-    with pytest.raises(ValidationError, match="non-loopback HTTPS origins"):
+    with pytest.raises(ValidationError, match="BACKEND_CORS_ALLOWED_ORIGINS"):
         make_settings(APP_ENV="production")
 
     with pytest.raises(ValidationError, match="non-loopback HTTPS origins"):
         make_settings(
             APP_ENV="production",
             BACKEND_CORS_ALLOWED_ORIGINS="http://dashboard.example.com",
+            BACKEND_TRUSTED_HOSTS="api.example.invalid",
         )
 
 
@@ -142,6 +143,7 @@ def test_production_rejects_loopback_origins(loopback_origin: str) -> None:
         make_settings(
             APP_ENV="production",
             BACKEND_CORS_ALLOWED_ORIGINS=loopback_origin,
+            BACKEND_TRUSTED_HOSTS="api.example.invalid",
         )
 
 
@@ -160,10 +162,56 @@ def test_development_accepts_known_loopback_origins() -> None:
     ]
 
 
+@pytest.mark.parametrize("environment", ["local", "test"])
+def test_local_environments_accept_only_canonical_loopback_origin_forms(
+    environment: str,
+) -> None:
+    settings = make_settings(
+        APP_ENV=environment,
+        BACKEND_CORS_ALLOWED_ORIGINS=(
+            "https://localhost:3000,https://127.0.0.1:3000,https://[::1]:3000"
+        ),
+    )
+
+    assert settings.cors_origins_list == [
+        "https://localhost:3000",
+        "https://127.0.0.1:3000",
+        "https://[::1]:3000",
+    ]
+
+
+@pytest.mark.parametrize("environment", ["staging", "production"])
+@pytest.mark.parametrize(
+    "configured_origin",
+    [
+        "https://127.1",
+        "https://127.0.1",
+        "https://2130706433",
+        "https://0x7f000001",
+        "https://017700000001",
+    ],
+)
+def test_protected_environments_reject_ambiguous_numeric_cors_hosts_without_echo(
+    environment: str,
+    configured_origin: str,
+) -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        make_settings(
+            APP_ENV=environment,
+            BACKEND_CORS_ALLOWED_ORIGINS=configured_origin,
+            BACKEND_TRUSTED_HOSTS="api.example.invalid",
+        )
+
+    message = str(exc_info.value)
+    assert "BACKEND_CORS_ALLOWED_ORIGINS" in message
+    assert configured_origin not in message
+
+
 def test_production_accepts_an_explicit_https_allow_list() -> None:
     settings = make_settings(
         APP_ENV="production",
         BACKEND_CORS_ALLOWED_ORIGINS="https://dashboard.example.com",
+        BACKEND_TRUSTED_HOSTS="api.example.invalid",
     )
 
     assert settings.cors_origins_list == ["https://dashboard.example.com"]
@@ -173,9 +221,33 @@ def test_production_does_not_reject_non_loopback_private_ip_origins() -> None:
     settings = make_settings(
         APP_ENV="production",
         BACKEND_CORS_ALLOWED_ORIGINS="https://10.0.0.5:8443",
+        BACKEND_TRUSTED_HOSTS="api.example.invalid",
     )
 
     assert settings.cors_origins_list == ["https://10.0.0.5:8443"]
+
+
+@pytest.mark.parametrize("environment", ["staging", "production"])
+@pytest.mark.parametrize(
+    ("configured_origin", "expected_origin"),
+    [
+        ("https://dashboard.example.invalid", "https://dashboard.example.invalid"),
+        ("https://192.0.2.10:8443", "https://192.0.2.10:8443"),
+        ("https://[2001:db8::10]:8443", "https://[2001:db8::10]:8443"),
+    ],
+)
+def test_protected_environments_accept_valid_dns_ipv4_and_ipv6_origins(
+    environment: str,
+    configured_origin: str,
+    expected_origin: str,
+) -> None:
+    settings = make_settings(
+        APP_ENV=environment,
+        BACKEND_CORS_ALLOWED_ORIGINS=configured_origin,
+        BACKEND_TRUSTED_HOSTS="api.example.invalid",
+    )
+
+    assert settings.cors_origins_list == [expected_origin]
 
 
 @pytest.mark.parametrize(
@@ -207,4 +279,115 @@ def test_equivalent_default_port_origins_deduplicate() -> None:
     assert settings.cors_origins_list == [
         "http://dashboard.example.com",
         "https://dashboard.example.com",
+    ]
+
+
+def test_local_trusted_host_defaults_are_narrow_and_explicit() -> None:
+    settings = make_settings(APP_ENV="local")
+
+    assert settings.trusted_hosts_list == [
+        "localhost",
+        "127.0.0.1",
+        "[::1]",
+        "testserver",
+    ]
+    assert "*" not in settings.trusted_hosts_list
+
+
+@pytest.mark.parametrize(
+    "configured_hosts",
+    [
+        "*",
+        "*.example.invalid",
+        "",
+        "api.example.invalid,",
+        "https://api.example.invalid",
+        "api.example.invalid:8000",
+        "user@api.example.invalid",
+        "api.example.invalid/path",
+        "127.1",
+        "127.0.1",
+        "2130706433",
+        "0x7f000001",
+        "017700000001",
+    ],
+)
+def test_invalid_trusted_hosts_are_rejected(configured_hosts: str) -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        make_settings(BACKEND_TRUSTED_HOSTS=configured_hosts)
+
+    assert "BACKEND_TRUSTED_HOSTS" in str(exc_info.value)
+    if configured_hosts:
+        assert configured_hosts not in str(exc_info.value)
+
+
+@pytest.mark.parametrize("environment", ["staging", "production"])
+@pytest.mark.parametrize(
+    "host",
+    ["localhost", "127.0.0.1", "[::1]", "0.0.0.0", "[::]"],
+)
+def test_protected_environments_reject_loopback_trusted_hosts(
+    environment: str,
+    host: str,
+) -> None:
+    with pytest.raises(ValidationError, match="non-loopback hosts"):
+        make_settings(
+            APP_ENV=environment,
+            BACKEND_CORS_ALLOWED_ORIGINS="https://dashboard.example.invalid",
+            BACKEND_TRUSTED_HOSTS=host,
+        )
+
+
+@pytest.mark.parametrize("environment", ["staging", "production"])
+@pytest.mark.parametrize(
+    "host",
+    ["127.1", "127.0.1", "2130706433", "0x7f000001", "017700000001"],
+)
+def test_protected_environments_reject_ambiguous_numeric_trusted_hosts(
+    environment: str,
+    host: str,
+) -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        make_settings(
+            APP_ENV=environment,
+            BACKEND_CORS_ALLOWED_ORIGINS="https://dashboard.example.invalid",
+            BACKEND_TRUSTED_HOSTS=host,
+        )
+
+    assert "BACKEND_TRUSTED_HOSTS" in str(exc_info.value)
+    assert host not in str(exc_info.value)
+
+
+def test_valid_non_loopback_trusted_hosts_are_accepted_and_normalized() -> None:
+    settings = make_settings(
+        BACKEND_TRUSTED_HOSTS=(
+            "api.example.invalid,192.0.2.10,2001:db8::10"
+        )
+    )
+
+    assert settings.trusted_hosts_list == [
+        "api.example.invalid",
+        "192.0.2.10",
+        "[2001:db8::10]",
+    ]
+
+
+@pytest.mark.parametrize("environment", ["staging", "production"])
+def test_protected_environments_accept_representative_non_loopback_hosts(
+    environment: str,
+) -> None:
+    settings = make_settings(
+        APP_ENV=environment,
+        BACKEND_CORS_ALLOWED_ORIGINS="https://dashboard.example.invalid",
+        BACKEND_TRUSTED_HOSTS=(
+            "api.example.invalid,dashboard.example.invalid,"
+            "192.0.2.10,2001:db8::10"
+        ),
+    )
+
+    assert settings.trusted_hosts_list == [
+        "api.example.invalid",
+        "dashboard.example.invalid",
+        "192.0.2.10",
+        "[2001:db8::10]",
     ]
