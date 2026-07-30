@@ -1,0 +1,826 @@
+from __future__ import annotations
+
+from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta, timezone
+import ipaddress
+import os
+from pathlib import Path
+import time
+from uuid import uuid4
+
+from alembic import command
+from alembic.config import Config
+import pytest
+from sqlalchemy import create_engine, func, select
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.pool import NullPool
+from sqlalchemy.orm import Session
+
+from app.core.config import get_settings
+from app.db.base import Base
+import app.models  # noqa: F401
+from app.ingestion.source_registry import list_source_definitions
+from app.ingestion.services.operational_persistence_service import (
+    DeferReason,
+    OperationalConflictError,
+    OperationalLockUnavailableError,
+    OperationalStaleStateError,
+    OperationalValidationError,
+    OperationalPersistenceService,
+    RunCounters,
+)
+from app.models import (
+    AuditEvent,
+    IngestionCycle,
+    IngestionRun,
+    IngestionRunEvent,
+    IntelligenceSource,
+    SourceCheckpoint,
+    SourceRateLimitState,
+    SourceWatermark,
+)
+
+
+BACKEND = Path(__file__).resolve().parents[1]
+TEST_URL_ENV = "B104_POSTGRESQL_TEST_DATABASE_URL"
+HEAD = "b103a71d2e4f"
+NOW = datetime.now(UTC).replace(microsecond=0)
+ZERO = RunCounters(0, 0, 0, 0, 0, 0, 0)
+CREATED = RunCounters(1, 1, 0, 0, 0, 0, 0)
+UNCHANGED = RunCounters(1, 0, 0, 1, 0, 0, 0)
+UNSAFE_SUMMARY_CANARIES = (
+    "postgresql://service:secret@localhost:5432/database",
+    "mysql://service:secret@localhost/database",
+    "Authorization: Bearer secret-token",
+    "Authorization=Basic dXNlcjpwYXNz",
+    "Basic dXNlcjpwYXNz",
+    "password=hunter2",
+    "api_key=secret-value",
+    "access-token=secret-value",
+    "cookie=session=secret-value",
+    "-----BEGIN PRIVATE KEY-----",
+    "Traceback (most recent call last):",
+    "Stack trace: internal application frame",
+    "SELECT secret_value FROM credentials;",
+    "SQL: SELECT secret_value FROM credentials;",
+    "Query failed: DELETE FROM source_records;",
+    "Statement: INSERT INTO audit_events VALUES (...);",
+    "Database statement was DROP TABLE source_records;",
+    "Raw query: ALTER TABLE ingestion_runs ADD COLUMN x integer;",
+    "Executed query: UPDATE intelligence_sources SET is_enabled = false;",
+    "Diagnostic: CREATE TABLE leaked_records (id integer);",
+    "summary\x00secret",
+)
+
+
+@pytest.fixture(scope="session")
+def pg_engine():
+    raw_url = os.environ.get(TEST_URL_ENV)
+    if not raw_url:
+        pytest.skip(f"{TEST_URL_ENV} is not configured")
+    url = make_url(raw_url)
+    if url.get_backend_name() != "postgresql":
+        pytest.fail("B1-04 acceptance requires PostgreSQL.")
+    host = (url.host or "").strip("[]").lower()
+    try:
+        loopback = ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        loopback = host == "localhost"
+    if not loopback or not (url.database or "").startswith("b104_test_"):
+        pytest.fail("B1-04 acceptance requires a disposable loopback database.")
+
+    prior = os.environ.get("DATABASE_URL")
+    os.environ["DATABASE_URL"] = raw_url
+    get_settings.cache_clear()
+    probe = create_engine(url, poolclass=NullPool)
+    ready = False
+    for _ in range(30):
+        try:
+            with probe.connect() as connection:
+                connection.execute(select(1))
+            ready = True
+            break
+        except OperationalError:
+            time.sleep(1)
+    probe.dispose()
+    if not ready:
+        pytest.fail("The disposable PostgreSQL database did not become ready.")
+    config = Config(str(BACKEND / "alembic.ini"))
+    command.upgrade(config, "base")
+    command.upgrade(config, HEAD)
+    engine = create_engine(url, poolclass=NullPool)
+    try:
+        yield engine
+    finally:
+        engine.dispose()
+        if prior is None:
+            os.environ.pop("DATABASE_URL", None)
+        else:
+            os.environ["DATABASE_URL"] = prior
+        get_settings.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def isolated_rows(pg_engine):
+    with pg_engine.begin() as connection:
+        for table in reversed(Base.metadata.sorted_tables):
+            connection.execute(table.delete())
+        for definition in list_source_definitions():
+            connection.execute(
+                IntelligenceSource.__table__.insert().values(
+                    name=definition.display_name,
+                    slug=definition.slug,
+                    source_type=definition.source_type,
+                    base_url=definition.base_url,
+                    is_enabled=definition.enabled,
+                    rate_limit_notes=definition.rate_limit_notes,
+                    last_successful_fetch_at=None,
+                    checkpoint_value=None,
+                    created_at=NOW,
+                    updated_at=NOW,
+                )
+            )
+
+
+def cycle(service: OperationalPersistenceService, *, expected: int = 1):
+    return service.acquire_cycle(
+        trigger_type="manual",
+        manual_request_key=f"request-{uuid4()}",
+        sources_expected=expected,
+        occurred_at=NOW,
+    )
+
+
+def committed_cycle(engine, *, expected: int = 1):
+    with Session(engine) as session, session.begin():
+        row = cycle(OperationalPersistenceService(session), expected=expected)
+        row_id = row.id
+    return row_id
+
+
+def committed_run(engine, slug: str):
+    cycle_id = committed_cycle(engine)
+    with Session(engine) as session, session.begin():
+        row = OperationalPersistenceService(session).acquire_source_run(
+            cycle_id=cycle_id, source_slug=slug, occurred_at=NOW
+        )
+        row_id = row.id
+    return row_id
+
+
+def pending_run(engine, slug: str, counters: RunCounters = CREATED):
+    run_id = committed_run(engine, slug)
+    with Session(engine) as session, session.begin():
+        row = OperationalPersistenceService(session).record_persistence_commit(
+            run_id=run_id, expected_state_version=1, counters=counters, occurred_at=NOW
+        )
+        assert row.status == "checkpoint_pending"
+    return run_id
+
+
+def counts(session, model):
+    return session.scalar(select(func.count()).select_from(model))
+
+
+def run_evidence(session, run_id):
+    run = session.get(IngestionRun, run_id)
+    return (
+        run.status,
+        run.state_version,
+        run.safe_summary,
+        session.scalar(
+            select(func.count())
+            .select_from(IngestionRunEvent)
+            .where(IngestionRunEvent.ingestion_run_id == run_id)
+        ),
+        counts(session, SourceCheckpoint),
+        counts(session, SourceWatermark),
+    )
+
+
+def test_cycle_and_initial_audit_commit_atomically(pg_engine) -> None:
+    committed_cycle(pg_engine)
+    with Session(pg_engine) as session:
+        assert counts(session, IngestionCycle) == 1
+        assert counts(session, AuditEvent) == 1
+
+
+def test_cycle_rollback_leaves_neither_row(pg_engine) -> None:
+    with Session(pg_engine) as session:
+        transaction = session.begin()
+        cycle(OperationalPersistenceService(session))
+        transaction.rollback()
+    with Session(pg_engine) as session:
+        assert counts(session, IngestionCycle) == counts(session, AuditEvent) == 0
+
+
+def test_duplicate_cycle_returns_one_row_after_commit(pg_engine) -> None:
+    request = f"request-{uuid4()}"
+    with Session(pg_engine) as session, session.begin():
+        first = OperationalPersistenceService(session).acquire_cycle(
+            trigger_type="manual", manual_request_key=request,
+            sources_expected=1, occurred_at=NOW,
+        )
+        first_id = first.id
+    with Session(pg_engine) as session, session.begin():
+        second = OperationalPersistenceService(session).acquire_cycle(
+            trigger_type="manual", manual_request_key=request,
+            sources_expected=1, occurred_at=NOW + timedelta(minutes=1),
+        )
+        assert second.id == first_id
+        assert counts(session, AuditEvent) == 1
+
+
+def test_conflicting_duplicate_cycle_inputs_are_rejected(pg_engine) -> None:
+    request = f"request-{uuid4()}"
+    with Session(pg_engine) as session, session.begin():
+        OperationalPersistenceService(session).acquire_cycle(
+            trigger_type="manual", manual_request_key=request, sources_expected=1
+        )
+    with Session(pg_engine) as session, session.begin():
+        with pytest.raises(OperationalConflictError):
+            OperationalPersistenceService(session).acquire_cycle(
+                trigger_type="manual", manual_request_key=request, sources_expected=2
+            )
+
+
+def test_initial_operational_run_has_complete_identity_and_acquired_event(pg_engine) -> None:
+    run_id = committed_run(pg_engine, "censys-arc-research")
+    with Session(pg_engine) as session:
+        run = session.get(IngestionRun, run_id)
+        assert run is not None
+        assert (run.cycle_id is not None and run.idempotency_key is not None)
+        assert (run.attempt_number, run.retry_of_run_id, run.state_version, run.status) == (0, None, 1, "running")
+        events = session.scalars(select(IngestionRunEvent).where(IngestionRunEvent.ingestion_run_id == run_id)).all()
+        assert [(event.sequence_number, event.event_type) for event in events] == [(1, "acquired")]
+
+
+def test_exact_duplicate_run_returns_same_row_without_duplicate_event(pg_engine) -> None:
+    cycle_id = committed_cycle(pg_engine)
+    with Session(pg_engine) as session, session.begin():
+        first = OperationalPersistenceService(session).acquire_source_run(cycle_id=cycle_id, source_slug="censys-arc-research")
+        first_id = first.id
+    with Session(pg_engine) as session, session.begin():
+        second = OperationalPersistenceService(session).acquire_source_run(cycle_id=cycle_id, source_slug="censys-arc-research")
+        assert second.id == first_id
+        assert counts(session, IngestionRunEvent) == 1
+
+
+def test_active_same_source_run_prevents_another_start(pg_engine) -> None:
+    committed_run(pg_engine, "censys-arc-research")
+    other_cycle = committed_cycle(pg_engine)
+    with Session(pg_engine) as session, session.begin():
+        with pytest.raises(OperationalConflictError, match="active"):
+            OperationalPersistenceService(session).acquire_source_run(cycle_id=other_cycle, source_slug="censys-arc-research")
+
+
+def test_lock_contention_fails_promptly(pg_engine) -> None:
+    cycle_one = committed_cycle(pg_engine)
+    cycle_two = committed_cycle(pg_engine)
+    with Session(pg_engine) as first, first.begin():
+        OperationalPersistenceService(first).acquire_source_run(cycle_id=cycle_one, source_slug="censys-arc-research")
+        with Session(pg_engine) as second, second.begin():
+            with pytest.raises(OperationalLockUnavailableError):
+                OperationalPersistenceService(second).acquire_source_run(cycle_id=cycle_two, source_slug="censys-arc-research")
+
+
+def test_concurrent_source_acquisitions_cannot_both_start(pg_engine) -> None:
+    cycle_ids = (committed_cycle(pg_engine), committed_cycle(pg_engine))
+    def worker(cycle_id):
+        with Session(pg_engine) as session, session.begin():
+            try:
+                OperationalPersistenceService(session).acquire_source_run(cycle_id=cycle_id, source_slug="censys-arc-research")
+                return "started"
+            except (OperationalLockUnavailableError, OperationalConflictError):
+                return "blocked"
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(worker, cycle_ids))
+    assert sorted(outcomes) == ["blocked", "started"]
+
+
+def test_transitional_active_run_prevents_operational_start(pg_engine) -> None:
+    with Session(pg_engine) as session, session.begin():
+        source = session.scalar(select(IntelligenceSource).where(IntelligenceSource.slug == "censys-arc-research"))
+        session.add(IngestionRun(source_id=source.id, trigger_type="manual", status="running", records_fetched=0, records_created=0, records_updated=0, records_unchanged=0, records_skipped=0, records_failed=0, error_count=0))
+    cycle_id = committed_cycle(pg_engine)
+    with Session(pg_engine) as session, session.begin():
+        with pytest.raises(OperationalConflictError):
+            OperationalPersistenceService(session).acquire_source_run(cycle_id=cycle_id, source_slug="censys-arc-research")
+
+
+def test_retry_creates_next_attempt_with_immediate_ancestry(pg_engine) -> None:
+    prior_id = committed_run(pg_engine, "censys-arc-research")
+    with Session(pg_engine) as session, session.begin():
+        OperationalPersistenceService(session).complete_partial_or_failure(run_id=prior_id, expected_state_version=1, status="failed", counters=ZERO, run_level_error=True)
+    with Session(pg_engine) as session, session.begin():
+        retry = OperationalPersistenceService(session).acquire_retry(prior_run_id=prior_id)
+        assert (retry.attempt_number, retry.retry_of_run_id, retry.trigger_type) == (1, prior_id, "retry")
+
+
+def test_duplicate_retry_returns_existing_retry(pg_engine) -> None:
+    prior_id = committed_run(pg_engine, "censys-arc-research")
+    with Session(pg_engine) as session, session.begin():
+        OperationalPersistenceService(session).complete_partial_or_failure(run_id=prior_id, expected_state_version=1, status="failed", counters=ZERO, run_level_error=True)
+    with Session(pg_engine) as session, session.begin():
+        first = OperationalPersistenceService(session).acquire_retry(prior_run_id=prior_id)
+        first_id = first.id
+        OperationalPersistenceService(session).complete_partial_or_failure(run_id=first_id, expected_state_version=1, status="failed", counters=ZERO, run_level_error=True)
+    with Session(pg_engine) as session, session.begin():
+        second = OperationalPersistenceService(session).acquire_retry(prior_run_id=prior_id)
+        assert second.id == first_id
+
+
+def test_retry_stale_parent_is_rejected(pg_engine) -> None:
+    prior_id = committed_run(pg_engine, "censys-arc-research")
+    with Session(pg_engine) as session, session.begin():
+        service = OperationalPersistenceService(session)
+        service.complete_partial_or_failure(run_id=prior_id, expected_state_version=1, status="failed", counters=ZERO, run_level_error=True)
+        retry = service.acquire_retry(prior_run_id=prior_id)
+        service.complete_partial_or_failure(run_id=retry.id, expected_state_version=1, status="failed", counters=ZERO, run_level_error=True)
+        service.acquire_retry(prior_run_id=retry.id)
+    with Session(pg_engine) as session, session.begin():
+        with pytest.raises(OperationalConflictError):
+            OperationalPersistenceService(session).acquire_retry(prior_run_id=prior_id)
+
+
+def test_attempt_eleven_is_rejected(pg_engine) -> None:
+    prior_id = committed_run(pg_engine, "censys-arc-research")
+    for attempt in range(1, 11):
+        with Session(pg_engine) as session, session.begin():
+            service = OperationalPersistenceService(session)
+            service.complete_partial_or_failure(run_id=prior_id, expected_state_version=1, status="failed", counters=ZERO, run_level_error=True)
+            prior_id = service.acquire_retry(prior_run_id=prior_id).id
+    with Session(pg_engine) as session, session.begin():
+        service = OperationalPersistenceService(session)
+        service.complete_partial_or_failure(run_id=prior_id, expected_state_version=1, status="failed", counters=ZERO, run_level_error=True)
+        with pytest.raises(OperationalValidationError):
+            service.acquire_retry(prior_run_id=prior_id)
+
+
+def test_stale_run_state_version_is_rejected(pg_engine) -> None:
+    run_id = committed_run(pg_engine, "censys-arc-research")
+    with Session(pg_engine) as session, session.begin():
+        with pytest.raises(OperationalStaleStateError):
+            OperationalPersistenceService(session).record_persistence_commit(run_id=run_id, expected_state_version=2, counters=CREATED)
+
+
+def test_rollback_preserves_prior_status_version_and_events(pg_engine) -> None:
+    run_id = committed_run(pg_engine, "censys-arc-research")
+    with Session(pg_engine) as session:
+        transaction = session.begin()
+        OperationalPersistenceService(session).record_persistence_commit(run_id=run_id, expected_state_version=1, counters=CREATED)
+        transaction.rollback()
+    with Session(pg_engine) as session:
+        run = session.get(IngestionRun, run_id)
+        assert (run.status, run.state_version) == ("running", 1)
+        assert counts(session, IngestionRunEvent) == 1
+
+
+def test_none_source_completes_directly_and_atomically(pg_engine) -> None:
+    run_id = committed_run(pg_engine, "censys-arc-research")
+    with Session(pg_engine) as session, session.begin():
+        run = OperationalPersistenceService(session).record_persistence_commit(run_id=run_id, expected_state_version=1, counters=CREATED)
+        assert (run.status, run.state_version, run.completed_at is not None) == ("success", 2, True)
+        assert [event.event_type for event in session.scalars(select(IngestionRunEvent).where(IngestionRunEvent.ingestion_run_id == run_id).order_by(IngestionRunEvent.sequence_number))] == ["acquired", "persistence_committed", "completed"]
+        assert counts(session, SourceCheckpoint) == counts(session, SourceWatermark) == 0
+
+
+def test_none_source_no_change_is_truthful(pg_engine) -> None:
+    run_id = committed_run(pg_engine, "censys-arc-research")
+    with Session(pg_engine) as session, session.begin():
+        run = OperationalPersistenceService(session).record_persistence_commit(run_id=run_id, expected_state_version=1, counters=ZERO)
+        assert run.status == "no_change"
+
+
+@pytest.mark.parametrize("slug", ["cisa-kev", "nvd"])
+def test_progress_sources_become_pending_after_persistence(pg_engine, slug) -> None:
+    run_id = committed_run(pg_engine, slug)
+    with Session(pg_engine) as session, session.begin():
+        run = OperationalPersistenceService(session).record_persistence_commit(run_id=run_id, expected_state_version=1, counters=CREATED)
+        assert (run.status, run.state_version, run.completed_at) == ("checkpoint_pending", 2, None)
+
+
+@pytest.mark.parametrize(
+    ("status", "reason"),
+    [
+        ("skipped", None), ("deferred_quota", DeferReason.QUOTA),
+        ("approval_pending", DeferReason.APPROVAL), ("disabled", DeferReason.SOURCE_DISABLED),
+        ("credentials_missing", DeferReason.CREDENTIALS), ("licence_required", DeferReason.LICENCE),
+        ("rate_limited", DeferReason.RATE_LIMIT),
+    ],
+)
+def test_non_request_outcomes_are_zero_and_do_not_advance_progress(pg_engine, status, reason) -> None:
+    run_id = committed_run(pg_engine, "cisa-kev")
+    with Session(pg_engine) as session, session.begin():
+        run = OperationalPersistenceService(session).complete_non_request(run_id=run_id, expected_state_version=1, status=status, defer_reason=reason)
+        assert run.status == status
+        assert counts(session, SourceCheckpoint) == 0
+
+
+def test_partial_requires_completed_and_failed_or_skipped_work(pg_engine) -> None:
+    run_id = committed_run(pg_engine, "censys-arc-research")
+    counters = RunCounters(2, 1, 0, 0, 0, 1, 1)
+    with Session(pg_engine) as session, session.begin():
+        run = OperationalPersistenceService(session).complete_partial_or_failure(run_id=run_id, expected_state_version=1, status="partial", counters=counters)
+        assert run.status == "partial"
+
+
+@pytest.mark.parametrize(
+    "summary_path",
+    (
+        "acquire_cycle",
+        "record_persistence_commit",
+        "complete_non_request",
+        "complete_partial_or_failure",
+        "abandon_pending_progress",
+    ),
+)
+@pytest.mark.parametrize("canary", UNSAFE_SUMMARY_CANARIES)
+def test_every_safe_summary_path_rejects_unsafe_content_without_mutation(
+    pg_engine, summary_path, canary
+) -> None:
+    run_id = None
+    if summary_path == "abandon_pending_progress":
+        run_id = pending_run(pg_engine, "cisa-kev")
+    elif summary_path != "acquire_cycle":
+        run_id = committed_run(pg_engine, "censys-arc-research")
+
+    with Session(pg_engine) as session:
+        transaction = session.begin()
+        before = None if run_id is None else run_evidence(session, run_id)
+        service = OperationalPersistenceService(session)
+        with pytest.raises(OperationalValidationError) as exc_info:
+            if summary_path == "acquire_cycle":
+                service.acquire_cycle(
+                    trigger_type="manual",
+                    manual_request_key=f"request-{uuid4()}",
+                    sources_expected=1,
+                    safe_summary=canary,
+                )
+            elif summary_path == "record_persistence_commit":
+                service.record_persistence_commit(
+                    run_id=run_id,
+                    expected_state_version=1,
+                    counters=CREATED,
+                    safe_summary=canary,
+                )
+            elif summary_path == "complete_non_request":
+                service.complete_non_request(
+                    run_id=run_id,
+                    expected_state_version=1,
+                    status="skipped",
+                    safe_summary=canary,
+                )
+            elif summary_path == "complete_partial_or_failure":
+                service.complete_partial_or_failure(
+                    run_id=run_id,
+                    expected_state_version=1,
+                    status="failed",
+                    counters=ZERO,
+                    run_level_error=True,
+                    safe_summary=canary,
+                )
+            else:
+                service.abandon_pending_progress(
+                    run_id=run_id,
+                    expected_state_version=2,
+                    status="failed",
+                    safe_summary=canary,
+                )
+        assert canary not in str(exc_info.value)
+        transaction.rollback()
+
+    with Session(pg_engine) as session:
+        if run_id is None:
+            assert counts(session, IngestionCycle) == counts(session, AuditEvent) == 0
+        else:
+            assert run_evidence(session, run_id) == before
+
+
+@pytest.mark.parametrize(
+    "summary_path",
+    (
+        "acquire_cycle",
+        "record_persistence_commit",
+        "complete_non_request",
+        "complete_partial_or_failure",
+        "abandon_pending_progress",
+    ),
+)
+def test_every_safe_summary_path_accepts_ordinary_prose(pg_engine, summary_path) -> None:
+    prose = "Bounded ingestion outcome recorded for operator review."
+    if summary_path == "acquire_cycle":
+        with Session(pg_engine) as session, session.begin():
+            row = OperationalPersistenceService(session).acquire_cycle(
+                trigger_type="manual",
+                manual_request_key=f"request-{uuid4()}",
+                sources_expected=1,
+                safe_summary=prose,
+            )
+            assert row.safe_summary == prose
+        return
+
+    run_id = (
+        pending_run(pg_engine, "cisa-kev")
+        if summary_path == "abandon_pending_progress"
+        else committed_run(pg_engine, "censys-arc-research")
+    )
+    with Session(pg_engine) as session, session.begin():
+        service = OperationalPersistenceService(session)
+        if summary_path == "record_persistence_commit":
+            row = service.record_persistence_commit(
+                run_id=run_id, expected_state_version=1, counters=CREATED,
+                safe_summary=prose,
+            )
+        elif summary_path == "complete_non_request":
+            row = service.complete_non_request(
+                run_id=run_id, expected_state_version=1, status="skipped",
+                safe_summary=prose,
+            )
+        elif summary_path == "complete_partial_or_failure":
+            row = service.complete_partial_or_failure(
+                run_id=run_id, expected_state_version=1, status="failed",
+                counters=ZERO, run_level_error=True, safe_summary=prose,
+            )
+        else:
+            row = service.abandon_pending_progress(
+                run_id=run_id, expected_state_version=2, status="failed",
+                safe_summary=prose,
+            )
+        assert row.safe_summary == prose
+
+
+def test_checkpoint_advances_from_committed_pending_run(pg_engine) -> None:
+    run_id = pending_run(pg_engine, "cisa-kev")
+    with Session(pg_engine) as session, session.begin():
+        checkpoint = OperationalPersistenceService(session).advance_checkpoint(run_id=run_id, expected_run_state_version=2, scope_kind="source", partition_key=None, checkpoint_name="catalog", checkpoint_value="v1", expected_previous_version=0, committed_at=NOW + timedelta(seconds=1))
+        assert (checkpoint.version, checkpoint.previous_checkpoint_id) == (1, None)
+        assert session.get(IngestionRun, run_id).status == "success"
+
+
+def test_same_transaction_checkpoint_advancement_fails_closed(pg_engine) -> None:
+    run_id = committed_run(pg_engine, "cisa-kev")
+    with Session(pg_engine) as session, session.begin():
+        service = OperationalPersistenceService(session)
+        service.record_persistence_commit(
+            run_id=run_id, expected_state_version=1, counters=CREATED,
+            occurred_at=NOW,
+        )
+        with pytest.raises(OperationalConflictError, match="Committed persistence"):
+            service.advance_checkpoint(
+                run_id=run_id,
+                expected_run_state_version=2,
+                scope_kind="source",
+                partition_key=None,
+                checkpoint_name="catalog",
+                checkpoint_value="v1",
+                expected_previous_version=0,
+                committed_at=NOW + timedelta(seconds=1),
+            )
+        assert run_evidence(session, run_id) == (
+            "checkpoint_pending", 2, None, 2, 0, 0
+        )
+
+    with Session(pg_engine) as session, session.begin():
+        checkpoint = OperationalPersistenceService(session).advance_checkpoint(
+            run_id=run_id,
+            expected_run_state_version=2,
+            scope_kind="source",
+            partition_key=None,
+            checkpoint_name="catalog",
+            checkpoint_value="v1",
+            expected_previous_version=0,
+            committed_at=NOW + timedelta(seconds=1),
+        )
+        assert checkpoint.version == 1
+
+
+@pytest.mark.parametrize(
+    "checkpoint_value",
+    (
+        "   ",
+        "postgresql://service:secret@localhost/database",
+        "mysql://service:secret@localhost/database",
+        "mssql://service:secret@localhost/database",
+        "redis://service:secret@localhost/0",
+        "Authorization: Bearer secret-token",
+        "Basic dXNlcjpwYXNz",
+        "api_key=secret-value",
+        "-----BEGIN PRIVATE KEY-----",
+    ),
+)
+def test_checkpoint_rejection_preserves_pending_run_and_history(
+    pg_engine, checkpoint_value
+) -> None:
+    run_id = pending_run(pg_engine, "cisa-kev")
+    with Session(pg_engine) as session, session.begin():
+        before = run_evidence(session, run_id)
+        with pytest.raises(OperationalValidationError) as exc_info:
+            OperationalPersistenceService(session).advance_checkpoint(
+                run_id=run_id,
+                expected_run_state_version=2,
+                scope_kind="source",
+                partition_key=None,
+                checkpoint_name="catalog",
+                checkpoint_value=checkpoint_value,
+                expected_previous_version=0,
+            )
+        assert checkpoint_value not in str(exc_info.value)
+        assert run_evidence(session, run_id) == before
+
+
+def test_checkpoint_preserves_an_ordinary_opaque_value(pg_engine) -> None:
+    run_id = pending_run(pg_engine, "cisa-kev")
+    opaque_value = "  cursor::opaque/segment==  "
+    with Session(pg_engine) as session, session.begin():
+        checkpoint = OperationalPersistenceService(session).advance_checkpoint(
+            run_id=run_id,
+            expected_run_state_version=2,
+            scope_kind="source",
+            partition_key=None,
+            checkpoint_name="catalog",
+            checkpoint_value=opaque_value,
+            expected_previous_version=0,
+        )
+        assert checkpoint.checkpoint_value == opaque_value
+
+
+def test_checkpoint_chain_is_monotonic_and_linear(pg_engine) -> None:
+    first_run = pending_run(pg_engine, "cisa-kev")
+    with Session(pg_engine) as session, session.begin():
+        first = OperationalPersistenceService(session).advance_checkpoint(run_id=first_run, expected_run_state_version=2, scope_kind="source", partition_key=None, checkpoint_name="catalog", checkpoint_value="v1", expected_previous_version=0, committed_at=NOW + timedelta(seconds=1))
+        first_id = first.id
+    second_run = pending_run(pg_engine, "cisa-kev")
+    with Session(pg_engine) as session, session.begin():
+        second = OperationalPersistenceService(session).advance_checkpoint(run_id=second_run, expected_run_state_version=2, scope_kind="source", partition_key=None, checkpoint_name="catalog", checkpoint_value="v2", expected_previous_version=1, committed_at=NOW + timedelta(seconds=2))
+        assert (second.version, second.previous_checkpoint_id) == (2, first_id)
+
+
+def test_duplicate_checkpoint_finalization_is_idempotent(pg_engine) -> None:
+    run_id = pending_run(pg_engine, "cisa-kev")
+    kwargs = dict(run_id=run_id, expected_run_state_version=2, scope_kind="source", partition_key=None, checkpoint_name="catalog", checkpoint_value="v1", expected_previous_version=0, committed_at=NOW + timedelta(seconds=1))
+    with Session(pg_engine) as session, session.begin():
+        first_id = OperationalPersistenceService(session).advance_checkpoint(**kwargs).id
+    with Session(pg_engine) as session, session.begin():
+        second = OperationalPersistenceService(session).advance_checkpoint(**kwargs)
+        assert second.id == first_id
+        assert counts(session, SourceCheckpoint) == 1
+        assert counts(session, IngestionRunEvent) == 4
+
+
+def test_stale_checkpoint_advancement_is_rejected(pg_engine) -> None:
+    first_run = pending_run(pg_engine, "cisa-kev")
+    with Session(pg_engine) as session, session.begin():
+        OperationalPersistenceService(session).advance_checkpoint(run_id=first_run, expected_run_state_version=2, scope_kind="source", partition_key=None, checkpoint_name="catalog", checkpoint_value="v1", expected_previous_version=0)
+    second_run = pending_run(pg_engine, "cisa-kev")
+    with Session(pg_engine) as session, session.begin():
+        with pytest.raises(OperationalStaleStateError):
+            OperationalPersistenceService(session).advance_checkpoint(run_id=second_run, expected_run_state_version=2, scope_kind="source", partition_key=None, checkpoint_name="catalog", checkpoint_value="v2", expected_previous_version=0)
+
+
+def test_checkpoint_rollback_leaves_run_pending(pg_engine) -> None:
+    run_id = pending_run(pg_engine, "cisa-kev")
+    with Session(pg_engine) as session:
+        transaction = session.begin()
+        OperationalPersistenceService(session).advance_checkpoint(run_id=run_id, expected_run_state_version=2, scope_kind="source", partition_key=None, checkpoint_name="catalog", checkpoint_value="v1", expected_previous_version=0)
+        transaction.rollback()
+    with Session(pg_engine) as session:
+        run = session.get(IngestionRun, run_id)
+        assert (run.status, run.state_version) == ("checkpoint_pending", 2)
+        assert counts(session, SourceCheckpoint) == 0
+
+
+def test_watermark_values_must_increase(pg_engine) -> None:
+    first_run = pending_run(pg_engine, "nvd")
+    with Session(pg_engine) as session, session.begin():
+        OperationalPersistenceService(session).advance_watermark(run_id=first_run, expected_run_state_version=2, scope_kind="source", partition_key=None, watermark_name="modified", watermark_value=NOW, expected_previous_version=0)
+    second_run = pending_run(pg_engine, "nvd")
+    with Session(pg_engine) as session, session.begin():
+        with pytest.raises(OperationalConflictError):
+            OperationalPersistenceService(session).advance_watermark(run_id=second_run, expected_run_state_version=2, scope_kind="source", partition_key=None, watermark_name="modified", watermark_value=NOW, expected_previous_version=1)
+
+
+def test_same_transaction_watermark_advancement_fails_closed(pg_engine) -> None:
+    run_id = committed_run(pg_engine, "nvd")
+    with Session(pg_engine) as session, session.begin():
+        service = OperationalPersistenceService(session)
+        service.record_persistence_commit(
+            run_id=run_id, expected_state_version=1, counters=CREATED,
+            occurred_at=NOW,
+        )
+        with pytest.raises(OperationalConflictError, match="Committed persistence"):
+            service.advance_watermark(
+                run_id=run_id,
+                expected_run_state_version=2,
+                scope_kind="source",
+                partition_key=None,
+                watermark_name="modified",
+                watermark_value=NOW,
+                expected_previous_version=0,
+                committed_at=NOW + timedelta(seconds=1),
+            )
+        assert run_evidence(session, run_id) == (
+            "checkpoint_pending", 2, None, 2, 0, 0
+        )
+
+    with Session(pg_engine) as session, session.begin():
+        watermark = OperationalPersistenceService(session).advance_watermark(
+            run_id=run_id,
+            expected_run_state_version=2,
+            scope_kind="source",
+            partition_key=None,
+            watermark_name="modified",
+            watermark_value=NOW,
+            expected_previous_version=0,
+            committed_at=NOW + timedelta(seconds=1),
+        )
+        assert watermark.version == 1
+
+
+@pytest.mark.parametrize("watermark_value", [None, datetime(2026, 8, 1, 12, 0)])
+def test_missing_or_naive_watermark_rejection_preserves_pending_state(
+    pg_engine, watermark_value
+) -> None:
+    run_id = pending_run(pg_engine, "nvd")
+    with Session(pg_engine) as session, session.begin():
+        before = run_evidence(session, run_id)
+        with pytest.raises(OperationalValidationError) as exc_info:
+            OperationalPersistenceService(session).advance_watermark(
+                run_id=run_id,
+                expected_run_state_version=2,
+                scope_kind="source",
+                partition_key=None,
+                watermark_name="modified",
+                watermark_value=watermark_value,
+                expected_previous_version=0,
+            )
+        assert str(watermark_value) not in str(exc_info.value)
+        assert run_evidence(session, run_id) == before
+
+
+def test_offset_aware_watermark_normalizes_to_utc(pg_engine) -> None:
+    run_id = pending_run(pg_engine, "nvd")
+    offset_value = NOW.astimezone(timezone(timedelta(hours=4)))
+    with Session(pg_engine) as session, session.begin():
+        watermark = OperationalPersistenceService(session).advance_watermark(
+            run_id=run_id,
+            expected_run_state_version=2,
+            scope_kind="source",
+            partition_key=None,
+            watermark_name="modified",
+            watermark_value=offset_value,
+            expected_previous_version=0,
+        )
+        assert watermark.watermark_value == NOW
+
+
+def test_watermark_rollback_and_duplicate_behavior(pg_engine) -> None:
+    run_id = pending_run(pg_engine, "nvd")
+    kwargs = dict(run_id=run_id, expected_run_state_version=2, scope_kind="source", partition_key=None, watermark_name="modified", watermark_value=NOW, expected_previous_version=0)
+    with Session(pg_engine) as session:
+        transaction = session.begin()
+        OperationalPersistenceService(session).advance_watermark(**kwargs)
+        transaction.rollback()
+    with Session(pg_engine) as session, session.begin():
+        first = OperationalPersistenceService(session).advance_watermark(**kwargs)
+        first_id = first.id
+    with Session(pg_engine) as session, session.begin():
+        assert OperationalPersistenceService(session).advance_watermark(**kwargs).id == first_id
+        assert counts(session, SourceWatermark) == 1
+
+
+def test_rate_state_create_and_exact_version_update(pg_engine) -> None:
+    with Session(pg_engine) as session, session.begin():
+        created = OperationalPersistenceService(session).update_rate_limit_state(source_slug="nvd", policy_key="public-api", expected_state_version=None, state="available", request_limit=10, remaining=9, window_seconds=60, updated_at=NOW)
+        assert created.state_version == 1
+    with Session(pg_engine) as session, session.begin():
+        updated = OperationalPersistenceService(session).update_rate_limit_state(source_slug="nvd", policy_key="public-api", expected_state_version=1, state="limited", request_limit=10, remaining=0, window_seconds=60, updated_at=NOW)
+        assert updated.state_version == 2
+
+
+def test_stale_rate_state_update_is_rejected(pg_engine) -> None:
+    with Session(pg_engine) as session, session.begin():
+        OperationalPersistenceService(session).update_rate_limit_state(source_slug="nvd", policy_key="public-api", expected_state_version=None, state="unknown")
+    with Session(pg_engine) as session, session.begin():
+        with pytest.raises(OperationalStaleStateError):
+            OperationalPersistenceService(session).update_rate_limit_state(source_slug="nvd", policy_key="public-api", expected_state_version=2, state="available")
+
+
+def test_rate_state_source_matched_updater_is_enforced(pg_engine) -> None:
+    run_id = committed_run(pg_engine, "nvd")
+    with Session(pg_engine) as session, session.begin():
+        with pytest.raises(OperationalConflictError):
+            OperationalPersistenceService(session).update_rate_limit_state(source_slug="cisa-kev", policy_key="catalog", expected_state_version=None, state="unknown", updated_by_run_id=run_id)
+
+
+def test_sanitized_exceptions_do_not_disclose_database_or_inputs(pg_engine) -> None:
+    canary = "Bearer very-secret-value"
+    run_id = pending_run(pg_engine, "cisa-kev")
+    with Session(pg_engine) as session, session.begin():
+        with pytest.raises(OperationalValidationError) as exc_info:
+            OperationalPersistenceService(session).advance_checkpoint(run_id=run_id, expected_run_state_version=2, scope_kind="source", partition_key=None, checkpoint_name="catalog", checkpoint_value=canary, expected_previous_version=0)
+        message = str(exc_info.value)
+        assert canary not in message
+        assert "SELECT" not in message
+        assert "postgresql" not in message.casefold()

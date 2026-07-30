@@ -62,6 +62,24 @@ requirement (`authentication_required: false`). NVD supports an optional API key
 for the official service’s higher rate allowance, but the source itself does not
 require authentication.
 
+### B1-04 progress contracts
+
+Every production source declares exactly one developer-controlled progress
+contract. Runtime callers cannot select or override it. The frozen mapping is:
+
+| Progress contract | Canonical source slugs |
+| --- | --- |
+| `watermark` | `nvd`, `first-epss`, `cert-eu-security-advisories`, `google-threat-intelligence-public-research`, `mandiant-public-threat-research` |
+| `checkpoint` | `cisa-kev` |
+| `none` | `censys-arc-research`, `censys-rapid-response-advisories`, `anomali-cyber-watch`, `ibm-x-force-public-research`, `ibm-x-force-public-osint-advisories` |
+
+Checkpoint and watermark sources enter `checkpoint_pending` only after record
+persistence commits and are finalized in a later caller-owned transaction.
+Sources with `none` may complete directly in the persistence transaction. The
+existing transitional writers are not integrated with the B1-04 service and do
+not participate in its advisory locks; they must not run concurrently with new
+operational writers until their separately reviewed migration is complete.
+
 | Canonical slug | Display name / owner | Content family; source type | Fixed base URL; exact approved host | Registry access; structured input |
 | --- | --- | --- | --- | --- |
 | `nvd` | National Vulnerability Database / NIST | `vulnerability`; `api` | `https://services.nvd.nist.gov/rest/json/cves/2.0`; `services.nvd.nist.gov` | `authorized_api`; yes |

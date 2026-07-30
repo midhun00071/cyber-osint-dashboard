@@ -26,6 +26,7 @@ from app.ingestion.source_registry import (
     AccessMethod,
     ContentFamily,
     ImplementationStatus,
+    ProgressContract,
     SourceDefinition,
     SourceRegistryError,
     UnknownSourceError,
@@ -70,6 +71,7 @@ def valid_definition(slug: str = "example-source") -> SourceDefinition:
         structured=False,
         implementation_status=ImplementationStatus.PLANNED,
         enabled=False,
+        progress_contract=ProgressContract.NONE,
     )
 
 
@@ -254,6 +256,34 @@ def test_censys_registry_metadata_remains_distinct_and_safe() -> None:
             "startup_ingestion",
         }
     )
+
+
+def test_exact_frozen_progress_contract_mapping() -> None:
+    expected = {
+        "nvd": ProgressContract.WATERMARK,
+        "first-epss": ProgressContract.WATERMARK,
+        "cert-eu-security-advisories": ProgressContract.WATERMARK,
+        "google-threat-intelligence-public-research": ProgressContract.WATERMARK,
+        "mandiant-public-threat-research": ProgressContract.WATERMARK,
+        "cisa-kev": ProgressContract.CHECKPOINT,
+        "censys-arc-research": ProgressContract.NONE,
+        "censys-rapid-response-advisories": ProgressContract.NONE,
+        "anomali-cyber-watch": ProgressContract.NONE,
+        "ibm-x-force-public-research": ProgressContract.NONE,
+        "ibm-x-force-public-osint-advisories": ProgressContract.NONE,
+    }
+
+    assert {
+        source.slug: source.progress_contract for source in list_source_definitions()
+    } == expected
+
+
+@pytest.mark.parametrize("value", [None, "", "cursor", "CHECKPOINT"])
+def test_progress_contract_is_required_and_closed(value: object) -> None:
+    with pytest.raises(SourceRegistryError, match="progress_contract"):
+        validate_source_definition(
+            replace(valid_definition(), progress_contract=value)  # type: ignore[arg-type]
+        )
 
 
 def test_anomali_cyber_watch_supports_manual_live_and_local_fallback() -> None:

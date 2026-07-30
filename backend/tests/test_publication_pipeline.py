@@ -37,6 +37,7 @@ from app.ingestion.source_registry import (
     AccessMethod,
     ContentFamily,
     ImplementationStatus,
+    ProgressContract,
     SourceDefinition,
 )
 from app.ingestion.services.article_identity_service import (
@@ -221,6 +222,7 @@ def threat_source(slug: str = THREAT_SOURCE_SLUG) -> SourceDefinition:
         structured=False,
         implementation_status=ImplementationStatus.IMPLEMENTED,
         enabled=True,
+        progress_contract=ProgressContract.NONE,
         source_type="rss",
         base_url=f"https://{THREAT_SOURCE_HOST}/feed/{slug}",
         rate_limit_notes="Offline test source only.",

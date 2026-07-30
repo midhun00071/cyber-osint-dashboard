@@ -53,6 +53,34 @@ def test_registry_status_and_manual_only_boundaries_are_explicit() -> None:
         assert phrase in document
 
 
+def test_b1_04_progress_contract_mapping_is_exactly_documented() -> None:
+    document = normalized_document()
+    assert "### B1-04 progress contracts" in document
+    expected = {
+        "watermark": {
+            "nvd", "first-epss", "cert-eu-security-advisories",
+            "google-threat-intelligence-public-research",
+            "mandiant-public-threat-research",
+        },
+        "checkpoint": {"cisa-kev"},
+        "none": {
+            "censys-arc-research", "censys-rapid-response-advisories",
+            "anomali-cyber-watch", "ibm-x-force-public-research",
+            "ibm-x-force-public-osint-advisories",
+        },
+    }
+    for contract, slugs in expected.items():
+        mapping_row = next(
+            line for line in document_text().splitlines()
+            if line.startswith(f"| `{contract}` |")
+        )
+        assert {f"`{slug}`" for slug in slugs} <= set(
+            re.findall(r"`[^`]+`", mapping_row)
+        )
+    assert "Runtime callers cannot select or override it" in document
+    assert "must not run concurrently with new operational writers" in document
+
+
 def test_all_operator_entry_points_and_fixed_source_boundaries_are_documented() -> None:
     document = normalized_document()
 

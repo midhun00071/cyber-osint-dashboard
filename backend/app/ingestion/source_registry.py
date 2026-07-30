@@ -48,6 +48,14 @@ class ContentFamily(str, Enum):
     PUBLIC_OSINT_ADVISORY = "public_osint_advisory"
 
 
+class ProgressContract(str, Enum):
+    """Developer-controlled progress state required after durable persistence."""
+
+    NONE = "none"
+    CHECKPOINT = "checkpoint"
+    WATERMARK = "watermark"
+
+
 @dataclass(frozen=True, slots=True)
 class SourceDefinition:
     """Safe non-secret source metadata controlled by application code."""
@@ -63,6 +71,7 @@ class SourceDefinition:
     structured: bool
     implementation_status: ImplementationStatus
     enabled: bool
+    progress_contract: ProgressContract
     source_type: str | None = None
     base_url: str | None = None
     canonical_publication_hosts: tuple[str, ...] | None = None
@@ -185,6 +194,11 @@ def validate_source_definition(definition: SourceDefinition) -> SourceDefinition
         ImplementationStatus,
         "implementation_status",
     )
+    progress_contract = _enum_value(
+        definition.progress_contract,
+        ProgressContract,
+        "progress_contract",
+    )
     allowed_hosts = tuple(
         _normalize_allowed_host(host) for host in definition.allowed_hosts
     )
@@ -234,6 +248,7 @@ def validate_source_definition(definition: SourceDefinition) -> SourceDefinition
         structured=structured,
         implementation_status=implementation_status,
         enabled=enabled,
+        progress_contract=progress_contract,
         source_type=source_type,
         base_url=base_url,
         canonical_publication_hosts=canonical_publication_hosts,
@@ -352,6 +367,7 @@ _IMPLEMENTED_DEFINITIONS = (
         structured=True,
         implementation_status=ImplementationStatus.IMPLEMENTED,
         enabled=True,
+        progress_contract=ProgressContract.WATERMARK,
         source_type="api",
         base_url="https://services.nvd.nist.gov/rest/json/cves/2.0",
         rate_limit_notes=(
@@ -371,6 +387,7 @@ _IMPLEMENTED_DEFINITIONS = (
         structured=True,
         implementation_status=ImplementationStatus.IMPLEMENTED,
         enabled=True,
+        progress_contract=ProgressContract.WATERMARK,
         source_type="api",
         base_url="https://api.first.org/data/v1/epss",
         rate_limit_notes="Use bounded manual requests to the public FIRST EPSS API.",
@@ -387,6 +404,7 @@ _IMPLEMENTED_DEFINITIONS = (
         structured=True,
         implementation_status=ImplementationStatus.IMPLEMENTED,
         enabled=True,
+        progress_contract=ProgressContract.CHECKPOINT,
         source_type="json",
         base_url=(
             "https://www.cisa.gov/sites/default/files/feeds/"
@@ -408,6 +426,7 @@ _IMPLEMENTED_DEFINITIONS = (
         structured=True,
         implementation_status=ImplementationStatus.IMPLEMENTED,
         enabled=True,
+        progress_contract=ProgressContract.WATERMARK,
         source_type="rss",
         base_url="https://cert.europa.eu/publications/security-advisories-rss",
         rate_limit_notes="Manual bounded requests to the approved CERT-EU RSS feed only.",
@@ -424,6 +443,7 @@ _IMPLEMENTED_DEFINITIONS = (
         structured=False,
         implementation_status=ImplementationStatus.IMPLEMENTED,
         enabled=True,
+        progress_contract=ProgressContract.NONE,
         source_type="json",
         base_url="https://censys.com/blog/",
         rate_limit_notes=(
@@ -444,6 +464,7 @@ _IMPLEMENTED_DEFINITIONS = (
         structured=False,
         implementation_status=ImplementationStatus.IMPLEMENTED,
         enabled=True,
+        progress_contract=ProgressContract.NONE,
         source_type="json",
         base_url="https://censys.com/advisory/",
         rate_limit_notes=(
@@ -464,6 +485,7 @@ _IMPLEMENTED_DEFINITIONS = (
         structured=False,
         implementation_status=ImplementationStatus.IMPLEMENTED,
         enabled=True,
+        progress_contract=ProgressContract.NONE,
         source_type="json",
         base_url="https://www.anomali.com/blog",
         rate_limit_notes=(
@@ -487,6 +509,7 @@ _IMPLEMENTED_DEFINITIONS = (
         structured=False,
         implementation_status=ImplementationStatus.IMPLEMENTED,
         enabled=True,
+        progress_contract=ProgressContract.NONE,
         source_type="json",
         base_url="https://www.ibm.com/think/x-force/",
         rate_limit_notes=(
@@ -505,6 +528,7 @@ _IMPLEMENTED_DEFINITIONS = (
         structured=False,
         implementation_status=ImplementationStatus.IMPLEMENTED,
         enabled=True,
+        progress_contract=ProgressContract.NONE,
         source_type="json",
         base_url="https://exchange.xforce.ibmcloud.com/osint/",
         rate_limit_notes=(
@@ -524,6 +548,7 @@ _IMPLEMENTED_DEFINITIONS = (
         structured=True,
         implementation_status=ImplementationStatus.IMPLEMENTED,
         enabled=True,
+        progress_contract=ProgressContract.WATERMARK,
         source_type="rss",
         base_url="https://feeds.feedburner.com/threatintelligence/pvexyqv7v0v",
         canonical_publication_hosts=("cloud.google.com",),
@@ -544,6 +569,7 @@ _IMPLEMENTED_DEFINITIONS = (
         structured=True,
         implementation_status=ImplementationStatus.IMPLEMENTED,
         enabled=True,
+        progress_contract=ProgressContract.WATERMARK,
         source_type="rss",
         base_url="https://feeds.feedburner.com/threatintelligence/pvexyqv7v0v",
         canonical_publication_hosts=("cloud.google.com",),
