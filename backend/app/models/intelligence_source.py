@@ -17,6 +17,11 @@ if TYPE_CHECKING:
     from app.models.ingestion_run import IngestionRun
     from app.models.intelligence_item_identifier import IntelligenceItemIdentifier
     from app.models.source_record import SourceRecord
+    from app.models.quarantined_record import QuarantinedRecord
+    from app.models.source_checkpoint import SourceCheckpoint
+    from app.models.source_credential_reference import SourceCredentialReference
+    from app.models.source_rate_limit_state import SourceRateLimitState
+    from app.models.source_watermark import SourceWatermark
 
 
 SOURCE_TYPE_VALUES = ("api", "rss", "csv", "json")
@@ -67,10 +72,48 @@ class IntelligenceSource(
     ingestion_runs: Mapped[list[IngestionRun]] = relationship(
         "IngestionRun",
         back_populates="source",
+        foreign_keys="[IngestionRun.source_id]",
         passive_deletes=True,
+        overlaps=(
+            "advanced_by_run,advanced_checkpoints,advanced_watermarks,"
+            "updated_by_run,updated_rate_limit_states,quarantined_records"
+        ),
     )
     indicator_provenances: Mapped[list[IndicatorProvenance]] = relationship(
         "IndicatorProvenance",
+        back_populates="source",
+        passive_deletes=True,
+    )
+    source_checkpoints: Mapped[list[SourceCheckpoint]] = relationship(
+        "SourceCheckpoint",
+        back_populates="source",
+        foreign_keys="[SourceCheckpoint.source_id]",
+        passive_deletes=True,
+        overlaps="advanced_by_run,advanced_checkpoints,previous_checkpoint,next_checkpoint",
+    )
+    source_watermarks: Mapped[list[SourceWatermark]] = relationship(
+        "SourceWatermark",
+        back_populates="source",
+        foreign_keys="[SourceWatermark.source_id]",
+        passive_deletes=True,
+        overlaps="advanced_by_run,advanced_watermarks,previous_watermark,next_watermark",
+    )
+    source_rate_limit_states: Mapped[list[SourceRateLimitState]] = relationship(
+        "SourceRateLimitState",
+        back_populates="source",
+        foreign_keys="[SourceRateLimitState.source_id]",
+        passive_deletes=True,
+        overlaps="updated_by_run,updated_rate_limit_states",
+    )
+    quarantined_records: Mapped[list[QuarantinedRecord]] = relationship(
+        "QuarantinedRecord",
+        back_populates="source",
+        foreign_keys="[QuarantinedRecord.source_id]",
+        passive_deletes=True,
+        overlaps="ingestion_run,quarantined_records",
+    )
+    credential_references: Mapped[list[SourceCredentialReference]] = relationship(
+        "SourceCredentialReference",
         back_populates="source",
         passive_deletes=True,
     )

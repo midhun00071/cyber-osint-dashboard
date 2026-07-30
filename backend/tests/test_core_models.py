@@ -22,17 +22,25 @@ from app.db.base import Base
 
 
 IMPLEMENTED_TABLES = {
+    "audit_events",
     "indicator_provenances",
     "indicators",
+    "ingestion_cycles",
     "ingestion_errors",
     "ingestion_run_records",
     "ingestion_runs",
+    "ingestion_run_events",
     "intelligence_item_identifiers",
     "intelligence_item_indicators",
     "intelligence_item_tags",
     "intelligence_items",
     "intelligence_sources",
+    "quarantined_records",
+    "source_checkpoints",
+    "source_credential_references",
+    "source_rate_limit_states",
     "source_records",
+    "source_watermarks",
     "tags",
     "vulnerabilities",
 }
@@ -92,8 +100,11 @@ def test_importing_models_registers_only_implemented_tables_without_engine(monke
     assert get_engine is None
     assert IMPLEMENTED_TABLES == set(Base.metadata.tables)
     assert set(app.models.__all__) == {
+        "AuditEvent",
+        "IngestionCycle",
         "IngestionError",
         "IngestionRun",
+        "IngestionRunEvent",
         "IngestionRunRecord",
         "Indicator",
         "IndicatorProvenance",
@@ -102,7 +113,12 @@ def test_importing_models_registers_only_implemented_tables_without_engine(monke
         "IntelligenceItemIndicator",
         "IntelligenceItemTag",
         "IntelligenceSource",
+        "QuarantinedRecord",
+        "SourceCheckpoint",
+        "SourceCredentialReference",
+        "SourceRateLimitState",
         "SourceRecord",
+        "SourceWatermark",
         "Tag",
         "Vulnerability",
     }

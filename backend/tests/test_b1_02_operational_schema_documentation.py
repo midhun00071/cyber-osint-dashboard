@@ -330,6 +330,32 @@ def test_task_ownership_is_exact() -> None:
     assert "b1-02 implements none of those responsibilities" in ownership
 
 
+def test_b103_is_documented_as_a_bounded_writer_compatibility_phase() -> None:
+    schema = _read(SCHEMA_PATH).casefold()
+    migration = _read(MIGRATION_PATH).casefold()
+    normalized_migration = " ".join(migration.split())
+
+    assert "the b1-02 schema document remains the unchanged final target" in normalized_migration
+    assert "`b103a71d2e4f` is explicitly a compatibility phase" in normalized_migration
+    assert re.search(r"not the final run-column enforcement\s+revision", migration)
+    assert "ck_ingestion_runs_operational_or_compatibility_shape" in migration
+    assert "no automatic cycle or idempotency fallback is allowed" in normalized_migration
+    assert (
+        "final non-null and status enforcement is deferred until compatible writers "
+        "exist"
+    ) in normalized_migration
+    assert "b1-04-compatible writers must always create the complete operational" in normalized_migration
+    assert "b1-04 owns writer lifecycle behavior" in normalized_migration
+    assert "reviewed enforcement migration owns final enforcement" in normalized_migration
+    assert "that follow-on migration receives no revision id" in normalized_migration
+    assert "postgresql null semantics intentionally allow multiple transitional rows" in normalized_migration
+
+    assert "the target status vocabulary is `running`" in schema
+    assert "legacy `succeeded` and `canceled` values are migrated deterministically" in schema
+    assert "`cycle_id` | bigint | no after backfill" in schema
+    assert "`idempotency_key` | varchar(240) | no after backfill" in schema
+
+
 def test_credential_references_are_non_secret_and_apr_10_remains_pending() -> None:
     combined = f"{_read(SCHEMA_PATH)}\n{_read(MIGRATION_PATH)}".casefold()
 

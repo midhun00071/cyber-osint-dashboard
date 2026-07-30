@@ -10,6 +10,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Identity,
     Integer,
+    SmallInteger,
     String,
     UniqueConstraint,
 )
@@ -21,23 +22,34 @@ from app.db.base import Base
 
 
 IMPLEMENTED_TABLES = {
+    "audit_events",
     "indicator_provenances",
     "indicators",
+    "ingestion_cycles",
     "ingestion_errors",
     "ingestion_run_records",
     "ingestion_runs",
+    "ingestion_run_events",
     "intelligence_item_identifiers",
     "intelligence_item_indicators",
     "intelligence_item_tags",
     "intelligence_items",
     "intelligence_sources",
+    "quarantined_records",
+    "source_checkpoints",
+    "source_credential_references",
+    "source_rate_limit_states",
     "source_records",
+    "source_watermarks",
     "tags",
     "vulnerabilities",
 }
 EXPECTED_MODEL_EXPORTS = {
+    "AuditEvent",
+    "IngestionCycle",
     "IngestionError",
     "IngestionRun",
+    "IngestionRunEvent",
     "IngestionRunRecord",
     "Indicator",
     "IndicatorProvenance",
@@ -46,7 +58,12 @@ EXPECTED_MODEL_EXPORTS = {
     "IntelligenceItemIndicator",
     "IntelligenceItemTag",
     "IntelligenceSource",
+    "QuarantinedRecord",
+    "SourceCheckpoint",
+    "SourceCredentialReference",
+    "SourceRateLimitState",
     "SourceRecord",
+    "SourceWatermark",
     "Tag",
     "Vulnerability",
 }
@@ -83,11 +100,15 @@ def check_constraint_sql(table):
 
 
 def foreign_key_by_column(table, column_name):
-    for constraint in table.constraints:
-        if isinstance(constraint, ForeignKeyConstraint):
-            constrained = next(iter(constraint.columns)).name
-            if constrained == column_name:
-                return constraint
+    constraints = [
+        constraint
+        for constraint in table.constraints
+        if isinstance(constraint, ForeignKeyConstraint)
+    ]
+    for constraint in sorted(constraints, key=lambda item: len(item.columns)):
+        constrained = next(iter(constraint.columns)).name
+        if constrained == column_name:
+            return constraint
     raise AssertionError(f"missing FK for {table.name}.{column_name}")
 
 
@@ -144,6 +165,12 @@ def test_ingestion_run_columns_types_nullability_and_defaults(run_table):
     assert run_table.name == "ingestion_runs"
     assert list(run_table.c.keys()) == [
         "source_id",
+        "cycle_id",
+        "idempotency_key",
+        "attempt_number",
+        "retry_of_run_id",
+        "state_version",
+        "defer_reason",
         "trigger_type",
         "status",
         "started_at",
@@ -175,7 +202,9 @@ def test_ingestion_run_columns_types_nullability_and_defaults(run_table):
 
     expected_strings = {
         "trigger_type": (40, False),
-        "status": (40, False),
+        "status": (30, False),
+        "idempotency_key": (240, True),
+        "defer_reason": (80, True),
         "checkpoint_before": (500, True),
         "checkpoint_after": (500, True),
         "safe_summary": (1000, True),
@@ -200,6 +229,14 @@ def test_ingestion_run_columns_types_nullability_and_defaults(run_table):
         assert column.nullable is False
         assert column.default is None
 
+    assert isinstance(run_table.c.attempt_number.type, SmallInteger)
+    assert run_table.c.attempt_number.nullable is True
+    assert run_table.c.attempt_number.default is None
+    assert isinstance(run_table.c.state_version.type, Integer)
+    assert run_table.c.state_version.nullable is True
+    assert run_table.c.state_version.default is None
+    assert run_table.c.cycle_id.nullable is True
+
     for column_name in ("started_at", "created_at"):
         assert_aware_timestamp_column(run_table.c[column_name], nullable=False)
         assert_callable_utc_default(run_table.c[column_name])
@@ -219,6 +256,11 @@ def test_ingestion_run_foreign_keys_constraints_and_indexes(run_table):
         "ck_ingestion_runs_status_allowed",
         "ck_ingestion_runs_completed_at_order",
         "ck_ingestion_runs_counters_non_negative",
+        "ck_ingestion_runs_attempt_number_bounded",
+        "ck_ingestion_runs_retry_lineage_consistency",
+        "ck_ingestion_runs_operational_or_compatibility_shape",
+        "ck_ingestion_runs_status_time_consistency",
+        "ck_ingestion_runs_state_version_positive",
     } <= set(checks)
     assert "trigger_type IN" in checks["ck_ingestion_runs_trigger_type_allowed"]
     assert "status IN" in checks["ck_ingestion_runs_status_allowed"]
@@ -325,6 +367,9 @@ def test_ingestion_error_columns_types_nullability_and_defaults(error_table):
         "source_record_id",
         "error_type",
         "safe_message",
+        "failure_stage",
+        "diagnostic_fingerprint",
+        "safe_context",
         "retryable",
         "retry_count",
         "occurred_at",
@@ -338,6 +383,9 @@ def test_ingestion_error_columns_types_nullability_and_defaults(error_table):
     expected_strings = {
         "error_type": (80, False),
         "safe_message": (1000, False),
+        "failure_stage": (40, True),
+        "diagnostic_fingerprint": (64, True),
+        "safe_context": (1000, True),
     }
     for column_name, (length, nullable) in expected_strings.items():
         column = error_table.c[column_name]
@@ -373,10 +421,12 @@ def test_ingestion_error_foreign_keys_constraints_and_indexes(error_table):
         assert error_table.c[column_name].nullable is nullable
 
     checks = check_constraint_sql(error_table)
-    assert checks == {
-        "ck_ingestion_errors_retry_count_non_negative": "retry_count >= 0"
+    assert set(checks) == {
+        "ck_ingestion_errors_retry_count_bounded",
+        "ck_ingestion_errors_diagnostic_fingerprint_format",
+        "ck_ingestion_errors_error_type_format",
     }
-    assert "error_type" not in " ".join(checks.values())
+    assert "BETWEEN 0 AND 10" in checks["ck_ingestion_errors_retry_count_bounded"]
 
     assert {index.name for index in error_table.indexes} == {
         "ix_ingestion_errors_run_id_occurred_at_desc"
@@ -393,6 +443,7 @@ def test_ingestion_relationships_and_cascades(models):
     run_mapper = models.IngestionRun.__mapper__
     record_mapper = models.IngestionRunRecord.__mapper__
     error_mapper = models.IngestionError.__mapper__
+    event_mapper = models.IngestionRunEvent.__mapper__
     source_mapper = models.IntelligenceSource.__mapper__
     item_mapper = models.IntelligenceItem.__mapper__
     source_record_mapper = models.SourceRecord.__mapper__
@@ -411,6 +462,15 @@ def test_ingestion_relationships_and_cascades(models):
     assert run_mapper.relationships["errors"].cascade.delete_orphan is True
     assert run_mapper.relationships["errors"].passive_deletes is True
     assert error_mapper.relationships["ingestion_run"].back_populates == "errors"
+
+    run_events = run_mapper.relationships["events"]
+    assert run_events.back_populates == "ingestion_run"
+    assert run_events.passive_deletes is True
+    assert run_events.cascade.save_update is True
+    assert run_events.cascade.merge is True
+    assert run_events.cascade.delete is False
+    assert run_events.cascade.delete_orphan is False
+    assert event_mapper.relationships["ingestion_run"].back_populates == "events"
 
     assert record_mapper.relationships["source_record"].back_populates == (
         "ingestion_run_records"
@@ -476,6 +536,6 @@ def test_ingestion_models_do_not_define_unsafe_repr_or_extra_uniques(models):
     assert "__repr__" not in models.IngestionError.__dict__
 
     run_table = Base.metadata.tables["ingestion_runs"]
-    assert unique_single_columns(run_table) == {"public_id"}
+    assert unique_single_columns(run_table) == {"public_id", "idempotency_key"}
     assert unique_single_columns(Base.metadata.tables["ingestion_run_records"]) == set()
     assert unique_single_columns(Base.metadata.tables["ingestion_errors"]) == set()

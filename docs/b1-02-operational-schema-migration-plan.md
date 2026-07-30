@@ -7,6 +7,12 @@ audit design additively from checkpoint
 `4b25a5366ca02d3f94c3e75fec98f0d5dc2b6897`. It creates no Alembic revision and
 makes no model, database, deployment, or approval claim.
 
+The B1-02 schema document remains the unchanged final target. Revision
+`b103a71d2e4f` is explicitly a compatibility phase: it installs the complete
+operational structure while current ingestion writers still use the baseline
+run shape and status spellings. It is not the final run-column enforcement
+revision.
+
 ## 2. Baseline migration inventory
 
 The committed linear baseline is:
@@ -41,12 +47,15 @@ Within the new B1-03 revision, use this dependency-safe order:
    `idempotency_key`, `attempt_number`, `retry_of_run_id`, `state_version`, and
    `defer_reason`.
 3. Backfill deterministic legacy cycles and run-extension values.
-4. Validate backfills, then make required run columns non-null and add cycle,
-   retry self, source/cycle/attempt, idempotency, composite `(id, source_id)`,
-   and composite `(id, cycle_id)` constraints.
-5. Migrate legacy run status spellings and then replace the status check with
-   the target vocabulary, including nonterminal `checkpoint_pending`. Preserve
-   every run's `trigger_type` unchanged.
+4. Validate every pre-upgrade backfill, retain the four operational identity
+   columns as nullable for current-writer compatibility, and add cycle, retry
+   self, source/cycle/attempt, idempotency, composite `(id, source_id)`, and
+   composite `(id, cycle_id)` constraints. Add one check that permits only a
+   complete operational shape or a fully null compatibility shape.
+5. Migrate pre-upgrade legacy status spellings and replace the status check with
+   the temporary union of target and baseline-compatible vocabularies, including
+   nonterminal `checkpoint_pending`. Preserve every run's `trigger_type`
+   unchanged. Baseline spellings remain valid only for a fully transitional row.
 6. Create run-dependent tables in order: `ingestion_run_events`,
    `source_checkpoints`, `source_watermarks`, and `quarantined_records`.
 7. Add the deferred source-matched updater FK from
@@ -91,6 +100,18 @@ idempotency keys. Runtime cycle creation remains restricted to `scheduled` or
 retry ancestry. Set `cycle_id` to that cycle, `attempt_number=0`,
 `retry_of_run_id=NULL`, `state_version=1`, and a deterministic source-run key.
 Map run `succeeded` to `success` and `canceled` to `cancelled`.
+
+At the `b103a71d2e4f` head, rows inserted before upgrade use the fully backfilled
+operational shape. During the bounded compatibility phase, unchanged current
+writers may insert a second explicit shape with `cycle_id`, `idempotency_key`,
+`attempt_number`, `retry_of_run_id`, `state_version`, and `defer_reason` all
+null and status limited to `running`, `succeeded`, `partial`, `failed`, or
+`canceled`. The named
+`ck_ingestion_runs_operational_or_compatibility_shape` constraint rejects every
+mixed or partially populated shape. `checkpoint_pending` and every target-only
+status require the complete operational shape. No automatic cycle or
+idempotency fallback is allowed, and no attempt or state-version default may
+synthesize a partial identity.
 
 Derive cycle `started_at` and `completed_at` directly from the run. Set
 `sources_expected=1` and `sources_started=1`. A running run produces a running
@@ -198,6 +219,7 @@ The complete new/evolved integrity-object manifest is:
   `fk_ingestion_runs_retry_source`, `fk_ingestion_runs_retry_cycle`,
   `ck_ingestion_runs_attempt_number_bounded`,
   `ck_ingestion_runs_retry_lineage_consistency`,
+  `ck_ingestion_runs_operational_or_compatibility_shape`,
   `ck_ingestion_runs_status_allowed`,
   `ck_ingestion_runs_status_time_consistency`;
 - run events: `uq_ingestion_run_events_run_sequence`,
@@ -258,9 +280,30 @@ migration transaction and deterministic backfill. `retry_of_run_id` and
 `defer_reason` remain nullable by design. New `ingestion_errors` metadata also
 remains nullable because old evidence cannot be reconstructed honestly.
 
-The migration must end with required target run columns non-null. A partial
-deployment must not leave the application believing the target schema is ready;
-readiness checks include revision identity and required constraints.
+Revision `b103a71d2e4f` intentionally ends with `cycle_id`, `idempotency_key`,
+`attempt_number`, and `state_version` nullable so current writers do not fail
+between structural deployment and B1-04-compatible writer rollout. PostgreSQL
+null semantics intentionally allow multiple transitional rows with null
+idempotency and source/cycle/attempt identities. The shape constraint prevents
+those nulls from being mixed with a partial operational identity. No partial
+automatic identity is created.
+
+Final non-null and status enforcement is deferred until compatible writers
+exist. B1-04-compatible writers must always create the complete operational
+target shape and B1-04 owns writer lifecycle behavior. A later separately
+reviewed enforcement migration owns final enforcement and must:
+
+1. stop old writers;
+2. identify and deterministically backfill every transitional row;
+3. create truthful `legacy_import` cycles where needed;
+4. map `succeeded` to `success` and `canceled` to `cancelled`;
+5. verify that no mixed or transitional rows remain;
+6. make `cycle_id`, `idempotency_key`, `attempt_number`, and `state_version`
+   non-null; and
+7. replace the compatibility status/shape checks with the final B1-02 target
+   checks.
+
+That follow-on migration receives no revision ID in B1-03.
 
 ## 9. Deterministic backfills
 
@@ -296,7 +339,8 @@ credential references, environment data, or database connection information.
 Validate:
 
 - one Alembic head and expected revision ancestry;
-- no null required run-extension fields after backfill;
+- no null operational identity fields on rows that existed before upgrade, and
+  no mixed compatibility/operational row shapes at the head;
 - cycle and run idempotency uniqueness;
 - one `legacy_import` cycle for every legacy run and one run for every such
   cycle, unchanged run triggers, null legacy schedules/retry ancestry, copied
@@ -351,6 +395,15 @@ must abandon recovery as `failed`/`cancelled`. Dropping `legacy_import` cycles
 does not alter the preserved run trigger; no schedule or retry lineage is
 written back.
 
+Baseline-compatible transitional rows may downgrade when all six compatibility
+extension fields are null, their statuses use only the baseline vocabulary, and
+they have no target-only cycle, event, progress, audit, quarantine, credential,
+or rate-state evidence. Before dropping ingestion-error extension columns,
+downgrade must fail closed with sanitized category
+`target_only_ingestion_error_metadata` if any row has non-null `failure_stage`,
+`diagnostic_fingerprint`, or `safe_context`; metadata values must never appear
+in migration output.
+
 ## 13. Rollback and partial-deployment handling
 
 - Alembic failure inside transactional DDL rolls back and leaves the prior head
@@ -359,9 +412,10 @@ written back.
 - If an index requires a non-transactional phase, split it into an explicitly
   observable deployment step with idempotent existence/validity checks; do not
   report migration success early.
-- Application rollout remains compatible with legacy nullable fields until the
-  database migration, backfill, and validation finish. New writers activate
-  only after the new head is confirmed.
+- Application rollout remains compatible with the fully null baseline writer
+  shape at the new head. No automatic cycle, idempotency key, attempt, version,
+  or status conversion is permitted for new inserts. New B1-04 writers activate
+  only after the head and compatibility constraint are confirmed.
 - For a required progress contract, new writers commit records, provenance,
   outcomes, safe failures/quarantine, counters, `checkpoint_pending`, and
   `persistence_committed` together. A later atomic transaction validates that
@@ -407,6 +461,10 @@ B1-03 tests must cover:
 - duplicate cycle/run acquisition, bounded attempts/sequences/counters/sizes;
 - valid/invalid cycle counter relationships and cycle/run status-completion-time
   shapes, including nonterminal `checkpoint_pending`;
+- ORM persistence using the unchanged current-writer shape, including its
+  `running -> succeeded` update, null operational identity, and proof that no
+  cycle or key is fabricated; rejection of mixed rows and target-only statuses
+  without operational identity; and acceptance of a complete target row;
 - `running -> checkpoint_pending -> success|no_change` with terminal evidence
   only in the atomic progress transaction, direct completion only for
   `progress_contract=none`, advancement failure retaining
@@ -426,6 +484,9 @@ B1-03 tests must cover:
 - exact credential-reference configured-shape cases, timestamp order,
   provider-neutral metadata, and secret-canary scans; and
 - metadata-to-migrated-database reconciliation.
+- fail-closed downgrade for each non-null ingestion-error metadata field,
+  preservation of the head and evidence after refusal, successful downgrade
+  when all three fields are null, and controlled transitional-row downgrade.
 
 Existing tests must not be weakened. No live source request is needed.
 
@@ -438,10 +499,14 @@ Existing tests must not be weakened. No live source request is needed.
 5. Apply the additive revision to staging while old writers are stopped or a
    proven compatibility window is active.
 6. Verify head, objects, safe counts, constraints, and query plans.
-7. Deploy B1-04-compatible writers; keep legacy checkpoint compatibility until
-   B2-05 reconciliation passes.
-8. Enable Prefect work only under B2 ownership and required approvals.
-9. Monitor sanitized migration/application evidence and keep a rollback/restore
+7. Deploy B1-04-compatible writers that always create the operational target
+   shape; keep legacy checkpoint compatibility until B2-05 reconciliation
+   passes.
+8. In a separately reviewed follow-on migration, stop old writers, backfill any
+   transitional rows, and enforce the final non-null/status target only after
+   compatible-writer evidence passes.
+9. Enable Prefect work only under B2 ownership and required approvals.
+10. Monitor sanitized migration/application evidence and keep a rollback/restore
    decision point before external access.
 
 ## 17. Known Windows CRLF raw-byte limitation
@@ -458,7 +523,9 @@ line-ending configuration to hide it.
 ## 18. Ownership and limitations
 
 B1-03 owns model and migration implementation. B1-04 owns transaction, locking,
-idempotency, lifecycle and monotonicity services. B2 owns Prefect execution;
+idempotency, lifecycle and monotonicity services, including compatible writer
+behavior. A later separately reviewed migration owns final run-column and status
+enforcement after old writers stop. B2 owns Prefect execution;
 B2-05 owns checkpoint advancement after committed persistence. Later API/UI
 tasks own read exposure. APR-10 remains pending and no credential provider is
 approved here.

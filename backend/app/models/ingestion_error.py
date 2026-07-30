@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Boolean,
+    CHAR,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -33,8 +34,17 @@ class IngestionError(BigIntPrimaryKeyMixin, Base):
     __tablename__ = "ingestion_errors"
     __table_args__ = (
         CheckConstraint(
-            "retry_count >= 0",
-            name="ck_ingestion_errors_retry_count_non_negative",
+            "retry_count BETWEEN 0 AND 10",
+            name="ck_ingestion_errors_retry_count_bounded",
+        ),
+        CheckConstraint(
+            "diagnostic_fingerprint IS NULL OR "
+            "diagnostic_fingerprint ~ '^[0-9a-f]{64}$'",
+            name="ck_ingestion_errors_diagnostic_fingerprint_format",
+        ),
+        CheckConstraint(
+            "error_type ~ '^[a-z][a-z0-9_.-]{0,79}$'",
+            name="ck_ingestion_errors_error_type_format",
         ),
         Index(
             "ix_ingestion_errors_run_id_occurred_at_desc",
@@ -57,6 +67,11 @@ class IngestionError(BigIntPrimaryKeyMixin, Base):
     )
     error_type: Mapped[str] = mapped_column(String(80), nullable=False)
     safe_message: Mapped[str] = mapped_column(String(1000), nullable=False)
+    failure_stage: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    diagnostic_fingerprint: Mapped[str | None] = mapped_column(
+        CHAR(64), nullable=True
+    )
+    safe_context: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     retryable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     retry_count: Mapped[int] = mapped_column(Integer, nullable=False)
     occurred_at: Mapped[datetime] = mapped_column(
