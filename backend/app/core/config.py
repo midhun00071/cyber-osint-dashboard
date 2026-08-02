@@ -8,7 +8,13 @@ from typing import List, Literal
 from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    DotEnvSettingsSource,
+    EnvSettingsSource,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.exc import ArgumentError
 
@@ -38,6 +44,48 @@ _HOSTNAME_PATTERN = re.compile(
 _POSTGRES_IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,62}$")
 _MAX_PASSWORD_FILE_BYTES = 4096
 MAX_HTTP_HOST_HEADER_BYTES = 259
+_STRICT_POOL_FIELD_NAMES = frozenset(
+    {
+        "database_pool_size",
+        "database_max_overflow",
+        "database_pool_timeout_seconds",
+        "database_pool_recycle_seconds",
+        "database_connect_timeout_seconds",
+    }
+)
+
+
+class _StrictPoolIntegerSourceMixin:
+    """Parse canonical decimal values only at environment-source boundaries."""
+
+    def prepare_field_value(self, field_name, field, value, value_is_complex):
+        prepared = super().prepare_field_value(
+            field_name,
+            field,
+            value,
+            value_is_complex,
+        )
+        if (
+            field_name in _STRICT_POOL_FIELD_NAMES
+            and isinstance(prepared, str)
+            and re.fullmatch(r"[0-9]+", prepared, flags=re.ASCII)
+        ):
+            return int(prepared)
+        return prepared
+
+
+class _StrictPoolEnvSettingsSource(
+    _StrictPoolIntegerSourceMixin,
+    EnvSettingsSource,
+):
+    pass
+
+
+class _StrictPoolDotEnvSettingsSource(
+    _StrictPoolIntegerSourceMixin,
+    DotEnvSettingsSource,
+):
+    pass
 
 
 class Settings(BaseSettings):
@@ -77,6 +125,41 @@ class Settings(BaseSettings):
         alias="POSTGRES_PASSWORD_FILE",
         max_length=4096,
     )
+    database_pool_size: int = Field(
+        default=5,
+        alias="DATABASE_POOL_SIZE",
+        strict=True,
+        ge=1,
+        le=20,
+    )
+    database_max_overflow: int = Field(
+        default=5,
+        alias="DATABASE_MAX_OVERFLOW",
+        strict=True,
+        ge=0,
+        le=20,
+    )
+    database_pool_timeout_seconds: int = Field(
+        default=30,
+        alias="DATABASE_POOL_TIMEOUT_SECONDS",
+        strict=True,
+        ge=1,
+        le=60,
+    )
+    database_pool_recycle_seconds: int = Field(
+        default=1800,
+        alias="DATABASE_POOL_RECYCLE_SECONDS",
+        strict=True,
+        ge=60,
+        le=3600,
+    )
+    database_connect_timeout_seconds: int = Field(
+        default=10,
+        alias="DATABASE_CONNECT_TIMEOUT_SECONDS",
+        strict=True,
+        ge=1,
+        le=30,
+    )
 
     backend_cors_allowed_origins: str = Field(
         default=",".join(DEFAULT_LOCAL_CORS_ALLOWED_ORIGINS),
@@ -98,6 +181,44 @@ class Settings(BaseSettings):
         hide_input_in_errors=True,
         populate_by_name=True,
     )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Keep strict integers while accepting canonical environment syntax."""
+
+        strict_env = _StrictPoolEnvSettingsSource(
+            settings_cls,
+            case_sensitive=env_settings.case_sensitive,
+            env_prefix=env_settings.env_prefix,
+            env_prefix_target=env_settings.env_prefix_target,
+            env_nested_delimiter=env_settings.env_nested_delimiter,
+            env_nested_max_split=env_settings.env_nested_max_split,
+            env_ignore_empty=env_settings.env_ignore_empty,
+            env_parse_none_str=env_settings.env_parse_none_str,
+            env_parse_enums=env_settings.env_parse_enums,
+        )
+        strict_dotenv = _StrictPoolDotEnvSettingsSource(
+            settings_cls,
+            env_file=dotenv_settings.env_file,
+            env_file_encoding=dotenv_settings.env_file_encoding,
+            dotenv_filtering=dotenv_settings.dotenv_filtering,
+            case_sensitive=dotenv_settings.case_sensitive,
+            env_prefix=dotenv_settings.env_prefix,
+            env_prefix_target=dotenv_settings.env_prefix_target,
+            env_nested_delimiter=dotenv_settings.env_nested_delimiter,
+            env_nested_max_split=dotenv_settings.env_nested_max_split,
+            env_ignore_empty=dotenv_settings.env_ignore_empty,
+            env_parse_none_str=dotenv_settings.env_parse_none_str,
+            env_parse_enums=dotenv_settings.env_parse_enums,
+        )
+        return init_settings, strict_env, strict_dotenv, file_secret_settings
 
     @field_validator(
         "app_name",
@@ -261,6 +382,11 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def require_secure_protected_environment(self) -> "Settings":
         """Fail closed on unsafe staging or production settings."""
+
+        if self.database_pool_size + self.database_max_overflow > 30:
+            raise ValueError(
+                "DATABASE_POOL_SIZE plus DATABASE_MAX_OVERFLOW must not exceed 30."
+            )
 
         if self.postgres_password is not None and self.postgres_password_file:
             raise ValueError(

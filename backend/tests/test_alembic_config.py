@@ -319,18 +319,20 @@ def test_migration_chain_is_linear_with_one_head_and_known_base():
     script_directory = ScriptDirectory.from_config(config)
     revisions = list(script_directory.walk_revisions())
 
-    assert len(revisions) == 4
-    assert script_directory.get_heads() == ["b103a71d2e4f"]
+    assert len(revisions) == 5
+    assert script_directory.get_heads() == ["d7a9e51c2f40"]
     assert [revision.revision for revision in revisions] == [
+        "d7a9e51c2f40",
         "b103a71d2e4f",
         "c4e8b2a91d30",
         "a6c9d4e2f107",
         "f8d739439ed0",
     ]
-    assert revisions[0].down_revision == "c4e8b2a91d30"
-    assert revisions[1].down_revision == "a6c9d4e2f107"
-    assert revisions[2].down_revision == "f8d739439ed0"
-    assert revisions[3].down_revision is None
+    assert revisions[0].down_revision == "b103a71d2e4f"
+    assert revisions[1].down_revision == "c4e8b2a91d30"
+    assert revisions[2].down_revision == "a6c9d4e2f107"
+    assert revisions[3].down_revision == "f8d739439ed0"
+    assert revisions[4].down_revision is None
     for revision in revisions:
         assert revision.is_branch_point is False
         assert revision.is_merge_point is False

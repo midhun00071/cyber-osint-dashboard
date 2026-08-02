@@ -280,12 +280,21 @@ def test_ingestion_run_foreign_keys_constraints_and_indexes(run_table):
         assert f"{column_name} >= 0" in counter_check
 
     assert {index.name for index in run_table.indexes} == {
-        "ix_ingestion_runs_source_id_started_at_desc",
+        "ix_ingestion_runs_source_id_started_at_id_desc",
+        "ix_ingestion_runs_started_at_id_desc",
         "ix_ingestion_runs_status_started_at_desc",
     }
     assert "source_id" in index_ddl(
         run_table,
-        "ix_ingestion_runs_source_id_started_at_desc",
+        "ix_ingestion_runs_source_id_started_at_id_desc",
+    )
+    assert "started_at DESC, id DESC" in index_ddl(
+        run_table,
+        "ix_ingestion_runs_source_id_started_at_id_desc",
+    )
+    assert "started_at DESC, id DESC" in index_ddl(
+        run_table,
+        "ix_ingestion_runs_started_at_id_desc",
     )
     assert "status" in index_ddl(run_table, "ix_ingestion_runs_status_started_at_desc")
     for index in run_table.indexes:

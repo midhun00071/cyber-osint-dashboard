@@ -394,3 +394,134 @@ def test_app_version_environment_override_is_supported(monkeypatch) -> None:
 def test_app_version_longer_than_64_characters_is_rejected() -> None:
     with pytest.raises(ValidationError):
         make_settings(APP_VERSION="v" * 65)
+
+
+def test_database_pool_defaults_preserve_existing_engine_behavior() -> None:
+    settings = make_settings()
+
+    assert settings.database_pool_size == 5
+    assert settings.database_max_overflow == 5
+    assert settings.database_pool_timeout_seconds == 30
+    assert settings.database_pool_recycle_seconds == 1800
+    assert settings.database_connect_timeout_seconds == 10
+
+
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [
+        ({"DATABASE_POOL_SIZE": 1}, (1, 5, 30, 1800, 10)),
+        ({"DATABASE_POOL_SIZE": 20}, (20, 5, 30, 1800, 10)),
+        ({"DATABASE_MAX_OVERFLOW": 0}, (5, 0, 30, 1800, 10)),
+        ({"DATABASE_MAX_OVERFLOW": 20}, (5, 20, 30, 1800, 10)),
+        ({"DATABASE_POOL_TIMEOUT_SECONDS": 1}, (5, 5, 1, 1800, 10)),
+        ({"DATABASE_POOL_TIMEOUT_SECONDS": 60}, (5, 5, 60, 1800, 10)),
+        ({"DATABASE_POOL_RECYCLE_SECONDS": 60}, (5, 5, 30, 60, 10)),
+        ({"DATABASE_POOL_RECYCLE_SECONDS": 3600}, (5, 5, 30, 3600, 10)),
+        ({"DATABASE_CONNECT_TIMEOUT_SECONDS": 1}, (5, 5, 30, 1800, 1)),
+        ({"DATABASE_CONNECT_TIMEOUT_SECONDS": 30}, (5, 5, 30, 1800, 30)),
+    ],
+)
+def test_database_pool_boundary_values_are_accepted(values, expected) -> None:
+    settings = make_settings(**values)
+
+    assert (
+        settings.database_pool_size,
+        settings.database_max_overflow,
+        settings.database_pool_timeout_seconds,
+        settings.database_pool_recycle_seconds,
+        settings.database_connect_timeout_seconds,
+    ) == expected
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("DATABASE_POOL_SIZE", 0),
+        ("DATABASE_POOL_SIZE", 21),
+        ("DATABASE_MAX_OVERFLOW", -1),
+        ("DATABASE_MAX_OVERFLOW", 21),
+        ("DATABASE_POOL_TIMEOUT_SECONDS", 0),
+        ("DATABASE_POOL_TIMEOUT_SECONDS", 61),
+        ("DATABASE_POOL_RECYCLE_SECONDS", 59),
+        ("DATABASE_POOL_RECYCLE_SECONDS", 3601),
+        ("DATABASE_CONNECT_TIMEOUT_SECONDS", 0),
+        ("DATABASE_CONNECT_TIMEOUT_SECONDS", 31),
+    ],
+)
+def test_database_pool_values_outside_bounds_are_rejected(field, value) -> None:
+    with pytest.raises(ValidationError):
+        make_settings(**{field: value})
+
+
+@pytest.mark.parametrize("unsafe_value", [True, False, 5.0, "5"])
+@pytest.mark.parametrize(
+    "field",
+    [
+        "DATABASE_POOL_SIZE",
+        "DATABASE_MAX_OVERFLOW",
+        "DATABASE_POOL_TIMEOUT_SECONDS",
+        "DATABASE_POOL_RECYCLE_SECONDS",
+        "DATABASE_CONNECT_TIMEOUT_SECONDS",
+    ],
+)
+def test_database_pool_values_require_strict_integers(field, unsafe_value) -> None:
+    with pytest.raises(ValidationError):
+        make_settings(**{field: unsafe_value})
+
+
+def test_database_pool_combined_capacity_is_bounded() -> None:
+    make_settings(DATABASE_POOL_SIZE=20, DATABASE_MAX_OVERFLOW=10)
+
+    with pytest.raises(ValidationError, match="must not exceed 30"):
+        make_settings(DATABASE_POOL_SIZE=20, DATABASE_MAX_OVERFLOW=11)
+
+
+def test_canonical_pool_integers_load_from_environment(monkeypatch) -> None:
+    values = {
+        "DATABASE_POOL_SIZE": "6",
+        "DATABASE_MAX_OVERFLOW": "4",
+        "DATABASE_POOL_TIMEOUT_SECONDS": "7",
+        "DATABASE_POOL_RECYCLE_SECONDS": "600",
+        "DATABASE_CONNECT_TIMEOUT_SECONDS": "8",
+    }
+    for name, value in values.items():
+        monkeypatch.setenv(name, value)
+
+    settings = make_settings()
+
+    assert settings.database_pool_size == 6
+    assert settings.database_max_overflow == 4
+    assert settings.database_pool_timeout_seconds == 7
+    assert settings.database_pool_recycle_seconds == 600
+    assert settings.database_connect_timeout_seconds == 8
+
+
+@pytest.mark.parametrize("unsafe_value", ["+5", " 5", "5 ", "5.0", "true", "\u0665"])
+def test_noncanonical_pool_environment_values_are_rejected(
+    monkeypatch,
+    unsafe_value: str,
+) -> None:
+    monkeypatch.setenv("DATABASE_POOL_SIZE", unsafe_value)
+
+    with pytest.raises(ValidationError):
+        make_settings()
+
+
+def test_canonical_pool_integers_load_from_dotenv(tmp_path: Path) -> None:
+    env_file = tmp_path / "pool.env"
+    env_file.write_text(
+        "DATABASE_POOL_SIZE=6\n"
+        "DATABASE_MAX_OVERFLOW=4\n"
+        "DATABASE_POOL_TIMEOUT_SECONDS=7\n"
+        "DATABASE_POOL_RECYCLE_SECONDS=600\n"
+        "DATABASE_CONNECT_TIMEOUT_SECONDS=8\n",
+        encoding="utf-8",
+    )
+
+    settings = Settings(_env_file=env_file)
+
+    assert settings.database_pool_size == 6
+    assert settings.database_max_overflow == 4
+    assert settings.database_pool_timeout_seconds == 7
+    assert settings.database_pool_recycle_seconds == 600
+    assert settings.database_connect_timeout_seconds == 8

@@ -27,6 +27,54 @@ def test_backend_compose_uses_component_database_settings() -> None:
     )
 
 
+def test_local_compose_separates_database_identities_and_pool_controls() -> None:
+    compose = load_compose_config()
+    database = compose["services"]["db"]
+    backend = compose["services"]["backend"]
+    migration = compose["services"]["migrate"]
+
+    assert database["environment"]["POSTGRES_USER"] == (
+        "${POSTGRES_BOOTSTRAP_USER:-alpha_data_bootstrap}"
+    )
+    assert backend["environment"]["POSTGRES_USER"] == (
+        "${POSTGRES_USER:-alpha_data_user}"
+    )
+    assert migration["environment"]["POSTGRES_USER"] == (
+        "${POSTGRES_MIGRATION_USER:-alpha_data_migration}"
+    )
+    assert migration["profiles"] == ["migration"]
+    assert database["volumes"][1:] == [
+        "./database/init/10-provision-database-roles.sh:"
+        "/docker-entrypoint-initdb.d/10-provision-database-roles.sh:ro",
+        "./database/init/11-apply-database-grants.sql:"
+        "/opt/alpha-data/database/11-apply-database-grants.sql:ro",
+    ]
+    for name, expected in (
+        ("DATABASE_POOL_SIZE", "${DATABASE_POOL_SIZE:-5}"),
+        ("DATABASE_MAX_OVERFLOW", "${DATABASE_MAX_OVERFLOW:-5}"),
+        ("DATABASE_POOL_TIMEOUT_SECONDS", "${DATABASE_POOL_TIMEOUT_SECONDS:-30}"),
+        ("DATABASE_POOL_RECYCLE_SECONDS", "${DATABASE_POOL_RECYCLE_SECONDS:-1800}"),
+        ("DATABASE_CONNECT_TIMEOUT_SECONDS", "${DATABASE_CONNECT_TIMEOUT_SECONDS:-10}"),
+    ):
+        assert backend["environment"][name] == expected
+
+
+def test_local_database_has_one_automatic_init_script_and_separate_sql() -> None:
+    volumes = load_compose_config()["services"]["db"]["volumes"]
+    automatic_targets = [
+        volume for volume in volumes if ":/docker-entrypoint-initdb.d/" in volume
+    ]
+
+    assert automatic_targets == [
+        "./database/init/10-provision-database-roles.sh:"
+        "/docker-entrypoint-initdb.d/10-provision-database-roles.sh:ro"
+    ]
+    assert volumes.count(
+        "./database/init/11-apply-database-grants.sql:"
+        "/opt/alpha-data/database/11-apply-database-grants.sql:ro"
+    ) == 1
+
+
 def test_backend_compose_uses_explicit_cors_allow_list_setting() -> None:
     compose_config = load_compose_config()
     backend_environment = compose_config["services"]["backend"]["environment"]

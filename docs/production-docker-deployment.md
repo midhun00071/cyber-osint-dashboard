@@ -85,20 +85,28 @@ Create the deployment environment file outside the repository. Start from
 it to Git. The required variables are:
 
 - `POSTGRES_DB`
-- `POSTGRES_USER`
-- `POSTGRES_PASSWORD_SECRET_FILE`
+- `POSTGRES_BOOTSTRAP_USER`
+- `POSTGRES_APP_USER`
+- `POSTGRES_MIGRATION_USER`
+- `POSTGRES_BOOTSTRAP_PASSWORD_SECRET_FILE`
+- `POSTGRES_APP_PASSWORD_SECRET_FILE`
+- `POSTGRES_MIGRATION_PASSWORD_SECRET_FILE`
 - `BACKEND_CORS_ALLOWED_ORIGINS`
 - `BACKEND_TRUSTED_HOSTS`
 - `NEXT_PUBLIC_API_BASE_URL`
 
-`POSTGRES_PASSWORD_SECRET_FILE` contains only the absolute path to a protected
-regular file holding the strong deployment password. Compose mounts that file
-as `/run/secrets/postgres_password` for PostgreSQL, backend, and migration; it
-does not place the password value in container environment metadata. The secret
-protects the current privileged initialization and runtime database role; the
-security section records that role's known least-privilege limitation.
+The three password-reference variables contain only absolute paths to separate
+protected regular files. Compose mounts the bootstrap secret only to PostgreSQL,
+the application secret only to PostgreSQL provisioning and backend, and the
+migration secret only to PostgreSQL provisioning and migration. It does not
+place password values in container environment metadata. These separate
+protected password files prevent the runtime application identity and migration
+identity from receiving the bootstrap identity's administrative credential.
 Direct `POSTGRES_PASSWORD` and credential-bearing `DATABASE_URL` values are not
 production inputs and are rejected by the protected backend boundary.
+The local development stack retains `POSTGRES_USER` and `POSTGRES_PASSWORD` as
+compatibility inputs for its non-production application login; they are not the
+production credential contract.
 `BACKEND_CORS_ALLOWED_ORIGINS` must contain explicit trusted HTTPS origins; a
 wildcard is invalid. `BACKEND_TRUSTED_HOSTS` must contain exact non-loopback
 hostnames with no wildcard, scheme, port, path, or credentials.
@@ -233,7 +241,24 @@ docker compose -f $ComposeFile --env-file $ProdEnv images
 
 ## Manual database migration
 
-Migrations do not run automatically during normal startup. Start PostgreSQL,
+Migrations do not run automatically during normal startup. On a fresh database,
+the official PostgreSQL entrypoint runs only the mounted B1-05 provisioning
+shell before the one-shot migration. The grants SQL is not in the automatic
+initialization directory; the shell validates and invokes its fixed read-only
+path exactly once. On an existing database, an authorized database
+operator must first run the same idempotent provisioning script inside the
+PostgreSQL container; it validates role/schema identifiers, rotates application
+and migration passwords without printing them, transfers existing application
+objects to the migration identity, and reapplies explicit grants:
+
+```powershell
+docker compose -f $ComposeFile --env-file $ProdEnv exec -T db `
+    /docker-entrypoint-initdb.d/10-provision-database-roles.sh
+```
+
+No production roles have been provisioned merely by committing these files.
+The command is a staging/production database-administration action and requires
+the approved owner and APR-09 boundary. After provisioning, start PostgreSQL,
 wait for its health check, inspect the packaged Alembic head, run the one-shot
 migration service, and verify the current database revision:
 
@@ -241,12 +266,19 @@ migration service, and verify the current database revision:
 docker compose -f $ComposeFile --env-file $ProdEnv up -d db
 docker compose -f $ComposeFile --env-file $ProdEnv --profile migration run --rm migrate alembic -c /app/alembic.ini heads
 docker compose -f $ComposeFile --env-file $ProdEnv --profile migration run --rm migrate
+docker compose -f $ComposeFile --env-file $ProdEnv exec -T db `
+    /docker-entrypoint-initdb.d/10-provision-database-roles.sh
 docker compose -f $ComposeFile --env-file $ProdEnv --profile migration run --rm migrate alembic -c /app/alembic.ini current
 ```
 
 The migration service uses the backend image, waits for the database health
 check, and runs `alembic upgrade head`. It is excluded from normal startup and
-does not run ingestion. `heads` reports the revision packaged in the image;
+does not run ingestion. The second idempotent provisioning pass applies the
+exact current-table grant allow-lists after a fresh migration; it is required
+because default privileges intentionally do not grant broad future `UPDATE`.
+They grant no future table or sequence access to any non-migration managed role;
+the second pass recognizes and grants only the current allow-listed objects.
+`heads` reports the revision packaged in the image;
 `current` confirms the live database revision. Both must agree at the expected
 head before application startup. Do not generate a migration during deployment,
 and do not print credentials or resolved environment configuration while
@@ -374,9 +406,13 @@ by contacting the unapproved domain.
 - No application source, Docker socket, environment file, or host directory is
   mounted into a production container.
 - PostgreSQL data is stored in the named `postgres_data` volume.
-- The database password is mounted as the same read-only Compose secret into
-  PostgreSQL, backend, and the manual migration service; it is not an
-  environment value or image build argument.
+- PostgreSQL's automatic initialization directory contains only the role
+  provisioning shell. Grants SQL is mounted read-only at its fixed
+  non-automatic path and invoked once by that shell.
+- Bootstrap, application and migration passwords use separate read-only Compose
+  secrets. Backend receives only the runtime application identity; migration
+  receives only the migration identity; neither receives administrative
+  credentials.
 - Runtime services use `restart: unless-stopped`.
 - The local Docker log driver is bounded to three 10 MB files per service.
 - Backend and frontend images define local health checks and contain no reload
@@ -391,15 +427,26 @@ by contacting the unapproved domain.
 The FastAPI startup path performs no ingestion. P7-01 does not add a scheduler,
 ingestion service, ingestion startup hook, or public ingestion trigger.
 
-The official PostgreSQL image grants the configured `POSTGRES_USER`
-initialization role superuser privileges, and current Compose reuses that
-privileged role for backend and migration access. It does not provision a
-separate restricted application role. A mature production deployment should
-separately provision a non-superuser application role with only the required
-permissions, but that database and deployment change is future, separately
-reviewed work and is not implemented or automated by P7-02. Do not publish
-PostgreSQL, mount the Docker socket, enable privileged containers, or run the
-application images as root to compensate for a deployment problem.
+The earlier P7-03 limitation said that a shared database user could hold
+superuser privileges, that backend and migration access used that identity,
+and that the deployment does not provision a separate restricted application
+role. B1-05 supersedes that design with a non-superuser application role and a
+separate migration identity. Actual staging activation remains future,
+separately reviewed work; committing this configuration does not provision it.
+
+The bootstrap identity remains restricted to PostgreSQL initialization and
+authorized administration. The migration identity is a non-superuser object
+owner with no role/database creation, replication or RLS-bypass privilege. The
+runtime application identity is a separate non-superuser with schema `USAGE`,
+required DML and sequence use only: no DDL, no schema creation, no truncate, no
+role administration, no ownership and no deletion. Read-only and logical backup
+roles receive `SELECT` only. The retention role receives only the reads required
+by the dry-run planner and no destructive privilege. Public schema creation is
+revoked and unknown future objects grant no managed non-migration role access.
+All managed names are pairwise distinct and unexpected inherited or inbound
+memberships fail provisioning. Do not publish PostgreSQL,
+mount the Docker socket, enable privileged containers, or run the application
+images as root to compensate for a deployment problem.
 
 ## Logging and troubleshooting
 
@@ -428,7 +475,7 @@ restarts.
 
 | Symptom | Safe checks and likely cause |
 | --- | --- |
-| Missing required environment value | Recheck the six required variable names in the protected file and confirm `POSTGRES_PASSWORD_SECRET_FILE` names a readable protected regular file; use `config --quiet`, never resolved output. |
+| Missing required environment value | Recheck the separate identity and password-reference variables in the protected file and confirm all three references name readable protected regular files; use `config --quiet`, never resolved output. |
 | Windows command cannot reach Docker | Confirm Docker Desktop is running, the engine answers `docker version`, and Linux containers are enabled. |
 | Port conflict | Use `Get-NetTCPConnection` to identify the listener; stop only an approved process or use a reviewed host-port override. |
 | Production build fails | Review the bounded build error, disk capacity, dependency retrieval, and checked-out source; do not add secrets as build arguments. |
@@ -587,8 +634,12 @@ resolved Compose output, response bodies, or sensitive logs:
 - No orchestration platform, autoscaling, or zero-downtime deployment exists.
 - Enterprise secret management and automated secret rotation are not
   integrated; APR-10 remains `Need Approval` and no provider is selected.
-- No separate restricted PostgreSQL application role is provisioned; backend
-  and migration reuse the privileged initialization role.
+- B1-05 defines separate least-privilege PostgreSQL roles, but no staging or
+  production provisioning is claimed until an authorized operator executes and
+  verifies it under APR-09.
+- The former "no separate restricted PostgreSQL application role" limitation
+  is superseded in configuration and disposable tests, but remains unproven in
+  staging until approved provisioning and verification occur.
 - The backend production image installs the shared `requirements.txt`, which
   currently includes development/test dependencies as well as runtime packages.
 - Production load, capacity, failover, and disaster-recovery testing have not

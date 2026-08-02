@@ -167,7 +167,7 @@ def test_canonical_document_includes_complete_rotation_sequence_and_limitation()
         assert required_term in documentation
 
 
-def test_current_postgres_role_privileges_and_future_boundary_are_documented() -> None:
+def test_postgres_role_separation_and_privilege_boundary_are_documented() -> None:
     documentation = re.sub(
         r"\s+",
         " ",
@@ -180,29 +180,25 @@ def test_current_postgres_role_privileges_and_future_boundary_are_documented() -
     )
 
     for required_phrase in (
-        "official postgresql image",
-        "superuser privileges",
-        "backend and migration",
-        "does not provision a separate restricted application role",
-        "non-superuser application role",
-        "separately reviewed database and deployment change",
-        "outside p7-02",
-        "does not implement or automate that change",
+        "bootstrap identity",
+        "migration identity",
+        "runtime application identity",
+        "read-only",
+        "logical backup",
+        "retention",
+        "no ddl",
+        "no truncate",
     ):
         assert required_phrase in documentation
 
     for required_phrase in (
-        "official postgresql image",
-        "superuser privileges",
-        "backend and migration access",
-        "does not provision a separate restricted application role",
-        "non-superuser application role",
-        "future, separately reviewed work",
-        "not implemented or automated by p7-02",
+        "bootstrap identity",
+        "migration identity",
+        "runtime application identity",
+        "separate protected password files",
+        "no production roles have been provisioned",
     ):
         assert required_phrase in deployment_documentation
-
-    assert "least-privilege application role" not in documentation
 
 
 def test_gitignore_blocks_real_environment_files_and_allows_templates() -> None:
@@ -239,8 +235,12 @@ def test_production_compose_still_requires_sensitive_values() -> None:
 
     for variable in (
         "POSTGRES_DB",
-        "POSTGRES_USER",
-        "POSTGRES_PASSWORD_SECRET_FILE",
+        "POSTGRES_BOOTSTRAP_USER",
+        "POSTGRES_APP_USER",
+        "POSTGRES_MIGRATION_USER",
+        "POSTGRES_BOOTSTRAP_PASSWORD_SECRET_FILE",
+        "POSTGRES_APP_PASSWORD_SECRET_FILE",
+        "POSTGRES_MIGRATION_PASSWORD_SECRET_FILE",
         "BACKEND_CORS_ALLOWED_ORIGINS",
         "BACKEND_TRUSTED_HOSTS",
         "NEXT_PUBLIC_API_BASE_URL",

@@ -2,7 +2,7 @@
 
 from collections.abc import Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -13,21 +13,43 @@ _engine: Engine | None = None
 _session_factory: sessionmaker[Session] | None = None
 
 
+class DatabaseConnectionError(RuntimeError):
+    """Sanitized failure raised when a database connection cannot be opened."""
+
+
+def _sanitize_initial_connection_error(exception_context):
+    """Replace initial DBAPI connection details with a fixed safe exception."""
+
+    if exception_context.connection is None:
+        return DatabaseConnectionError("The database connection could not be opened.")
+    return None
+
+
 def get_engine() -> Engine:
     """Return the cached SQLAlchemy engine, creating it without connecting."""
 
     global _engine
 
     if _engine is None:
+        settings = get_settings()
         _engine = create_engine(
-            get_settings().sqlalchemy_database_url,
+            settings.sqlalchemy_database_url,
             pool_pre_ping=True,
-            pool_size=5,
-            max_overflow=5,
-            pool_timeout=30,
-            pool_recycle=1800,
-            connect_args={"connect_timeout": 10},
+            pool_size=settings.database_pool_size,
+            max_overflow=settings.database_max_overflow,
+            pool_timeout=settings.database_pool_timeout_seconds,
+            pool_recycle=settings.database_pool_recycle_seconds,
+            connect_args={
+                "connect_timeout": settings.database_connect_timeout_seconds
+            },
             echo=False,
+            hide_parameters=True,
+        )
+        event.listen(
+            _engine,
+            "handle_error",
+            _sanitize_initial_connection_error,
+            retval=True,
         )
 
     return _engine

@@ -161,9 +161,15 @@ class IngestionRun(BigIntPrimaryKeyMixin, PublicIdMixin, Base):
             ondelete="RESTRICT",
         ),
         Index(
-            "ix_ingestion_runs_source_id_started_at_desc",
+            "ix_ingestion_runs_source_id_started_at_id_desc",
             "source_id",
             desc("started_at"),
+            desc("id"),
+        ),
+        Index(
+            "ix_ingestion_runs_started_at_id_desc",
+            desc("started_at"),
+            desc("id"),
         ),
         Index(
             "ix_ingestion_runs_status_started_at_desc",

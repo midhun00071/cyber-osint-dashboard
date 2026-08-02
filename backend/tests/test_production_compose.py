@@ -33,8 +33,28 @@ def test_production_services_do_not_bind_mount_application_source() -> None:
     assert "volumes" not in compose["services"]["frontend"]
     assert "volumes" not in compose["services"]["migrate"]
     assert compose["services"]["db"]["volumes"] == [
-        "postgres_data:/var/lib/postgresql/data"
+        "postgres_data:/var/lib/postgresql/data",
+        "./database/init/10-provision-database-roles.sh:"
+        "/docker-entrypoint-initdb.d/10-provision-database-roles.sh:ro",
+        "./database/init/11-apply-database-grants.sql:"
+        "/opt/alpha-data/database/11-apply-database-grants.sql:ro",
     ]
+
+
+def test_production_database_has_one_automatic_init_script_and_separate_sql() -> None:
+    volumes = load_production_compose()["services"]["db"]["volumes"]
+    automatic_targets = [
+        volume for volume in volumes if ":/docker-entrypoint-initdb.d/" in volume
+    ]
+
+    assert automatic_targets == [
+        "./database/init/10-provision-database-roles.sh:"
+        "/docker-entrypoint-initdb.d/10-provision-database-roles.sh:ro"
+    ]
+    assert volumes.count(
+        "./database/init/11-apply-database-grants.sql:"
+        "/opt/alpha-data/database/11-apply-database-grants.sql:ro"
+    ) == 1
 
 
 def test_production_commands_exclude_development_and_ingestion_modes() -> None:
@@ -54,7 +74,13 @@ def test_database_is_private_persistent_and_healthy() -> None:
     database = compose["services"]["db"]
 
     assert "ports" not in database
-    assert database["volumes"] == ["postgres_data:/var/lib/postgresql/data"]
+    assert database["volumes"] == [
+        "postgres_data:/var/lib/postgresql/data",
+        "./database/init/10-provision-database-roles.sh:"
+        "/docker-entrypoint-initdb.d/10-provision-database-roles.sh:ro",
+        "./database/init/11-apply-database-grants.sql:"
+        "/opt/alpha-data/database/11-apply-database-grants.sql:ro",
+    ]
     assert "postgres_data" in compose["volumes"]
     assert "pg_isready" in " ".join(database["healthcheck"]["test"])
 
@@ -136,15 +162,24 @@ def test_sensitive_production_values_are_required_without_weak_defaults() -> Non
 
     for variable in (
         "POSTGRES_DB",
-        "POSTGRES_USER",
-        "POSTGRES_PASSWORD_SECRET_FILE",
+        "POSTGRES_BOOTSTRAP_USER",
+        "POSTGRES_APP_USER",
+        "POSTGRES_MIGRATION_USER",
+        "POSTGRES_BOOTSTRAP_PASSWORD_SECRET_FILE",
+        "POSTGRES_APP_PASSWORD_SECRET_FILE",
+        "POSTGRES_MIGRATION_PASSWORD_SECRET_FILE",
         "BACKEND_CORS_ALLOWED_ORIGINS",
         "BACKEND_TRUSTED_HOSTS",
         "NEXT_PUBLIC_API_BASE_URL",
     ):
         assert f"${{{variable}:?" in compose_text
 
-    assert re.search(r"(?m)^POSTGRES_PASSWORD_SECRET_FILE=$", environment_example)
+    for variable in (
+        "POSTGRES_BOOTSTRAP_PASSWORD_SECRET_FILE",
+        "POSTGRES_APP_PASSWORD_SECRET_FILE",
+        "POSTGRES_MIGRATION_PASSWORD_SECRET_FILE",
+    ):
+        assert re.search(rf"(?m)^{variable}=$", environment_example)
     assert not re.search(r"(?m)^POSTGRES_PASSWORD=", environment_example)
     combined = (compose_text + environment_example).lower()
     for weak_value in ("change_me", "changeme", "password123", "admin123"):
@@ -281,18 +316,60 @@ def test_frontend_public_api_url_is_a_required_build_time_value() -> None:
     assert "environment" not in frontend
 
 
-def test_production_database_password_is_file_mounted_for_every_consumer() -> None:
+def test_production_database_credentials_are_separate_and_file_mounted() -> None:
     compose = load_production_compose()
-    secret = compose["secrets"]["postgres_password"]
+    database = compose["services"]["db"]
+    backend = compose["services"]["backend"]
+    migration = compose["services"]["migrate"]
 
-    assert secret["file"].startswith("${POSTGRES_PASSWORD_SECRET_FILE:?")
-    for service_name in ("db", "backend", "migrate"):
-        service = compose["services"][service_name]
-        assert service["environment"]["POSTGRES_PASSWORD_FILE"] == (
-            "/run/secrets/postgres_password"
+    assert set(compose["secrets"]) == {
+        "postgres_bootstrap_password",
+        "postgres_app_password",
+        "postgres_migration_password",
+    }
+    for secret_name, variable in (
+        ("postgres_bootstrap_password", "POSTGRES_BOOTSTRAP_PASSWORD_SECRET_FILE"),
+        ("postgres_app_password", "POSTGRES_APP_PASSWORD_SECRET_FILE"),
+        ("postgres_migration_password", "POSTGRES_MIGRATION_PASSWORD_SECRET_FILE"),
+    ):
+        assert compose["secrets"][secret_name]["file"].startswith(f"${{{variable}:?")
+
+    assert database["secrets"] == [
+        "postgres_bootstrap_password",
+        "postgres_app_password",
+        "postgres_migration_password",
+    ]
+    assert backend["secrets"] == ["postgres_app_password"]
+    assert migration["secrets"] == ["postgres_migration_password"]
+    assert backend["environment"]["POSTGRES_USER"].startswith("${POSTGRES_APP_USER:?")
+    assert migration["environment"]["POSTGRES_USER"].startswith(
+        "${POSTGRES_MIGRATION_USER:?"
+    )
+    assert backend["environment"]["POSTGRES_PASSWORD_FILE"] == (
+        "/run/secrets/postgres_app_password"
+    )
+    assert migration["environment"]["POSTGRES_PASSWORD_FILE"] == (
+        "/run/secrets/postgres_migration_password"
+    )
+    assert "POSTGRES_PASSWORD" not in backend["environment"]
+    assert "POSTGRES_PASSWORD" not in migration["environment"]
+
+
+def test_production_pool_controls_are_bounded_application_inputs() -> None:
+    compose = load_production_compose()
+    for service_name in ("backend", "migrate"):
+        environment = compose["services"][service_name]["environment"]
+        assert environment["DATABASE_POOL_SIZE"] == "${DATABASE_POOL_SIZE:-5}"
+        assert environment["DATABASE_MAX_OVERFLOW"] == "${DATABASE_MAX_OVERFLOW:-5}"
+        assert environment["DATABASE_POOL_TIMEOUT_SECONDS"] == (
+            "${DATABASE_POOL_TIMEOUT_SECONDS:-30}"
         )
-        assert "POSTGRES_PASSWORD" not in service["environment"]
-        assert service["secrets"] == ["postgres_password"]
+        assert environment["DATABASE_POOL_RECYCLE_SECONDS"] == (
+            "${DATABASE_POOL_RECYCLE_SECONDS:-1800}"
+        )
+        assert environment["DATABASE_CONNECT_TIMEOUT_SECONDS"] == (
+            "${DATABASE_CONNECT_TIMEOUT_SECONDS:-10}"
+        )
 
 
 def test_production_dockerfiles_never_explicitly_copy_environment_files() -> None:

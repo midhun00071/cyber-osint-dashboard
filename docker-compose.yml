@@ -4,16 +4,22 @@ services:
     container_name: alpha-data-db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-alpha_data_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set for local Compose}
+      POSTGRES_USER: ${POSTGRES_BOOTSTRAP_USER:-alpha_data_bootstrap}
+      POSTGRES_PASSWORD: ${POSTGRES_BOOTSTRAP_PASSWORD:-local-bootstrap-change-me}
       POSTGRES_DB: ${POSTGRES_DB:-alpha_data_db}
+      POSTGRES_APP_USER: ${POSTGRES_USER:-alpha_data_user}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set for local Compose}
+      POSTGRES_MIGRATION_USER: ${POSTGRES_MIGRATION_USER:-alpha_data_migration}
+      POSTGRES_MIGRATION_PASSWORD: ${POSTGRES_MIGRATION_PASSWORD:-local-migration-change-me}
+      POSTGRES_APP_SCHEMA: public
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./database/init:/docker-entrypoint-initdb.d:ro
+      - ./database/init/10-provision-database-roles.sh:/docker-entrypoint-initdb.d/10-provision-database-roles.sh:ro
+      - ./database/init/11-apply-database-grants.sql:/opt/alpha-data/database/11-apply-database-grants.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-alpha_data_user} -d ${POSTGRES_DB:-alpha_data_db}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_BOOTSTRAP_USER:-alpha_data_bootstrap} -d ${POSTGRES_DB:-alpha_data_db}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -36,6 +42,11 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-alpha_data_db}
       POSTGRES_USER: ${POSTGRES_USER:-alpha_data_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set for local Compose}
+      DATABASE_POOL_SIZE: ${DATABASE_POOL_SIZE:-5}
+      DATABASE_MAX_OVERFLOW: ${DATABASE_MAX_OVERFLOW:-5}
+      DATABASE_POOL_TIMEOUT_SECONDS: ${DATABASE_POOL_TIMEOUT_SECONDS:-30}
+      DATABASE_POOL_RECYCLE_SECONDS: ${DATABASE_POOL_RECYCLE_SECONDS:-1800}
+      DATABASE_CONNECT_TIMEOUT_SECONDS: ${DATABASE_CONNECT_TIMEOUT_SECONDS:-10}
       BACKEND_CORS_ALLOWED_ORIGINS: ${BACKEND_CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
       BACKEND_TRUSTED_HOSTS: ${BACKEND_TRUSTED_HOSTS:-localhost,127.0.0.1,[::1],testserver}
       NVD_API_KEY: ${NVD_API_KEY:-}
@@ -43,6 +54,30 @@ services:
       ENABLE_ADMIN_INGESTION: ${ENABLE_ADMIN_INGESTION:-false}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - alpha_data_network
+
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    profiles:
+      - migration
+    restart: "no"
+    command: ["alembic", "-c", "/app/alembic.ini", "upgrade", "head"]
+    environment:
+      APP_ENV: local
+      DEBUG: "false"
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-alpha_data_db}
+      POSTGRES_USER: ${POSTGRES_MIGRATION_USER:-alpha_data_migration}
+      POSTGRES_PASSWORD: ${POSTGRES_MIGRATION_PASSWORD:-local-migration-change-me}
+      BACKEND_CORS_ALLOWED_ORIGINS: ${BACKEND_CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      BACKEND_TRUSTED_HOSTS: ${BACKEND_TRUSTED_HOSTS:-localhost,127.0.0.1,[::1],testserver}
     depends_on:
       db:
         condition: service_healthy

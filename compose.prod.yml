@@ -19,12 +19,21 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_DB: "${POSTGRES_DB:?POSTGRES_DB must be set}"
-      POSTGRES_USER: "${POSTGRES_USER:?POSTGRES_USER must be set}"
-      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_USER: "${POSTGRES_BOOTSTRAP_USER:?POSTGRES_BOOTSTRAP_USER must be set}"
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_bootstrap_password
+      POSTGRES_APP_USER: "${POSTGRES_APP_USER:?POSTGRES_APP_USER must be set}"
+      POSTGRES_APP_PASSWORD_FILE: /run/secrets/postgres_app_password
+      POSTGRES_MIGRATION_USER: "${POSTGRES_MIGRATION_USER:?POSTGRES_MIGRATION_USER must be set}"
+      POSTGRES_MIGRATION_PASSWORD_FILE: /run/secrets/postgres_migration_password
+      POSTGRES_APP_SCHEMA: public
     secrets:
-      - postgres_password
+      - postgres_bootstrap_password
+      - postgres_app_password
+      - postgres_migration_password
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./database/init/10-provision-database-roles.sh:/docker-entrypoint-initdb.d/10-provision-database-roles.sh:ro
+      - ./database/init/11-apply-database-grants.sql:/opt/alpha-data/database/11-apply-database-grants.sql:ro
     healthcheck:
       test:
         - CMD-SHELL
@@ -61,8 +70,13 @@ services:
       POSTGRES_HOST: db
       POSTGRES_PORT: "5432"
       POSTGRES_DB: "${POSTGRES_DB:?POSTGRES_DB must be set}"
-      POSTGRES_USER: "${POSTGRES_USER:?POSTGRES_USER must be set}"
-      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_USER: "${POSTGRES_APP_USER:?POSTGRES_APP_USER must be set}"
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_app_password
+      DATABASE_POOL_SIZE: "${DATABASE_POOL_SIZE:-5}"
+      DATABASE_MAX_OVERFLOW: "${DATABASE_MAX_OVERFLOW:-5}"
+      DATABASE_POOL_TIMEOUT_SECONDS: "${DATABASE_POOL_TIMEOUT_SECONDS:-30}"
+      DATABASE_POOL_RECYCLE_SECONDS: "${DATABASE_POOL_RECYCLE_SECONDS:-1800}"
+      DATABASE_CONNECT_TIMEOUT_SECONDS: "${DATABASE_CONNECT_TIMEOUT_SECONDS:-10}"
       BACKEND_CORS_ALLOWED_ORIGINS: "${BACKEND_CORS_ALLOWED_ORIGINS:?BACKEND_CORS_ALLOWED_ORIGINS must be set}"
       BACKEND_TRUSTED_HOSTS: "${BACKEND_TRUSTED_HOSTS:?BACKEND_TRUSTED_HOSTS must be set}"
       ENABLE_ADMIN_INGESTION: "false"
@@ -86,7 +100,7 @@ services:
       - application
       - database
     secrets:
-      - postgres_password
+      - postgres_app_password
 
   frontend:
     <<: *application-security
@@ -136,8 +150,13 @@ services:
       POSTGRES_HOST: db
       POSTGRES_PORT: "5432"
       POSTGRES_DB: "${POSTGRES_DB:?POSTGRES_DB must be set}"
-      POSTGRES_USER: "${POSTGRES_USER:?POSTGRES_USER must be set}"
-      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_USER: "${POSTGRES_MIGRATION_USER:?POSTGRES_MIGRATION_USER must be set}"
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_migration_password
+      DATABASE_POOL_SIZE: "${DATABASE_POOL_SIZE:-5}"
+      DATABASE_MAX_OVERFLOW: "${DATABASE_MAX_OVERFLOW:-5}"
+      DATABASE_POOL_TIMEOUT_SECONDS: "${DATABASE_POOL_TIMEOUT_SECONDS:-30}"
+      DATABASE_POOL_RECYCLE_SECONDS: "${DATABASE_POOL_RECYCLE_SECONDS:-1800}"
+      DATABASE_CONNECT_TIMEOUT_SECONDS: "${DATABASE_CONNECT_TIMEOUT_SECONDS:-10}"
       BACKEND_CORS_ALLOWED_ORIGINS: "${BACKEND_CORS_ALLOWED_ORIGINS:?BACKEND_CORS_ALLOWED_ORIGINS must be set}"
       BACKEND_TRUSTED_HOSTS: "${BACKEND_TRUSTED_HOSTS:?BACKEND_TRUSTED_HOSTS must be set}"
       ENABLE_ADMIN_INGESTION: "false"
@@ -147,14 +166,18 @@ services:
     networks:
       - database
     secrets:
-      - postgres_password
+      - postgres_migration_password
 
 volumes:
   postgres_data:
 
 secrets:
-  postgres_password:
-    file: "${POSTGRES_PASSWORD_SECRET_FILE:?POSTGRES_PASSWORD_SECRET_FILE must be set}"
+  postgres_bootstrap_password:
+    file: "${POSTGRES_BOOTSTRAP_PASSWORD_SECRET_FILE:?POSTGRES_BOOTSTRAP_PASSWORD_SECRET_FILE must be set}"
+  postgres_app_password:
+    file: "${POSTGRES_APP_PASSWORD_SECRET_FILE:?POSTGRES_APP_PASSWORD_SECRET_FILE must be set}"
+  postgres_migration_password:
+    file: "${POSTGRES_MIGRATION_PASSWORD_SECRET_FILE:?POSTGRES_MIGRATION_PASSWORD_SECRET_FILE must be set}"
 
 networks:
   application:

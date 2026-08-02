@@ -10,9 +10,24 @@ import app.db.session as db_session
 
 
 class FakeSettings:
-    def __init__(self, url: URL | None = None, error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        url: URL | None = None,
+        error: Exception | None = None,
+        *,
+        pool_size: int = 5,
+        max_overflow: int = 5,
+        pool_timeout: int = 30,
+        pool_recycle: int = 1800,
+        connect_timeout: int = 10,
+    ) -> None:
         self._url = url
         self._error = error
+        self.database_pool_size = pool_size
+        self.database_max_overflow = max_overflow
+        self.database_pool_timeout_seconds = pool_timeout
+        self.database_pool_recycle_seconds = pool_recycle
+        self.database_connect_timeout_seconds = connect_timeout
 
     @property
     def sqlalchemy_database_url(self) -> URL:
@@ -54,6 +69,7 @@ def configure_create_engine(monkeypatch: pytest.MonkeyPatch) -> tuple[MagicMock,
         return engine
 
     monkeypatch.setattr(db_session, "create_engine", fake_create_engine)
+    monkeypatch.setattr(db_session.event, "listen", lambda *args, **kwargs: None)
     return engine, captured
 
 
@@ -116,7 +132,63 @@ def test_get_engine_uses_approved_engine_settings(monkeypatch):
         "pool_recycle": 1800,
         "connect_args": {"connect_timeout": 10},
         "echo": False,
+        "hide_parameters": True,
     }
+
+
+def test_get_engine_propagates_validated_pool_settings(monkeypatch):
+    _, captured = configure_create_engine(monkeypatch)
+    configure_settings(
+        monkeypatch,
+        FakeSettings(
+            make_url(),
+            pool_size=2,
+            max_overflow=1,
+            pool_timeout=3,
+            pool_recycle=600,
+            connect_timeout=4,
+        ),
+    )
+
+    db_session.get_engine()
+
+    assert captured["kwargs"] == {
+        "pool_pre_ping": True,
+        "pool_size": 2,
+        "max_overflow": 1,
+        "pool_timeout": 3,
+        "pool_recycle": 600,
+        "connect_args": {"connect_timeout": 4},
+        "echo": False,
+        "hide_parameters": True,
+    }
+
+
+def test_initial_connection_error_is_sanitized() -> None:
+    context = MagicMock()
+    context.connection = None
+
+    error = db_session._sanitize_initial_connection_error(context)
+
+    assert isinstance(error, db_session.DatabaseConnectionError)
+    assert str(error) == "The database connection could not be opened."
+    assert "password" not in str(error).lower()
+
+
+def test_real_initial_connection_failure_is_sanitized(monkeypatch) -> None:
+    unreachable = make_url().set(port=1)
+    configure_settings(
+        monkeypatch,
+        FakeSettings(unreachable, connect_timeout=1),
+    )
+
+    engine = db_session.get_engine()
+    with pytest.raises(db_session.DatabaseConnectionError) as exc_info:
+        engine.connect()
+
+    assert str(exc_info.value) == "The database connection could not be opened."
+    assert "localhost" not in str(exc_info.value)
+    assert "super-secret" not in str(exc_info.value)
 
 
 def test_get_session_factory_is_cached(monkeypatch):
