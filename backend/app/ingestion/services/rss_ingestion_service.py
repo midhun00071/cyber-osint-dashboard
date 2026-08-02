@@ -30,6 +30,20 @@ RSS_SOURCE_TYPE = _RSS_SOURCE.source_type
 RSS_SOURCE_BASE_URL = CERT_EU_FEED_URL
 RSS_RATE_LIMIT_NOTES = _RSS_SOURCE.rate_limit_notes
 VALID_OUTCOMES = VALID_PUBLICATION_OUTCOMES
+_SAFE_SOURCE_ERRORS = frozenset(
+    {
+        "The publication source is not approved.",
+        "The publication source is not registered.",
+        "The publication source is not implemented.",
+        "The publication source is not enabled.",
+        "The source access method is not publication-compatible.",
+        "The source content family is not publication-compatible.",
+    }
+)
+_SAFE_SOURCE_CONFLICT = (
+    "The existing publication source configuration conflicts with the approved source."
+)
+_SAFE_PERSISTENCE_FAILURE = "RSS persistence failed safely."
 
 
 class RssPersistenceError(RuntimeError):
@@ -62,13 +76,17 @@ class RssIngestionService:
 
         try:
             return self._pipeline.ensure_source(RSS_SOURCE_SLUG)
-        except (PublicationPersistenceError, PublicationSourceError, SQLAlchemyError) as exc:
-            message = _rss_message(str(exc))
-            if message and "conflicts" in message:
-                raise RssPersistenceError(message) from exc
-            raise RssPersistenceError(
-                "Database error while preparing the approved CERT-EU RSS source."
-            ) from exc
+        except PublicationSourceError as exc:
+            message = str(exc)
+            if message in _SAFE_SOURCE_ERRORS:
+                raise RssPersistenceError(message) from None
+            raise RssPersistenceError(_SAFE_PERSISTENCE_FAILURE) from None
+        except PublicationPersistenceError as exc:
+            if str(exc) == _SAFE_SOURCE_CONFLICT:
+                raise RssPersistenceError(_SAFE_SOURCE_CONFLICT) from None
+            raise RssPersistenceError(_SAFE_PERSISTENCE_FAILURE) from None
+        except SQLAlchemyError:
+            raise RssPersistenceError(_SAFE_PERSISTENCE_FAILURE) from None
 
     def persist(
         self,
@@ -91,10 +109,8 @@ class RssIngestionService:
                 candidate,
                 observed_at=observed_at,
             )
-        except PublicationPersistenceError as exc:
-            raise RssPersistenceError(
-                "Database error while persisting normalized RSS data."
-            ) from exc
+        except (PublicationPersistenceError, SQLAlchemyError):
+            raise RssPersistenceError(_SAFE_PERSISTENCE_FAILURE) from None
         return RssPersistenceResult(
             source_external_id=result.source_external_id,
             outcome=result.outcome,

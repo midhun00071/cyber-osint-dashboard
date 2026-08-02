@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta, timezone
 import ipaddress
 import os
 from pathlib import Path
+import socket
 import time
 from uuid import uuid4
 
@@ -12,7 +13,7 @@ from alembic import command
 from alembic.config import Config
 import pytest
 from sqlalchemy import create_engine, func, select
-from sqlalchemy.engine import make_url
+from sqlalchemy.engine import URL, make_url
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.pool import NullPool
 from sqlalchemy.orm import Session
@@ -72,26 +73,101 @@ UNSAFE_SUMMARY_CANARIES = (
     "Diagnostic: CREATE TABLE leaked_records (id integer);",
     "summary\x00secret",
 )
+QUERY_OVERRIDE_NAMES = (
+    "host",
+    "hostaddr",
+    "dbname",
+    "database",
+    "service",
+    "servicefile",
+    "user",
+    "password",
+    "port",
+    "options",
+    "sslmode",
+)
+
+
+def _validated_database_url(raw: str) -> URL:
+    try:
+        url = make_url(raw)
+    except Exception:
+        pytest.fail("Dedicated B1-04 database configuration is invalid")
+    if url.drivername not in {"postgresql", "postgresql+psycopg"}:
+        pytest.fail("Dedicated B1-04 database must use PostgreSQL")
+    if url.query:
+        pytest.fail("Dedicated B1-04 database URL query parameters are forbidden")
+    host = (url.host or "").strip("[]").lower()
+    if host not in {"127.0.0.1", "localhost", "::1"}:
+        pytest.fail("Dedicated B1-04 database must be loopback-only")
+    if host == "localhost":
+        try:
+            addresses = {
+                ipaddress.ip_address(result[4][0])
+                for result in socket.getaddrinfo(host, url.port or 5432)
+            }
+        except (OSError, ValueError):
+            pytest.fail("Dedicated B1-04 database host could not be resolved safely")
+        if not addresses or not all(address.is_loopback for address in addresses):
+            pytest.fail("Dedicated B1-04 database must resolve only to loopback")
+    database = url.database or ""
+    if not database.startswith("b104_test_"):
+        pytest.fail("Dedicated B1-04 database name must use the disposable prefix")
+    if any(label in database.casefold() for label in ("staging", "production", "prod")):
+        pytest.fail("Staging and production database names are forbidden")
+    return url.set(drivername="postgresql+psycopg")
+
+
+def _database_url() -> URL:
+    raw = os.environ.get(TEST_URL_ENV)
+    if not raw:
+        pytest.skip(f"{TEST_URL_ENV} is not configured")
+    return _validated_database_url(raw)
+
+
+@pytest.mark.parametrize("query_name", QUERY_OVERRIDE_NAMES)
+def test_database_url_guard_rejects_query_overrides_before_connection(
+    query_name: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    connection_attempted = False
+
+    def unexpected_create_engine(*args, **kwargs):
+        nonlocal connection_attempted
+        connection_attempted = True
+        raise AssertionError("database connection must not be attempted")
+
+    monkeypatch.setitem(globals(), "create_engine", unexpected_create_engine)
+    submitted = (
+        "postgresql://synthetic-user:query-password-canary@127.0.0.1/"
+        f"b104_test_guard?{query_name}=query-override-canary"
+    )
+    with pytest.raises(pytest.fail.Exception) as exc_info:
+        _validated_database_url(submitted)
+
+    assert connection_attempted is False
+    message = str(exc_info.value)
+    assert "query-password-canary" not in message
+    assert "query-override-canary" not in message
+
+
+def test_database_url_guard_accepts_clean_loopback_url() -> None:
+    url = _validated_database_url(
+        "postgresql://synthetic-user:synthetic-password@127.0.0.1/"
+        "b104_test_guard"
+    )
+
+    assert url.drivername == "postgresql+psycopg"
+    assert url.host == "127.0.0.1"
+    assert url.database == "b104_test_guard"
+    assert not url.query
 
 
 @pytest.fixture(scope="session")
 def pg_engine():
-    raw_url = os.environ.get(TEST_URL_ENV)
-    if not raw_url:
-        pytest.skip(f"{TEST_URL_ENV} is not configured")
-    url = make_url(raw_url)
-    if url.get_backend_name() != "postgresql":
-        pytest.fail("B1-04 acceptance requires PostgreSQL.")
-    host = (url.host or "").strip("[]").lower()
-    try:
-        loopback = ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        loopback = host == "localhost"
-    if not loopback or not (url.database or "").startswith("b104_test_"):
-        pytest.fail("B1-04 acceptance requires a disposable loopback database.")
+    url = _database_url()
 
     prior = os.environ.get("DATABASE_URL")
-    os.environ["DATABASE_URL"] = raw_url
+    os.environ["DATABASE_URL"] = url.render_as_string(hide_password=False)
     get_settings.cache_clear()
     probe = create_engine(url, poolclass=NullPool)
     ready = False
@@ -122,7 +198,10 @@ def pg_engine():
 
 
 @pytest.fixture(autouse=True)
-def isolated_rows(pg_engine):
+def isolated_rows(request: pytest.FixtureRequest):
+    if request.node.name.startswith("test_database_url_guard_"):
+        return
+    pg_engine = request.getfixturevalue("pg_engine")
     with pg_engine.begin() as connection:
         for table in reversed(Base.metadata.sorted_tables):
             connection.execute(table.delete())

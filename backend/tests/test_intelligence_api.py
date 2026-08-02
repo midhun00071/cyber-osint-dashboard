@@ -617,7 +617,11 @@ def test_published_year_uses_utc_boundaries_and_filtered_total(client) -> None:
     sql = str(session.last_statement)
     assert "intelligence_items.source_published_at >=" in sql
     assert "intelligence_items.source_published_at <" in sql
-    assert set(session.last_statement.compile().params.values()) == {start, next_year}
+    assert set(session.last_statement.compile().params.values()) == {
+        "active",
+        start,
+        next_year,
+    }
 
 
 def test_no_published_year_preserves_existing_results(client) -> None:
@@ -1084,6 +1088,34 @@ def test_detail_endpoint_returns_safe_404(client) -> None:
     }
 
 
+@pytest.mark.parametrize("status", ["archived", "merged", "superseded"])
+def test_inactive_intelligence_is_excluded_and_detail_matches_nonexistent_404(
+    client,
+    status: str,
+) -> None:
+    inactive = make_vulnerability_item()
+    inactive.status = status
+    session = FakeSession([inactive])
+
+    list_response = client(session).get("/api/v1/intelligence/items")
+    inactive_response = client(session).get(
+        f"/api/v1/intelligence/items/{inactive.public_id}"
+    )
+    missing_response = client(session).get(
+        f"/api/v1/intelligence/items/{uuid4()}"
+    )
+
+    assert list_response.status_code == 200
+    assert list_response.json()["items"] == []
+    assert inactive_response.status_code == missing_response.status_code == 404
+    assert inactive_response.json() == missing_response.json() == {
+        "detail": "The requested intelligence item was not found."
+    }
+    detail_sql = str(session.last_statement)
+    assert "intelligence_items.public_id" in detail_sql
+    assert "intelligence_items.status" in detail_sql
+
+
 def test_database_errors_are_sanitized(client) -> None:
     response = client(
         FakeSession(
@@ -1146,7 +1178,10 @@ def test_repeated_intelligence_query_parameters_are_rejected(
     assert session.execute_calls == 0
 
 
-@pytest.mark.parametrize("query", ["unknown_param=x", "sort=title"])
+@pytest.mark.parametrize(
+    "query",
+    ["unknown_param=x", "sort=title", "order=sideways", "field=raw_payload"],
+)
 def test_unsupported_intelligence_query_parameters_are_rejected(
     client,
     query: str,

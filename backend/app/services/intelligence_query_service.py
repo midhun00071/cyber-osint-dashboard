@@ -9,17 +9,24 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, load_only, raiseload, selectinload
 
 from app.api.v1.schemas.intelligence import (
     IntelligenceItemListResponse,
     IntelligenceItemSummary,
 )
 from app.ingestion.services.epss_enrichment_service import EPSS_SOURCE_SLUG
-from app.models import IntelligenceItem, IntelligenceItemIdentifier, SourceRecord
+from app.models import (
+    IntelligenceItem,
+    IntelligenceItemIdentifier,
+    IntelligenceSource,
+    SourceRecord,
+    Vulnerability,
+)
 
 
 DEFAULT_ITEM_TYPE = "vulnerability"
+ACTIVE_STATUS = "active"
 
 
 class IntelligenceQueryError(RuntimeError):
@@ -115,9 +122,31 @@ class IntelligenceQueryService:
         )
 
     def get_item(self, item_public_id: UUID) -> IntelligenceItemSummary:
-        for item in self._load_items():
-            if item.public_id == item_public_id:
-                return self._serialize_item(item)
+        statement = (
+            select(IntelligenceItem)
+            .where(
+                IntelligenceItem.public_id == item_public_id,
+                IntelligenceItem.status == ACTIVE_STATUS,
+            )
+            .options(*self._public_load_options())
+        )
+        try:
+            items = self._session.execute(statement).scalars().all()
+        except SQLAlchemyError as exc:
+            raise IntelligenceQueryError(
+                "Database error while loading stored intelligence item."
+            ) from exc
+        item = next(
+            (
+                candidate
+                for candidate in items
+                if candidate.public_id == item_public_id
+                and candidate.status == ACTIVE_STATUS
+            ),
+            None,
+        )
+        if item is not None:
+            return self._serialize_item(item)
         raise IntelligenceNotFoundError("Intelligence item not found.")
 
     def _load_items(
@@ -126,13 +155,8 @@ class IntelligenceQueryService:
     ) -> list[IntelligenceItem]:
         statement = (
             select(IntelligenceItem)
-            .options(selectinload(IntelligenceItem.vulnerability))
-            .options(selectinload(IntelligenceItem.identifiers))
-            .options(
-                selectinload(IntelligenceItem.source_records).selectinload(
-                    SourceRecord.source
-                )
-            )
+            .where(IntelligenceItem.status == ACTIVE_STATUS)
+            .options(*self._public_load_options())
         )
         if filters is not None and filters.published_year is not None:
             start, end = self._published_year_boundaries(filters.published_year)
@@ -147,11 +171,82 @@ class IntelligenceQueryService:
                 "Database error while loading stored intelligence items."
             ) from exc
 
+    @staticmethod
+    def _public_load_options() -> tuple:
+        return (
+            load_only(
+                IntelligenceItem.public_id,
+                IntelligenceItem.canonical_title,
+                IntelligenceItem.summary,
+                IntelligenceItem.item_type,
+                IntelligenceItem.status,
+                IntelligenceItem.canonical_url,
+                IntelligenceItem.source_published_at,
+                IntelligenceItem.source_modified_at,
+                IntelligenceItem.last_seen_at,
+                IntelligenceItem.created_at,
+                IntelligenceItem.geographic_scope,
+                IntelligenceItem.uae_relevance_status,
+                IntelligenceItem.uae_relevance_confidence,
+                raiseload=True,
+            ),
+            raiseload("*"),
+            selectinload(IntelligenceItem.vulnerability).options(
+                load_only(
+                    Vulnerability.severity,
+                    Vulnerability.cvss_score,
+                    Vulnerability.cvss_version,
+                    Vulnerability.cvss_vector,
+                    Vulnerability.epss_score,
+                    Vulnerability.epss_percentile,
+                    Vulnerability.kev_status,
+                    Vulnerability.kev_date_added,
+                    Vulnerability.kev_due_date,
+                    Vulnerability.known_ransomware_campaign_use,
+                    Vulnerability.affected_summary,
+                    raiseload=True,
+                ),
+                raiseload("*"),
+            ),
+            selectinload(IntelligenceItem.identifiers).options(
+                load_only(
+                    IntelligenceItemIdentifier.namespace,
+                    IntelligenceItemIdentifier.normalized_value,
+                    IntelligenceItemIdentifier.is_primary,
+                    raiseload=True,
+                ),
+                raiseload("*"),
+            ),
+            selectinload(IntelligenceItem.source_records).options(
+                load_only(
+                    SourceRecord.source_external_id,
+                    SourceRecord.source_url,
+                    SourceRecord.source_published_at,
+                    SourceRecord.source_modified_at,
+                    SourceRecord.first_seen_at,
+                    SourceRecord.is_primary_reference,
+                    SourceRecord.created_at,
+                    raiseload=True,
+                ),
+                raiseload("*"),
+                selectinload(SourceRecord.source).options(
+                    load_only(
+                        IntelligenceSource.slug,
+                        IntelligenceSource.name,
+                        raiseload=True,
+                    ),
+                    raiseload("*"),
+                ),
+            ),
+        )
+
     def _matches_filters(
         self,
         item: IntelligenceItem,
         filters: IntelligenceQueryFilters,
     ) -> bool:
+        if item.status != ACTIVE_STATUS:
+            return False
         if item.item_type != filters.normalized_item_type:
             return False
 

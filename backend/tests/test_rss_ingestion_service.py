@@ -11,6 +11,8 @@ from sqlalchemy.sql import operators
 
 from app.ingestion.normalizers.rss import normalize_rss_feed
 from app.ingestion.publication_pipeline import (
+    PublicationPersistenceError,
+    PublicationSourceError,
     normalized_publication_title_sha256,
     publication_content_hash,
 )
@@ -1056,6 +1058,52 @@ def test_database_failure_raises_sanitized_error() -> None:
         persist_new(session)
 
     message = str(exc_info.value)
-    assert message == "Database error while persisting normalized RSS data."
+    assert message == "RSS persistence failed safely."
     assert "private-password" not in message
     assert "postgresql://" not in message
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        SQLAlchemyError(
+            "conflicts postgresql://user:password@host/database "
+            "SELECT secret FROM credentials password=highly-sensitive "
+            "Traceback (most recent call last)"
+        ),
+        PublicationPersistenceError(
+            "conflicts postgresql://user:password@host/database "
+            "SELECT secret FROM credentials password=highly-sensitive "
+            "Traceback (most recent call last)"
+        ),
+        PublicationSourceError(
+            "conflicts postgresql://user:password@host/database "
+            "SELECT secret FROM credentials password=highly-sensitive "
+            "Traceback (most recent call last)"
+        ),
+    ],
+)
+def test_unallowlisted_source_errors_never_leak_canaries(
+    error: Exception,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class FailingPipeline:
+        def ensure_source(self, _source_slug: str):
+            raise error
+
+    service = RssIngestionService(FakeSession())  # type: ignore[arg-type]
+    service._pipeline = FailingPipeline()  # type: ignore[assignment]
+
+    with pytest.raises(RssPersistenceError) as exc_info:
+        service.ensure_source()
+
+    assert str(exc_info.value) == "RSS persistence failed safely."
+    captured = str(exc_info.value) + caplog.text
+    for canary in (
+        "conflicts",
+        "postgresql://user:password@host/database",
+        "SELECT secret FROM credentials",
+        "password=highly-sensitive",
+        "Traceback (most recent call last)",
+    ):
+        assert canary not in captured

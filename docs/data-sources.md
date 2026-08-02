@@ -504,7 +504,15 @@ from EPSS or KEV input.
   source-specific ingestion service owns commit/rollback and produces sanitized
   outcomes; `PublicationPipeline` itself does not commit. Invalid records can be
   counted safely; database/network internals, raw SQL, headers, cookies, secrets,
-  and full exception details are not printed or exposed.
+  and full exception details are not printed or exposed. For the source-owned
+  Anomali and Censys transactions, a rollback failure emits a fixed sanitized
+  error event, invalidates the uncertain session, and produces non-success. The
+  session is first marked with a fixed internal poison attribute. Logging and
+  invalidation are best-effort and cannot change exception control flow or clear
+  that marker; no raw cleanup detail is logged or raised. Existing and newly
+  created Anomali or Censys services reject a poisoned session before pipeline or
+  database activity. The caller must discard it. Rollback failure is never
+  silently ignored and cannot advance progress, checkpoints, or success evidence.
 
 ## Planned and assessed sources
 

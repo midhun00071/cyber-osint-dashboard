@@ -9,7 +9,7 @@ from uuid import UUID
 
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, load_only, raiseload, selectinload
 
 from app.api.v1.query_validation import ARTICLE_ITEM_TYPE_VALUES
 from app.api.v1.schemas.articles import ArticleListResponse, ArticleSummary
@@ -68,15 +68,11 @@ class ArticleQueryService:
         base_statement = self._filtered_statement(filters)
         try:
             total = self._session.execute(
-                select(func.count()).select_from(base_statement.subquery())
+                base_statement.with_only_columns(func.count()).order_by(None)
             ).scalar_one()
             page_items = list(
                 self._session.execute(
-                    base_statement.options(
-                        selectinload(IntelligenceItem.source_records).selectinload(
-                            SourceRecord.source
-                        )
-                    )
+                    base_statement.options(*self._public_load_options())
                     .order_by(
                         IntelligenceItem.source_published_at.desc().nulls_last(),
                         IntelligenceItem.last_seen_at.desc(),
@@ -102,11 +98,7 @@ class ArticleQueryService:
         statement = (
             self._base_article_statement()
             .where(IntelligenceItem.public_id == public_id)
-            .options(
-                selectinload(IntelligenceItem.source_records).selectinload(
-                    SourceRecord.source
-                )
-            )
+            .options(*self._public_load_options())
         )
         try:
             item = self._session.execute(statement).scalars().one_or_none()
@@ -177,6 +169,46 @@ class ArticleQueryService:
             select(IntelligenceItem)
             .where(IntelligenceItem.status == ACTIVE_STATUS)
             .where(IntelligenceItem.item_type.in_(ARTICLE_ITEM_TYPES))
+        )
+
+    @staticmethod
+    def _public_load_options() -> tuple:
+        return (
+            load_only(
+                IntelligenceItem.public_id,
+                IntelligenceItem.canonical_title,
+                IntelligenceItem.summary,
+                IntelligenceItem.item_type,
+                IntelligenceItem.canonical_url,
+                IntelligenceItem.source_published_at,
+                IntelligenceItem.source_modified_at,
+                IntelligenceItem.geographic_scope,
+                IntelligenceItem.uae_relevance_status,
+                IntelligenceItem.uae_relevance_confidence,
+                IntelligenceItem.last_seen_at,
+                raiseload=True,
+            ),
+            raiseload("*"),
+            selectinload(IntelligenceItem.source_records).options(
+                load_only(
+                    SourceRecord.source_external_id,
+                    SourceRecord.source_url,
+                    SourceRecord.source_published_at,
+                    SourceRecord.source_modified_at,
+                    SourceRecord.is_primary_reference,
+                    SourceRecord.created_at,
+                    raiseload=True,
+                ),
+                raiseload("*"),
+                selectinload(SourceRecord.source).options(
+                    load_only(
+                        IntelligenceSource.slug,
+                        IntelligenceSource.name,
+                        raiseload=True,
+                    ),
+                    raiseload("*"),
+                ),
+            ),
         )
 
     @staticmethod

@@ -18,12 +18,14 @@ from app.ingestion.publication_pipeline import (
     PublicationPersistenceError,
     PublicationPersistenceResult,
 )
+from app.ingestion.services import anomali_publications_ingestion_service as service_module
 from app.ingestion.services.anomali_publications_ingestion_service import (
     COLLECTOR_FAILURE_AUDIT_KINDS,
     AnomaliFailureAuditKind,
     AnomaliIngestionDatabaseError,
     AnomaliIngestionError,
     AnomaliIngestionInputError,
+    AnomaliIngestionResult,
     AnomaliIngestionTrigger,
     AnomaliPublicationsIngestionService,
     collector_failure_audit_kind,
@@ -38,6 +40,34 @@ from app.models import (
 
 
 NOW = datetime(2026, 7, 19, 8, 0, tzinfo=UTC)
+ROLLBACK_FAILURE_EVENT = (
+    "event=ingestion_rollback_failed source=anomali-publications "
+    "error_category=transaction_cleanup_failed"
+)
+
+
+class ErrorLogRecorder:
+    def __init__(self, error: BaseException | None = None) -> None:
+        self.raised_error = error
+        self.calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    def error(self, *args: object, **kwargs: object) -> None:
+        self.calls.append((args, kwargs))
+        if self.raised_error is not None:
+            raise self.raised_error
+
+
+def _rollback_log_recorder(
+    monkeypatch: pytest.MonkeyPatch,
+    error: BaseException | None = None,
+) -> ErrorLogRecorder:
+    recorder = ErrorLogRecorder(error)
+    monkeypatch.setattr(service_module, "_LOGGER", recorder)
+    return recorder
+
+
+def _assert_single_sanitized_rollback_log(recorder: ErrorLogRecorder) -> None:
+    assert recorder.calls == [((ROLLBACK_FAILURE_EVENT,), {})]
 
 
 class FakeSession:
@@ -46,16 +76,20 @@ class FakeSession:
         *,
         commit_error: BaseException | None = None,
         rollback_error: BaseException | None = None,
+        invalidation_error: BaseException | None = None,
         flush_error: BaseException | None = None,
         audit_error: BaseException | None = None,
     ) -> None:
         self.commit_error = commit_error
         self.rollback_error = rollback_error
+        self.invalidation_error = invalidation_error
         self.flush_error = flush_error
         self.audit_error = audit_error
         self.added: list[object] = []
         self.commits = 0
         self.rollbacks = 0
+        self.invalidations = 0
+        self.flushes = 0
         self.nested_transactions = 0
 
     def add(self, record: object) -> None:
@@ -66,6 +100,7 @@ class FakeSession:
     def flush(self) -> None:
         if self.flush_error is not None:
             raise self.flush_error
+        self.flushes += 1
         for record in self.added:
             if isinstance(record, IngestionRun) and record.id is None:
                 record.id = 1
@@ -84,6 +119,11 @@ class FakeSession:
         self.rollbacks += 1
         if self.rollback_error is not None:
             raise self.rollback_error
+
+    def invalidate(self) -> None:
+        self.invalidations += 1
+        if self.invalidation_error is not None:
+            raise self.invalidation_error
 
 
 class FakePipeline:
@@ -191,6 +231,19 @@ def ingest(
         observed_at=NOW,
     )
     return result.run, active_session, active_pipeline
+
+
+def invoke_service(
+    service: AnomaliPublicationsIngestionService,
+) -> AnomaliIngestionResult:
+    return service.ingest(
+        source_slug=ANOMALI_SOURCE_SLUG,
+        candidates=(candidate(),),
+        records_fetched=1,
+        capped=False,
+        trigger=AnomaliIngestionTrigger.LIVE,
+        observed_at=NOW,
+    )
 
 
 def test_successful_creation_owns_source_and_commits_safe_run() -> None:
@@ -541,11 +594,18 @@ def test_system_exceptions_propagate_after_rollback(error: BaseException) -> Non
     assert session.rollbacks == 1
 
 
-def test_active_system_exception_is_not_replaced_by_rollback_failure() -> None:
-    primary = MemoryError("primary")
-    session = FakeSession(rollback_error=MemoryError("secondary"))
+@pytest.mark.parametrize(
+    "primary",
+    [MemoryError("primary"), KeyboardInterrupt(), SystemExit(7), GeneratorExit()],
+)
+def test_active_system_exception_is_not_replaced_by_rollback_failure(
+    primary: BaseException,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorder = _rollback_log_recorder(monkeypatch)
+    session = FakeSession(rollback_error=RuntimeError("secondary secret"))
 
-    with pytest.raises(MemoryError) as exc_info:
+    with pytest.raises(type(primary)) as exc_info:
         ingest(
             candidates=(candidate(),),
             session=session,
@@ -553,6 +613,243 @@ def test_active_system_exception_is_not_replaced_by_rollback_failure() -> None:
         )
 
     assert exc_info.value is primary
+    assert session.commits == 0
+    assert session.invalidations == 1
+    _assert_single_sanitized_rollback_log(recorder)
+
+
+@pytest.mark.parametrize(
+    "rollback_error",
+    [RuntimeError("rollback secret"), MemoryError("rollback memory secret")],
+)
+def test_ordinary_failure_plus_rollback_failure_is_sanitized_and_invalidated(
+    rollback_error: BaseException,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorder = _rollback_log_recorder(monkeypatch)
+    primary_secret = "postgresql://user:password@host/database SELECT secret"
+    session = FakeSession(rollback_error=rollback_error)
+
+    with pytest.raises(AnomaliIngestionDatabaseError) as exc_info:
+        ingest(
+            candidates=(candidate(),),
+            session=session,
+            pipeline=FakePipeline(error=SQLAlchemyError(primary_secret)),
+        )
+
+    assert str(exc_info.value) == (
+        "Manual Anomali ingestion failed during transaction cleanup."
+    )
+    assert session.commits == 0
+    assert session.invalidations == 1
+    _assert_single_sanitized_rollback_log(recorder)
+
+
+@pytest.mark.parametrize(
+    "primary",
+    [
+        MemoryError("primary-memory-canary"),
+        KeyboardInterrupt(),
+        SystemExit(7),
+        GeneratorExit(),
+    ],
+)
+def test_logger_and_invalidation_failures_cannot_replace_system_exception(
+    primary: BaseException,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorder = _rollback_log_recorder(
+        monkeypatch, MemoryError("logger-failure-canary")
+    )
+    session = FakeSession(
+        rollback_error=RuntimeError("rollback-failure-canary"),
+        invalidation_error=SystemExit("invalidation-failure-canary"),
+    )
+    service = AnomaliPublicationsIngestionService(
+        session,  # type: ignore[arg-type]
+        pipeline_factory=TrackingPipelineFactory(FakePipeline(error=primary)),
+    )
+
+    with pytest.raises(type(primary)) as exc_info:
+        invoke_service(service)
+
+    assert exc_info.value is primary
+    assert session.invalidations == 1
+    assert session.commits == 0
+    assert getattr(session, service_module._SESSION_POISON_ATTRIBUTE) is True
+    _assert_single_sanitized_rollback_log(recorder)
+    exposed = str(exc_info.value)
+    assert "logger-failure-canary" not in exposed
+    assert "invalidation-failure-canary" not in exposed
+    assert "rollback-failure-canary" not in exposed
+
+
+@pytest.mark.parametrize(
+    "invalidation_error",
+    [
+        RuntimeError("invalidation-runtime-canary"),
+        MemoryError("invalidation-memory-canary"),
+        KeyboardInterrupt(),
+        SystemExit("invalidation-system-exit-canary"),
+        GeneratorExit(),
+    ],
+)
+def test_cleanup_failures_poison_session_and_keep_ordinary_error_sanitized(
+    invalidation_error: BaseException,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorder = _rollback_log_recorder(
+        monkeypatch, KeyboardInterrupt("logger-keyboard-canary")
+    )
+    session = FakeSession(
+        rollback_error=MemoryError("rollback-memory-canary"),
+        invalidation_error=invalidation_error,
+    )
+    service = AnomaliPublicationsIngestionService(
+        session,  # type: ignore[arg-type]
+        pipeline_factory=TrackingPipelineFactory(
+            FakePipeline(
+                error=SQLAlchemyError(
+                    "postgresql://user:password@private/primary-sql-canary"
+                )
+            )
+        ),
+    )
+
+    with pytest.raises(AnomaliIngestionDatabaseError) as exc_info:
+        invoke_service(service)
+
+    assert str(exc_info.value) == (
+        "Manual Anomali ingestion failed during transaction cleanup."
+    )
+    assert session.invalidations == 1
+    assert session.commits == 0
+    assert getattr(session, service_module._SESSION_POISON_ATTRIBUTE) is True
+    _assert_single_sanitized_rollback_log(recorder)
+    exposed = str(exc_info.value)
+    assert "password" not in exposed
+    assert "logger-keyboard-canary" not in exposed
+    assert "invalidation" not in exposed
+    assert "rollback-memory-canary" not in exposed
+
+
+def test_same_and_new_service_reject_poisoned_session_before_pipeline_activity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _rollback_log_recorder(monkeypatch)
+    session = FakeSession(
+        rollback_error=RuntimeError("rollback-secret"),
+        invalidation_error=MemoryError("invalidation-secret"),
+    )
+    first_factory = TrackingPipelineFactory(
+        FakePipeline(error=SQLAlchemyError("primary SQL and password"))
+    )
+    service = AnomaliPublicationsIngestionService(
+        session,  # type: ignore[arg-type]
+        pipeline_factory=first_factory,
+    )
+
+    with pytest.raises(AnomaliIngestionDatabaseError, match="transaction cleanup"):
+        invoke_service(service)
+
+    activity = (
+        len(session.added),
+        session.flushes,
+        session.nested_transactions,
+        session.rollbacks,
+        session.invalidations,
+    )
+    first_factory.pipeline = FakePipeline()
+    with pytest.raises(AnomaliIngestionDatabaseError, match="unsafe database session"):
+        invoke_service(service)
+    assert first_factory.calls == 1
+    assert session.commits == 0
+    assert (
+        len(session.added),
+        session.flushes,
+        session.nested_transactions,
+        session.rollbacks,
+        session.invalidations,
+    ) == activity
+
+    new_factory = TrackingPipelineFactory(FakePipeline())
+    new_service = AnomaliPublicationsIngestionService(
+        session,  # type: ignore[arg-type]
+        pipeline_factory=new_factory,
+    )
+    with pytest.raises(AnomaliIngestionDatabaseError, match="unsafe database session"):
+        invoke_service(new_service)
+    assert new_factory.calls == 0
+    assert session.commits == 0
+
+
+def test_successful_rollback_does_not_poison_session() -> None:
+    session = FakeSession()
+    failing_service = AnomaliPublicationsIngestionService(
+        session,  # type: ignore[arg-type]
+        pipeline_factory=TrackingPipelineFactory(
+            FakePipeline(error=SQLAlchemyError("ordinary private database error"))
+        ),
+    )
+
+    with pytest.raises(AnomaliIngestionDatabaseError, match="database operation"):
+        invoke_service(failing_service)
+
+    assert not hasattr(session, service_module._SESSION_POISON_ATTRIBUTE)
+    result = invoke_service(
+        AnomaliPublicationsIngestionService(
+            session,  # type: ignore[arg-type]
+            pipeline_factory=TrackingPipelineFactory(FakePipeline()),
+        )
+    )
+    assert result.run.status == "succeeded"
+    assert session.rollbacks == 1
+    assert session.commits == 1
+
+
+@pytest.mark.parametrize("invalidation_kind", ["absent", "not-callable"])
+def test_missing_or_noncallable_invalidation_still_poison_session(
+    invalidation_kind: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class RollbackOnlySession:
+        def __init__(self) -> None:
+            self.rollbacks = 0
+
+        def rollback(self) -> None:
+            self.rollbacks += 1
+            raise RuntimeError("rollback-canary")
+
+    session = RollbackOnlySession()
+    if invalidation_kind == "not-callable":
+        session.invalidate = object()  # type: ignore[attr-defined]
+    recorder = _rollback_log_recorder(monkeypatch)
+
+    def failing_pipeline_factory(_: object) -> FakePipeline:
+        raise SQLAlchemyError("primary-password-canary")
+
+    service = AnomaliPublicationsIngestionService(
+        session,  # type: ignore[arg-type]
+        pipeline_factory=failing_pipeline_factory,
+    )
+    with pytest.raises(AnomaliIngestionDatabaseError) as exc_info:
+        invoke_service(service)
+
+    assert str(exc_info.value) == (
+        "Manual Anomali ingestion failed during transaction cleanup."
+    )
+    assert session.rollbacks == 1
+    assert getattr(session, service_module._SESSION_POISON_ATTRIBUTE) is True
+    _assert_single_sanitized_rollback_log(recorder)
+
+    denied_factory = TrackingPipelineFactory(FakePipeline())
+    denied_service = AnomaliPublicationsIngestionService(
+        session,  # type: ignore[arg-type]
+        pipeline_factory=denied_factory,
+    )
+    with pytest.raises(AnomaliIngestionDatabaseError, match="unsafe database session"):
+        invoke_service(denied_service)
+    assert denied_factory.calls == 0
 
 
 @pytest.mark.parametrize(

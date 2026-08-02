@@ -7,6 +7,7 @@ from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import Enum
+import logging
 from types import MappingProxyType
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -31,6 +32,12 @@ APPROVED_CENSYS_SOURCE_SLUGS = frozenset(
     {CENSYS_ARC_RESEARCH_SLUG, CENSYS_RAPID_RESPONSE_SLUG}
 )
 _SYSTEM_EXCEPTIONS = (MemoryError, KeyboardInterrupt, SystemExit, GeneratorExit)
+_LOGGER = logging.getLogger(__name__)
+_ROLLBACK_FAILURE_EVENT = (
+    "event=ingestion_rollback_failed source=censys-publications "
+    "error_category=transaction_cleanup_failed"
+)
+_SESSION_POISON_ATTRIBUTE = "_alpha_data_source_ingestion_session_poisoned"
 _BATCH_DUPLICATE_DETAIL = (
     "A duplicate Censys publication matched an earlier batch entry."
 )
@@ -153,6 +160,10 @@ class CensysPublicationsIngestionService:
     ) -> CensysIngestionResult:
         """Create, audit, and commit one caller-session Censys ingestion run."""
 
+        if _session_is_poisoned(self._session):
+            raise CensysIngestionDatabaseError(
+                "Manual Censys ingestion rejected an unsafe database session."
+            ) from None
         normalized_candidates, normalized_failures, observed = _validate_batch(
             source_slug=source_slug,
             candidates=candidates,
@@ -242,18 +253,21 @@ class CensysPublicationsIngestionService:
             self._session.commit()
             return CensysIngestionResult(run=run)
         except _SYSTEM_EXCEPTIONS:
-            _rollback_safely(
-                self._session,
-                system_exception_active=True,
-            )
+            _rollback_safely(self._session)
             raise
         except (PublicationPersistenceError, SQLAlchemyError):
-            _rollback_safely(self._session)
+            if not _rollback_safely(self._session):
+                raise CensysIngestionDatabaseError(
+                    "Manual Censys ingestion failed during transaction cleanup."
+                ) from None
             raise CensysIngestionDatabaseError(
                 "Manual Censys ingestion failed during a database operation."
             ) from None
         except Exception:
-            _rollback_safely(self._session)
+            if not _rollback_safely(self._session):
+                raise CensysIngestionError(
+                    "Manual Censys ingestion failed during transaction cleanup."
+                ) from None
             raise CensysIngestionError(
                 "Manual Censys ingestion failed unexpectedly."
             ) from None
@@ -552,13 +566,41 @@ def _completed_summary(
 
 def _rollback_safely(
     session: Session,
-    *,
-    system_exception_active: bool = False,
-) -> None:
+) -> bool:
     try:
         session.rollback()
-    except _SYSTEM_EXCEPTIONS:
-        if not system_exception_active:
-            raise
-    except Exception:
-        pass
+    except BaseException:
+        _poison_session(session)
+        _log_rollback_failure_safely()
+        _invalidate_session_safely(session)
+        return False
+    return True
+
+
+def _poison_session(session: Session) -> None:
+    object.__setattr__(session, _SESSION_POISON_ATTRIBUTE, True)
+
+
+def _session_is_poisoned(session: Session) -> bool:
+    try:
+        return object.__getattribute__(session, _SESSION_POISON_ATTRIBUTE) is True
+    except AttributeError:
+        return False
+    except BaseException:
+        return True
+
+
+def _log_rollback_failure_safely() -> None:
+    try:
+        _LOGGER.error(_ROLLBACK_FAILURE_EVENT)
+    except BaseException:
+        return
+
+
+def _invalidate_session_safely(session: Session) -> None:
+    try:
+        invalidate = getattr(session, "invalidate", None)
+        if callable(invalidate):
+            invalidate()
+    except BaseException:
+        return

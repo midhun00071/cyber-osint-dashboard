@@ -22,10 +22,13 @@ from app.ingestion.publication_pipeline import (
     PublicationPersistenceResult,
     PublicationPipeline,
 )
+from app.ingestion.services import censys_publications_ingestion_service as service_module
 from app.ingestion.services.censys_publications_ingestion_service import (
     CensysFailureAuditKind,
     CensysIngestionDatabaseError,
+    CensysIngestionError,
     CensysIngestionInputError,
+    CensysIngestionResult,
     CensysIngestionTrigger,
     CensysPublicationsIngestionService,
     collector_failure_audit_kind,
@@ -42,22 +45,53 @@ from app.models import (
 
 
 NOW = datetime(2026, 7, 17, 8, 0, tzinfo=UTC)
+ROLLBACK_FAILURE_EVENT = (
+    "event=ingestion_rollback_failed source=censys-publications "
+    "error_category=transaction_cleanup_failed"
+)
+
+
+class ErrorLogRecorder:
+    def __init__(self, error: BaseException | None = None) -> None:
+        self.raised_error = error
+        self.calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    def error(self, *args: object, **kwargs: object) -> None:
+        self.calls.append((args, kwargs))
+        if self.raised_error is not None:
+            raise self.raised_error
+
+
+def _rollback_log_recorder(
+    monkeypatch: pytest.MonkeyPatch,
+    error: BaseException | None = None,
+) -> ErrorLogRecorder:
+    recorder = ErrorLogRecorder(error)
+    monkeypatch.setattr(service_module, "_LOGGER", recorder)
+    return recorder
+
+
+def _assert_single_sanitized_rollback_log(recorder: ErrorLogRecorder) -> None:
+    assert recorder.calls == [((ROLLBACK_FAILURE_EVENT,), {})]
 
 
 class FakeSession:
     def __init__(
         self,
         *,
-        commit_error: Exception | None = None,
-        rollback_error: Exception | None = None,
-        flush_error: Exception | None = None,
+        commit_error: BaseException | None = None,
+        rollback_error: BaseException | None = None,
+        invalidation_error: BaseException | None = None,
+        flush_error: BaseException | None = None,
     ) -> None:
         self.commit_error = commit_error
         self.rollback_error = rollback_error
+        self.invalidation_error = invalidation_error
         self.flush_error = flush_error
         self.added: list[object] = []
         self.commits = 0
         self.rollbacks = 0
+        self.invalidations = 0
         self.flushes = 0
         self.nested_transactions = 0
 
@@ -83,9 +117,14 @@ class FakeSession:
         self.commits += 1
 
     def rollback(self) -> None:
+        self.rollbacks += 1
         if self.rollback_error is not None:
             raise self.rollback_error
-        self.rollbacks += 1
+
+    def invalidate(self) -> None:
+        self.invalidations += 1
+        if self.invalidation_error is not None:
+            raise self.invalidation_error
 
 
 class FakePipeline:
@@ -143,6 +182,17 @@ class FakePipeline:
         )
 
 
+class TrackingPipelineFactory:
+    def __init__(self, pipeline: FakePipeline) -> None:
+        self.pipeline = pipeline
+        self.calls = 0
+
+    def __call__(self, session: object) -> FakePipeline:
+        del session
+        self.calls += 1
+        return self.pipeline
+
+
 def candidate(
     source_slug: str = CENSYS_ARC_RESEARCH_SLUG,
     *,
@@ -182,6 +232,18 @@ def ingest(
         observed_at=NOW,
     )
     return result.run, active_session, active_pipeline
+
+
+def invoke_service(
+    service: CensysPublicationsIngestionService,
+) -> CensysIngestionResult:
+    return service.ingest(
+        source_slug=CENSYS_ARC_RESEARCH_SLUG,
+        candidates=(candidate(),),
+        records_fetched=1,
+        trigger=CensysIngestionTrigger.LIVE,
+        observed_at=NOW,
+    )
 
 
 @pytest.mark.parametrize(
@@ -647,7 +709,10 @@ def test_service_memory_error_propagates_from_transaction_boundaries(
     assert session.rollbacks == 1
 
 
-def test_rollback_cleanup_does_not_swallow_memory_error() -> None:
+def test_rollback_memory_error_during_ordinary_failure_is_sanitized(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorder = _rollback_log_recorder(monkeypatch)
     rollback_error = MemoryError("private rollback memory marker")
     session = FakeSession(rollback_error=rollback_error)
     pipeline = FakePipeline(
@@ -655,24 +720,278 @@ def test_rollback_cleanup_does_not_swallow_memory_error() -> None:
         error=SQLAlchemyError("ordinary private database marker"),
     )
 
-    with pytest.raises(MemoryError) as exc_info:
+    with pytest.raises(CensysIngestionDatabaseError) as exc_info:
         ingest(candidates=(candidate(),), session=session, pipeline=pipeline)
 
-    assert exc_info.value is rollback_error
+    assert str(exc_info.value) == (
+        "Manual Censys ingestion failed during transaction cleanup."
+    )
     assert session.commits == 0
+    assert session.invalidations == 1
+    _assert_single_sanitized_rollback_log(recorder)
 
 
-def test_rollback_cleanup_does_not_replace_active_system_exception() -> None:
-    primary_error = MemoryError("primary private memory marker")
+@pytest.mark.parametrize(
+    "primary_error",
+    [
+        MemoryError("primary private memory marker"),
+        KeyboardInterrupt(),
+        SystemExit(7),
+        GeneratorExit(),
+    ],
+)
+def test_rollback_cleanup_does_not_replace_active_system_exception(
+    primary_error: BaseException,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorder = _rollback_log_recorder(monkeypatch)
     session = FakeSession(
         rollback_error=MemoryError("secondary private rollback marker")
     )
     pipeline = FakePipeline(session, error=primary_error)
 
-    with pytest.raises(MemoryError) as exc_info:
+    with pytest.raises(type(primary_error)) as exc_info:
         ingest(candidates=(candidate(),), session=session, pipeline=pipeline)
 
     assert exc_info.value is primary_error
+    assert session.commits == 0
+    assert session.invalidations == 1
+    _assert_single_sanitized_rollback_log(recorder)
+
+
+def test_ordinary_rollback_failure_is_sanitized_and_not_successful(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorder = _rollback_log_recorder(monkeypatch)
+    session = FakeSession(rollback_error=RuntimeError("private rollback secret"))
+    pipeline = FakePipeline(
+        session,
+        error=SQLAlchemyError("private primary SQL and credentials"),
+    )
+
+    with pytest.raises(CensysIngestionError) as exc_info:
+        ingest(candidates=(candidate(),), session=session, pipeline=pipeline)
+
+    assert isinstance(exc_info.value, CensysIngestionDatabaseError)
+    assert str(exc_info.value) == (
+        "Manual Censys ingestion failed during transaction cleanup."
+    )
+    assert session.commits == 0
+    assert session.invalidations == 1
+    _assert_single_sanitized_rollback_log(recorder)
+
+
+@pytest.mark.parametrize(
+    "primary_error",
+    [
+        MemoryError("primary-memory-canary"),
+        KeyboardInterrupt(),
+        SystemExit(7),
+        GeneratorExit(),
+    ],
+)
+def test_logger_and_invalidation_failures_cannot_replace_system_exception(
+    primary_error: BaseException,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorder = _rollback_log_recorder(
+        monkeypatch, MemoryError("logger-failure-canary")
+    )
+    session = FakeSession(
+        rollback_error=RuntimeError("rollback-failure-canary"),
+        invalidation_error=SystemExit("invalidation-failure-canary"),
+    )
+    factory = TrackingPipelineFactory(FakePipeline(session, error=primary_error))
+    service = CensysPublicationsIngestionService(
+        session,  # type: ignore[arg-type]
+        pipeline_factory=factory,
+    )
+
+    with pytest.raises(type(primary_error)) as exc_info:
+        invoke_service(service)
+
+    assert exc_info.value is primary_error
+    assert session.invalidations == 1
+    assert session.commits == 0
+    assert getattr(session, service_module._SESSION_POISON_ATTRIBUTE) is True
+    _assert_single_sanitized_rollback_log(recorder)
+    exposed = str(exc_info.value)
+    assert "logger-failure-canary" not in exposed
+    assert "invalidation-failure-canary" not in exposed
+    assert "rollback-failure-canary" not in exposed
+
+
+@pytest.mark.parametrize(
+    "invalidation_error",
+    [
+        RuntimeError("invalidation-runtime-canary"),
+        MemoryError("invalidation-memory-canary"),
+        KeyboardInterrupt(),
+        SystemExit("invalidation-system-exit-canary"),
+        GeneratorExit(),
+    ],
+)
+def test_cleanup_failures_poison_session_and_keep_ordinary_error_sanitized(
+    invalidation_error: BaseException,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorder = _rollback_log_recorder(
+        monkeypatch, KeyboardInterrupt("logger-keyboard-canary")
+    )
+    session = FakeSession(
+        rollback_error=MemoryError("rollback-memory-canary"),
+        invalidation_error=invalidation_error,
+    )
+    factory = TrackingPipelineFactory(
+        FakePipeline(
+            session,
+            error=SQLAlchemyError(
+                "postgresql://user:password@private/primary-sql-canary"
+            ),
+        )
+    )
+    service = CensysPublicationsIngestionService(
+        session,  # type: ignore[arg-type]
+        pipeline_factory=factory,
+    )
+
+    with pytest.raises(CensysIngestionDatabaseError) as exc_info:
+        invoke_service(service)
+
+    assert str(exc_info.value) == (
+        "Manual Censys ingestion failed during transaction cleanup."
+    )
+    assert session.invalidations == 1
+    assert session.commits == 0
+    assert getattr(session, service_module._SESSION_POISON_ATTRIBUTE) is True
+    _assert_single_sanitized_rollback_log(recorder)
+    exposed = str(exc_info.value)
+    assert "password" not in exposed
+    assert "logger-keyboard-canary" not in exposed
+    assert "invalidation" not in exposed
+    assert "rollback-memory-canary" not in exposed
+
+
+def test_same_and_new_service_reject_poisoned_session_before_pipeline_activity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _rollback_log_recorder(monkeypatch)
+    session = FakeSession(
+        rollback_error=RuntimeError("rollback-secret"),
+        invalidation_error=MemoryError("invalidation-secret"),
+    )
+    first_factory = TrackingPipelineFactory(
+        FakePipeline(session, error=SQLAlchemyError("primary SQL and password"))
+    )
+    service = CensysPublicationsIngestionService(
+        session,  # type: ignore[arg-type]
+        pipeline_factory=first_factory,
+    )
+
+    with pytest.raises(CensysIngestionDatabaseError, match="transaction cleanup"):
+        invoke_service(service)
+
+    activity = (
+        len(session.added),
+        session.flushes,
+        session.nested_transactions,
+        session.rollbacks,
+        session.invalidations,
+    )
+    first_factory.pipeline = FakePipeline(session)
+    with pytest.raises(CensysIngestionDatabaseError, match="unsafe database session"):
+        invoke_service(service)
+    assert first_factory.calls == 1
+    assert session.commits == 0
+    assert (
+        len(session.added),
+        session.flushes,
+        session.nested_transactions,
+        session.rollbacks,
+        session.invalidations,
+    ) == activity
+
+    new_factory = TrackingPipelineFactory(FakePipeline(session))
+    new_service = CensysPublicationsIngestionService(
+        session,  # type: ignore[arg-type]
+        pipeline_factory=new_factory,
+    )
+    with pytest.raises(CensysIngestionDatabaseError, match="unsafe database session"):
+        invoke_service(new_service)
+    assert new_factory.calls == 0
+    assert session.commits == 0
+
+
+def test_successful_rollback_does_not_poison_session() -> None:
+    session = FakeSession()
+    failing_service = CensysPublicationsIngestionService(
+        session,  # type: ignore[arg-type]
+        pipeline_factory=TrackingPipelineFactory(
+            FakePipeline(
+                session,
+                error=SQLAlchemyError("ordinary private database error"),
+            )
+        ),
+    )
+
+    with pytest.raises(CensysIngestionDatabaseError, match="database operation"):
+        invoke_service(failing_service)
+
+    assert not hasattr(session, service_module._SESSION_POISON_ATTRIBUTE)
+    result = invoke_service(
+        CensysPublicationsIngestionService(
+            session,  # type: ignore[arg-type]
+            pipeline_factory=TrackingPipelineFactory(FakePipeline(session)),
+        )
+    )
+    assert result.run.status == "succeeded"
+    assert session.rollbacks == 1
+    assert session.commits == 1
+
+
+@pytest.mark.parametrize("invalidation_kind", ["absent", "not-callable"])
+def test_missing_or_noncallable_invalidation_still_poison_session(
+    invalidation_kind: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class RollbackOnlySession:
+        def __init__(self) -> None:
+            self.rollbacks = 0
+
+        def rollback(self) -> None:
+            self.rollbacks += 1
+            raise RuntimeError("rollback-canary")
+
+    session = RollbackOnlySession()
+    if invalidation_kind == "not-callable":
+        session.invalidate = object()  # type: ignore[attr-defined]
+    recorder = _rollback_log_recorder(monkeypatch)
+
+    def failing_pipeline_factory(_: object) -> FakePipeline:
+        raise SQLAlchemyError("primary-password-canary")
+
+    service = CensysPublicationsIngestionService(
+        session,  # type: ignore[arg-type]
+        pipeline_factory=failing_pipeline_factory,
+    )
+    with pytest.raises(CensysIngestionDatabaseError) as exc_info:
+        invoke_service(service)
+
+    assert str(exc_info.value) == (
+        "Manual Censys ingestion failed during transaction cleanup."
+    )
+    assert session.rollbacks == 1
+    assert getattr(session, service_module._SESSION_POISON_ATTRIBUTE) is True
+    _assert_single_sanitized_rollback_log(recorder)
+
+    denied_factory = TrackingPipelineFactory(FakePipeline(FakeSession()))
+    denied_service = CensysPublicationsIngestionService(
+        session,  # type: ignore[arg-type]
+        pipeline_factory=denied_factory,
+    )
+    with pytest.raises(CensysIngestionDatabaseError, match="unsafe database session"):
+        invoke_service(denied_service)
+    assert denied_factory.calls == 0
 
 
 @pytest.mark.parametrize(

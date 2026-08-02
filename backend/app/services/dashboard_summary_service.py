@@ -8,7 +8,7 @@ from decimal import Decimal
 
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, load_only, raiseload, selectinload
 
 from app.api.v1.query_validation import ARTICLE_ITEM_TYPE_VALUES
 from app.api.v1.schemas.dashboard import (
@@ -221,11 +221,7 @@ class DashboardSummaryService:
             select(IntelligenceItem)
             .where(IntelligenceItem.status == ACTIVE_STATUS)
             .where(IntelligenceItem.item_type.in_(ARTICLE_ITEM_TYPE_VALUES))
-            .options(
-                selectinload(IntelligenceItem.source_records).selectinload(
-                    SourceRecord.source
-                )
-            )
+            .options(*self._article_load_options())
             .order_by(
                 IntelligenceItem.source_published_at.desc().nulls_last(),
                 IntelligenceItem.last_seen_at.desc(),
@@ -248,7 +244,29 @@ class DashboardSummaryService:
         statement = (
             select(IngestionRun)
             .join(IntelligenceSource, IngestionRun.source_id == IntelligenceSource.id)
-            .options(selectinload(IngestionRun.source))
+            .options(
+                load_only(
+                    IngestionRun.status,
+                    IngestionRun.started_at,
+                    IngestionRun.completed_at,
+                    IngestionRun.records_fetched,
+                    IngestionRun.records_created,
+                    IngestionRun.records_updated,
+                    IngestionRun.records_unchanged,
+                    IngestionRun.records_skipped,
+                    IngestionRun.records_failed,
+                    raiseload=True,
+                ),
+                raiseload("*"),
+                selectinload(IngestionRun.source).options(
+                    load_only(
+                        IntelligenceSource.slug,
+                        IntelligenceSource.name,
+                        raiseload=True,
+                    ),
+                    raiseload("*"),
+                ),
+            )
             .order_by(IngestionRun.started_at.desc(), IngestionRun.id.desc())
             .limit(1)
             .execution_options(dashboard_query="latest_fetch")
@@ -271,6 +289,40 @@ class DashboardSummaryService:
             fetched_count=run.records_fetched,
             processed_count=processed,
             failed_count=run.records_failed,
+        )
+
+    @staticmethod
+    def _article_load_options() -> tuple:
+        return (
+            load_only(
+                IntelligenceItem.public_id,
+                IntelligenceItem.canonical_title,
+                IntelligenceItem.summary,
+                IntelligenceItem.item_type,
+                IntelligenceItem.source_published_at,
+                IntelligenceItem.last_seen_at,
+                raiseload=True,
+            ),
+            raiseload("*"),
+            selectinload(IntelligenceItem.source_records).options(
+                load_only(
+                    SourceRecord.source_external_id,
+                    SourceRecord.source_url,
+                    SourceRecord.source_published_at,
+                    SourceRecord.is_primary_reference,
+                    SourceRecord.created_at,
+                    raiseload=True,
+                ),
+                raiseload("*"),
+                selectinload(SourceRecord.source).options(
+                    load_only(
+                        IntelligenceSource.slug,
+                        IntelligenceSource.name,
+                        raiseload=True,
+                    ),
+                    raiseload("*"),
+                ),
+            ),
         )
 
     def _serialize_article(self, item: IntelligenceItem) -> DashboardArticlePreview:

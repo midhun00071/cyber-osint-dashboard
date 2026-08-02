@@ -1452,7 +1452,10 @@ def test_different_supported_query_parameters_remain_accepted(client) -> None:
     assert response.status_code == 200
 
 
-@pytest.mark.parametrize("query", ["unknown_param=x", "sort=title"])
+@pytest.mark.parametrize(
+    "query",
+    ["unknown_param=x", "sort=title", "order=sideways", "field=raw_payload"],
+)
 def test_unsupported_article_query_parameters_are_rejected(client, query: str) -> None:
     session = FakeSession([make_article()])
 
