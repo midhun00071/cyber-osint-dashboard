@@ -248,3 +248,16 @@ def test_c02_flow_ready_sources_are_documented_without_activation_claims() -> No
         "start-after cursor continuation and one wrap-around",
     ):
         assert phrase in document
+
+
+def test_c03a_taxii_eligibility_is_documented_without_activation() -> None:
+    document = normalized_document()
+    for phrase in (
+        "C03A STIX/TAXII eligibility",
+        "immutable test/later-staging TAXII handler builder",
+        "PRODUCTION_STIX_SOURCE_POLICIES",
+        "PRODUCTION_TAXII_COLLECTION_POLICIES",
+        "DEFAULT_SOURCE_HANDLERS",
+        "No live TAXII request was performed",
+    ):
+        assert phrase in document

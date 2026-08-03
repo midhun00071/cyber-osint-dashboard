@@ -1,5 +1,16 @@
 # Data Sources
 
+## C03A STIX/TAXII eligibility
+
+C03A provides an immutable test/later-staging TAXII handler builder, but no
+production TAXII source identity, hostname, endpoint, collection, credential,
+binding, or deployment. `PRODUCTION_STIX_SOURCE_POLICIES`,
+`PRODUCTION_TAXII_COLLECTION_POLICIES`, and `DEFAULT_SOURCE_HANDLERS` remain
+empty. Missing production policy is `disabled` before any client or transport
+is created; `licence_required` is limited to an explicit developer-controlled
+fixed identity. No live TAXII request was performed. See
+[C03A threat knowledge and STIX persistence](c03-threat-knowledge-stix-persistence.md).
+
 ## Purpose and audience
 
 This guide is the source-traceability record for mentors, reviewers, operators,

@@ -42,6 +42,9 @@ def test_base_metadata_has_all_implemented_tables_after_model_registration():
         "source_records",
         "source_watermarks",
         "tags",
+        "threat_entities",
+        "threat_entity_aliases",
+        "threat_relationships",
         "vulnerabilities",
     }
 
@@ -68,5 +71,8 @@ def test_implemented_domain_models_are_registered():
         app.models.SourceRecord,
         app.models.SourceWatermark,
         app.models.Tag,
+        app.models.ThreatEntity,
+        app.models.ThreatEntityAlias,
+        app.models.ThreatRelationship,
         app.models.Vulnerability,
     }

@@ -40,6 +40,9 @@ IMPLEMENTED_TABLES = {
     "source_records",
     "source_watermarks",
     "tags",
+    "threat_entities",
+    "threat_entity_aliases",
+    "threat_relationships",
     "vulnerabilities",
 }
 
@@ -133,6 +136,9 @@ def test_registration_and_mapper_configuration_are_database_free(monkeypatch):
         "SourceRecord",
         "SourceWatermark",
         "Tag",
+        "ThreatEntity",
+        "ThreatEntityAlias",
+        "ThreatRelationship",
         "Vulnerability",
     }
 

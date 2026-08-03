@@ -12,6 +12,8 @@ from app.ingestion.stix_taxii.bounded_json import (
 from app.ingestion.stix_taxii.import_service import (
     StixBundleImportService,
     StixImportResult,
+    StixImportPersistenceError,
+    StixRecordOutcome,
     StixImportServiceError,
 )
 from app.ingestion.stix_taxii.policy import (
@@ -53,17 +55,29 @@ from app.ingestion.stix_taxii.taxii_client import (
     TaxiiTransportError,
     collect_production_taxii_collection,
 )
+from app.ingestion.stix_taxii.threat_knowledge import (
+    APPROVED_RELATIONSHIPS,
+    ENTITY_TYPE_BY_STIX,
+    ThreatKnowledgeError,
+    map_threat_entity,
+    normalize_alias,
+    source_stix_identity,
+)
 
 __all__ = [
     "ApprovedStixSourcePolicy",
     "ApprovedTaxiiCollectionPolicy",
+    "APPROVED_RELATIONSHIPS",
     "BoundedStixDocument",
+    "ENTITY_TYPE_BY_STIX",
     "PRODUCTION_STIX_SOURCE_POLICIES",
     "PRODUCTION_TAXII_COLLECTION_POLICIES",
     "StixBoundedJsonError",
     "StixBundleImportService",
     "StixDocumentFormat",
     "StixImportResult",
+    "StixImportPersistenceError",
+    "StixRecordOutcome",
     "StixImportServiceError",
     "StixInputTransport",
     "StixPolicyError",
@@ -85,6 +99,7 @@ __all__ = [
     "TaxiiStixValidationError",
     "TaxiiTimeoutError",
     "TaxiiTransportError",
+    "ThreatKnowledgeError",
     "UnknownStixSourceError",
     "ValidatedStixDocument",
     "build_stix_policy_registry",
@@ -93,9 +108,12 @@ __all__ = [
     "get_production_stix_policy",
     "get_production_taxii_policy",
     "load_stix_json_file",
+    "map_threat_entity",
+    "normalize_alias",
     "parse_stix_json_bytes",
     "validate_stix_document",
     "validate_bounded_json_tree",
     "validate_stix_source_policy",
     "validate_taxii_collection_policy",
+    "source_stix_identity",
 ]

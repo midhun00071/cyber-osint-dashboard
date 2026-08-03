@@ -42,6 +42,9 @@ IMPLEMENTED_TABLES = {
     "source_records",
     "source_watermarks",
     "tags",
+    "threat_entities",
+    "threat_entity_aliases",
+    "threat_relationships",
     "vulnerabilities",
 }
 EXPECTED_MODEL_EXPORTS = {
@@ -65,6 +68,9 @@ EXPECTED_MODEL_EXPORTS = {
     "SourceRecord",
     "SourceWatermark",
     "Tag",
+    "ThreatEntity",
+    "ThreatEntityAlias",
+    "ThreatRelationship",
     "Vulnerability",
 }
 

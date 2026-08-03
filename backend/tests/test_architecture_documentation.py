@@ -81,6 +81,21 @@ def test_context_and_component_boundaries_are_traceable() -> None:
         assert component in document
 
 
+def test_c03a_reduced_threat_boundary_is_documented_without_activation() -> None:
+    document = normalized_architecture()
+    for phrase in (
+        "C03A threat-knowledge boundary",
+        "threat_entities",
+        "threat_entity_aliases",
+        "threat_relationships",
+        "canonical STIX ID",
+        "exact SourceRecord",
+        "DEFAULT_SOURCE_HANDLERS` remain empty",
+        "No source, Prefect deployment, API, or frontend route is activated",
+    ):
+        assert phrase in document
+
+
 def test_manual_ingestion_and_publication_transaction_ownership_are_accurate() -> None:
     document = normalized_architecture()
 

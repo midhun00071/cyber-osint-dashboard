@@ -21,6 +21,9 @@ from app.models.source_rate_limit_state import SourceRateLimitState
 from app.models.source_record import SourceRecord
 from app.models.source_watermark import SourceWatermark
 from app.models.tag import Tag
+from app.models.threat_entity import ThreatEntity
+from app.models.threat_entity_alias import ThreatEntityAlias
+from app.models.threat_relationship import ThreatRelationship
 from app.models.vulnerability import Vulnerability
 
 __all__ = [
@@ -44,5 +47,8 @@ __all__ = [
     "SourceRecord",
     "SourceWatermark",
     "Tag",
+    "ThreatEntity",
+    "ThreatEntityAlias",
+    "ThreatRelationship",
     "Vulnerability",
 ]

@@ -11,7 +11,8 @@ ALEMBIC_INI = BACKEND_DIR / "alembic.ini"
 VERSIONS_DIR = BACKEND_DIR / "alembic" / "versions"
 REVISION_ID = "b103a71d2e4f"
 PARENT_ID = "c4e8b2a91d30"
-HEAD_REVISION_ID = "d7a9e51c2f40"
+DATABASE_OPERATIONS_REVISION_ID = "d7a9e51c2f40"
+HEAD_REVISION_ID = "e91f4c2a7b60"
 MIGRATION_PATH = VERSIONS_DIR / "b103a71d2e4f_add_operational_ingestion_audit_schema.py"
 NEW_TABLES = [
     "ingestion_cycles",
@@ -149,18 +150,20 @@ def _literal_first_args(method):
     return values
 
 
-def test_revision_identity_and_linear_five_revision_chain():
+def test_revision_identity_and_linear_six_revision_chain():
     directory = _directory()
     revisions = list(directory.walk_revisions())
     assert directory.get_heads() == [HEAD_REVISION_ID]
     assert [revision.revision for revision in revisions] == [
         HEAD_REVISION_ID,
+        DATABASE_OPERATIONS_REVISION_ID,
         REVISION_ID,
         PARENT_ID,
         "a6c9d4e2f107",
         "f8d739439ed0",
     ]
     assert [revision.down_revision for revision in revisions] == [
+        DATABASE_OPERATIONS_REVISION_ID,
         REVISION_ID,
         PARENT_ID,
         "a6c9d4e2f107",

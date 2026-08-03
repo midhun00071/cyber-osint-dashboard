@@ -16,6 +16,12 @@ from app.orchestration.source_handlers.publications import (
     MANDIANT_SOURCE_SLUG,
     PublicationSourceHandler,
 )
+from app.orchestration.source_handlers.stix_taxii import (
+    PRODUCTION_TAXII_LICENCE_REQUIRED,
+    StixTaxiiSourceHandler,
+    build_c03_stix_taxii_handlers,
+    production_taxii_access_state,
+)
 
 
 C02_BOUND_SOURCE_SLUGS = frozenset(
@@ -58,4 +64,11 @@ def build_c02_source_handlers(
     return MappingProxyType(handlers)
 
 
-__all__ = ["C02_BOUND_SOURCE_SLUGS", "build_c02_source_handlers"]
+__all__ = [
+    "C02_BOUND_SOURCE_SLUGS",
+    "PRODUCTION_TAXII_LICENCE_REQUIRED",
+    "StixTaxiiSourceHandler",
+    "build_c02_source_handlers",
+    "build_c03_stix_taxii_handlers",
+    "production_taxii_access_state",
+]

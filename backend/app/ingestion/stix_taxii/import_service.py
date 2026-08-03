@@ -31,6 +31,12 @@ from app.ingestion.stix_taxii.stix_validation import (
     validate_existing_safe_payload,
     validate_persistable_stix_document,
 )
+from app.ingestion.stix_taxii.threat_knowledge import (
+    ThreatKnowledgeCounts,
+    ThreatKnowledgeError,
+    ThreatKnowledgeWriter,
+    map_threat_entity,
+)
 from app.models import (
     Indicator,
     IndicatorProvenance,
@@ -41,6 +47,41 @@ from app.models import (
 
 class StixImportServiceError(RuntimeError):
     """Sanitized failure for an atomic offline STIX import."""
+
+
+class StixImportPersistenceError(StixImportServiceError):
+    """Sanitized transient failure from the database persistence boundary."""
+
+
+@dataclass(frozen=True, slots=True)
+class _StagedRecord:
+    staged: StagedStixObject
+    record: SourceRecord
+    action: str
+    previous_payload: Mapping[str, object] | None
+
+
+@dataclass(frozen=True, slots=True)
+class StixRecordOutcome:
+    source_record_id: int
+    stix_id: str
+    action: str
+
+    def __post_init__(self) -> None:
+        if type(self.source_record_id) is not int or self.source_record_id < 1:
+            raise ValueError("STIX record outcome identity is invalid.")
+        if (
+            not isinstance(self.stix_id, str)
+            or len(self.stix_id) > 300
+            or re.fullmatch(
+                r"[a-z][a-z0-9-]{0,249}--[0-9a-f]{8}-[0-9a-f]{4}-"
+                r"[45][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
+                self.stix_id,
+            )
+            is None
+            or self.action not in {"created", "updated", "unchanged", "skipped"}
+        ):
+            raise ValueError("STIX record outcome is invalid.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +105,19 @@ class StixImportResult:
     false_positive_suppressed: int = 0
     revoked_indicators_suppressed: int = 0
     markings_validated: int = 0
+    entities_created: int = 0
+    entities_updated: int = 0
+    entities_unchanged: int = 0
+    aliases_created: int = 0
+    aliases_updated: int = 0
+    aliases_deleted: int = 0
+    aliases_unchanged: int = 0
+    threat_relationships_created: int = 0
+    threat_relationships_updated: int = 0
+    threat_relationships_unchanged: int = 0
+    threat_objects_unmapped: int = 0
+    threat_relationships_unmapped: int = 0
+    record_outcomes: tuple[StixRecordOutcome, ...] = ()
     bounded: bool = True
 
 
@@ -117,25 +171,45 @@ class StixBundleImportService:
             )
 
             counts = _Counts()
+            threat_counts = ThreatKnowledgeCounts()
+            threat_writer = ThreatKnowledgeWriter(
+                self._session, source_id, source.slug, threat_counts
+            )
+            staged_records: dict[str, _StagedRecord] = {}
+            outcomes: list[StixRecordOutcome] = []
             for staged in canonical_document.objects:
                 record = self._find_source_record(source_id, staged.stix_id)
-                action, record = self._stage_object(
+                staged_record = self._stage_object(
                     source,
                     record,
                     staged,
                     normalized_policy,
                     observation_time,
                 )
-                if action == "stale":
+                if staged_record.action == "stale":
                     counts.objects_stale += 1
+                    outcomes.append(
+                        StixRecordOutcome(
+                            staged_record.record.id,
+                            staged.stix_id,
+                            "skipped",
+                        )
+                    )
                     continue
-                if action == "created":
+                if staged_record.action == "created":
                     counts.objects_created += 1
-                elif action == "updated":
+                elif staged_record.action == "updated":
                     counts.objects_updated += 1
                 else:
                     counts.objects_unchanged += 1
-                assert record is not None
+                staged_records[staged.stix_id] = staged_record
+                outcomes.append(
+                    StixRecordOutcome(
+                        staged_record.record.id,
+                        staged.stix_id,
+                        staged_record.action,
+                    )
+                )
                 if (
                     staged.stix_type == "indicator"
                     and staged.safe_payload.get("revoked") is True
@@ -145,11 +219,71 @@ class StixBundleImportService:
                 for observable in staged.observables:
                     self._upsert_indicator(
                         source_id,
-                        record,
+                        staged_record.record,
                         observable,
                         observation_time,
                         counts,
                     )
+
+            for staged_record in staged_records.values():
+                if staged_record.staged.stix_type in {
+                    "threat-actor",
+                    "campaign",
+                    "malware",
+                    "attack-pattern",
+                }:
+                    threat_writer.upsert_entity(
+                        staged_record.record,
+                        staged_record.staged.safe_payload,
+                        staged_record.action,
+                        previous_payload=staged_record.previous_payload,
+                    )
+
+            for staged_record in staged_records.values():
+                staged = staged_record.staged
+                if staged.stix_type != "relationship":
+                    continue
+                source_payload, source_record, source_previous_payload = self._relationship_endpoint(
+                    source_id, staged.safe_payload["source_ref"], staged_records, normalized_policy
+                )
+                target_payload, target_record, target_previous_payload = self._relationship_endpoint(
+                    source_id, staged.safe_payload["target_ref"], staged_records, normalized_policy
+                )
+                source_value = map_threat_entity(source_payload)
+                target_value = map_threat_entity(target_payload)
+                if source_value is None or target_value is None:
+                    if threat_writer.find_relationship(staged.stix_id) is not None:
+                        raise ThreatKnowledgeError(
+                            "Threat relationship mapping identity cannot be removed."
+                        )
+                    threat_counts.threat_relationships_unmapped += 1
+                    continue
+                source_entity = threat_writer.find_entity(source_value.stix_id)
+                if source_entity is None:
+                    source_entity = threat_writer.upsert_entity(
+                        source_record,
+                        source_payload,
+                        "unchanged",
+                        previous_payload=source_previous_payload,
+                    )
+                target_entity = threat_writer.find_entity(target_value.stix_id)
+                if target_entity is None:
+                    target_entity = threat_writer.upsert_entity(
+                        target_record,
+                        target_payload,
+                        "unchanged",
+                        previous_payload=target_previous_payload,
+                    )
+                if source_entity is None or target_entity is None:
+                    raise ThreatKnowledgeError("Threat relationship endpoint materialization failed.")
+                threat_writer.upsert_relationship(
+                    staged_record.record,
+                    staged.safe_payload,
+                    source_entity,
+                    target_entity,
+                    staged_record.action,
+                    previous_payload=staged_record.previous_payload,
+                )
 
             return StixImportResult(
                 status="processed",
@@ -170,11 +304,26 @@ class StixBundleImportService:
                     counts.revoked_indicators_suppressed
                 ),
                 markings_validated=canonical_document.markings_validated,
+                entities_created=threat_counts.entities_created,
+                entities_updated=threat_counts.entities_updated,
+                entities_unchanged=threat_counts.entities_unchanged,
+                aliases_created=threat_counts.aliases_created,
+                aliases_updated=threat_counts.aliases_updated,
+                aliases_deleted=threat_counts.aliases_deleted,
+                aliases_unchanged=threat_counts.aliases_unchanged,
+                threat_relationships_created=threat_counts.relationships_created,
+                threat_relationships_updated=threat_counts.relationships_updated,
+                threat_relationships_unchanged=threat_counts.relationships_unchanged,
+                threat_objects_unmapped=threat_counts.threat_objects_unmapped,
+                threat_relationships_unmapped=threat_counts.threat_relationships_unmapped,
+                record_outcomes=tuple(outcomes),
             )
         except StixImportServiceError:
             raise
+        except ThreatKnowledgeError as exc:
+            raise StixImportServiceError("Validated STIX threat knowledge conflicts.") from exc
         except SQLAlchemyError as exc:
-            raise StixImportServiceError(
+            raise StixImportPersistenceError(
                 "Database error while importing validated STIX metadata."
             ) from exc
 
@@ -334,6 +483,42 @@ class StixBundleImportService:
         )
         return self._session.execute(statement).scalar_one_or_none()
 
+    def _relationship_endpoint(
+        self,
+        source_id: int,
+        stix_id: object,
+        staged_records: Mapping[str, _StagedRecord],
+        policy: ApprovedStixSourcePolicy,
+    ) -> tuple[
+        Mapping[str, object],
+        SourceRecord,
+        Mapping[str, object] | None,
+    ]:
+        if not isinstance(stix_id, str):
+            raise StixImportServiceError("STIX relationship endpoint is invalid.")
+        staged_entry = staged_records.get(stix_id)
+        if staged_entry is not None:
+            return (
+                staged_entry.staged.safe_payload,
+                staged_entry.record,
+                staged_entry.previous_payload,
+            )
+        record = self._find_source_record(source_id, stix_id)
+        self._validate_reference_record(
+            record, source_id, stix_id, policy, ExistingStixReferenceUse.RELATIONSHIP_TARGET
+        )
+        assert record is not None and isinstance(record.raw_payload, dict)
+        try:
+            payload = validate_canonical_safe_payload(
+                stix_id,
+                record.raw_payload,
+                policy,
+                expected_stix_type=stix_id.split("--", 1)[0],
+            )
+        except (StixValidationError, TypeError, ValueError) as exc:
+            raise StixImportServiceError("Existing STIX relationship endpoint is invalid.") from exc
+        return payload, record, payload
+
     def _stage_object(
         self,
         source: IntelligenceSource,
@@ -341,7 +526,7 @@ class StixBundleImportService:
         staged: StagedStixObject,
         policy: ApprovedStixSourcePolicy,
         observed_at: datetime,
-    ) -> tuple[str, SourceRecord | None]:
+    ) -> _StagedRecord:
         source_url = policy.object_url(staged.stix_id)
         canonical_url_hash = _canonical_url_hash(policy, source_url)
         payload = thaw_json(staged.safe_payload)
@@ -368,7 +553,7 @@ class StixBundleImportService:
             )
             self._session.add(record)
             self._session.flush()
-            return "created", record
+            return _StagedRecord(staged, record, "created", None)
 
         existing_payload = self._validate_current_record(
             record,
@@ -380,11 +565,11 @@ class StixBundleImportService:
         )
         comparison = _compare_existing_version(record, staged, existing_payload)
         if comparison == "stale":
-            return "stale", record
+            return _StagedRecord(staged, record, "stale", existing_payload)
         record.last_seen_at = max(_aware_utc(record.last_seen_at), observed_at)
         record.last_processed_at = observed_at
         if comparison == "unchanged":
-            return "unchanged", record
+            return _StagedRecord(staged, record, "unchanged", existing_payload)
         record.source_url = source_url
         record.canonical_url_hash = canonical_url_hash
         record.content_hash = staged.content_hash
@@ -395,7 +580,7 @@ class StixBundleImportService:
         record.processing_status = "processed"
         record.upstream_status = "present"
         record.safe_error_summary = None
-        return "updated", record
+        return _StagedRecord(staged, record, "updated", existing_payload)
 
     def _upsert_indicator(
         self,

@@ -46,6 +46,9 @@ TARGET_TABLES = {
     "source_records",
     "source_watermarks",
     "tags",
+    "threat_entities",
+    "threat_entity_aliases",
+    "threat_relationships",
     "vulnerabilities",
 }
 MODEL_EXPORTS = {
@@ -69,6 +72,9 @@ MODEL_EXPORTS = {
     "SourceRecord",
     "SourceWatermark",
     "Tag",
+    "ThreatEntity",
+    "ThreatEntityAlias",
+    "ThreatRelationship",
     "Vulnerability",
 }
 OPERATIONAL_TABLES = {
@@ -126,9 +132,9 @@ def test_exact_registration_exports_and_mapper_configuration_are_database_free(
         lambda: pytest.fail("model registration must not open a database connection"),
     )
     assert set(Base.metadata.tables) == TARGET_TABLES
-    assert len(Base.metadata.tables) == 21
+    assert len(Base.metadata.tables) == 24
     assert set(models.__all__) == MODEL_EXPORTS
-    assert len(models.__all__) == 21
+    assert len(models.__all__) == 24
     configure_mappers()
 
 

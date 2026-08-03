@@ -19,6 +19,7 @@ from app.ingestion.stix_taxii.bounded_json import (
 )
 from app.ingestion.stix_taxii.import_service import (
     StixBundleImportService,
+    StixImportPersistenceError,
     StixImportServiceError,
 )
 from app.ingestion.stix_taxii.object_mapping import canonical_safe_content_hash
@@ -37,6 +38,9 @@ from app.models import (
     IntelligenceItemIndicator,
     IntelligenceSource,
     SourceRecord,
+    ThreatEntity,
+    ThreatEntityAlias,
+    ThreatRelationship,
 )
 
 
@@ -59,24 +63,40 @@ class _ScalarResult:
     def scalar_one_or_none(self):
         return self._value
 
+    def scalars(self):
+        return self
+
+    def __iter__(self):
+        if self._value is None:
+            return iter(())
+        if isinstance(self._value, list):
+            return iter(self._value)
+        return iter((self._value,))
+
 
 class FakeSession:
-    def __init__(self, source, *, records=(), indicators=(), provenances=()):
+    def __init__(self, source, *, records=(), indicators=(), provenances=(), entities=(), aliases=(), threat_relationships=()):
         self.source = source
         self.records = list(records)
         self.indicators = list(indicators)
         self.provenances = list(provenances)
+        self.entities = list(entities)
+        self.aliases = list(aliases)
+        self.threat_relationships = list(threat_relationships)
         self.publication_relationships = []
         self.flush_calls = 0
         self.commit_calls = 0
         self.rollback_calls = 0
         self.execute_calls = 0
         self.execute_error = None
-        self._snapshot = (
+        self._snapshot = deepcopy((
             list(self.records),
             list(self.indicators),
             list(self.provenances),
-        )
+            list(self.entities),
+            list(self.aliases),
+            list(self.threat_relationships),
+        ))
 
     def get(self, model, identity):
         assert model is IntelligenceSource
@@ -91,6 +111,9 @@ class FakeSession:
             SourceRecord: self.records,
             Indicator: self.indicators,
             IndicatorProvenance: self.provenances,
+            ThreatEntity: self.entities,
+            ThreatEntityAlias: self.aliases,
+            ThreatRelationship: self.threat_relationships,
         }[entity]
         criteria = {
             criterion.left.name: criterion.right.value
@@ -101,6 +124,8 @@ class FakeSession:
             for row in collection
             if all(getattr(row, name) == value for name, value in criteria.items())
         ]
+        if entity is ThreatEntityAlias:
+            return _ScalarResult(matches)
         assert len(matches) <= 1
         return _ScalarResult(matches[0] if matches else None)
 
@@ -113,12 +138,24 @@ class FakeSession:
             self.provenances.append(value)
         elif isinstance(value, IntelligenceItemIndicator):
             self.publication_relationships.append(value)
+        elif isinstance(value, ThreatEntity):
+            self.entities.append(value)
+        elif isinstance(value, ThreatEntityAlias):
+            self.aliases.append(value)
+        elif isinstance(value, ThreatRelationship):
+            self.threat_relationships.append(value)
         else:
             raise AssertionError(f"unexpected add type: {type(value).__name__}")
 
     def flush(self):
         self.flush_calls += 1
-        for collection in (self.records, self.indicators, self.provenances):
+        attached_aliases = {
+            alias
+            for entity in self.entities
+            for alias in entity.aliases
+        }
+        self.aliases = [alias for alias in self.aliases if alias in attached_aliases]
+        for collection in (self.records, self.indicators, self.provenances, self.entities, self.aliases, self.threat_relationships):
             for index, value in enumerate(collection, start=1):
                 if value.id is None:
                     value.id = index
@@ -129,9 +166,21 @@ class FakeSession:
     def rollback(self):
         self.rollback_calls += 1
 
+    def begin_caller_transaction(self):
+        self._snapshot = deepcopy(
+            (
+                self.records,
+                self.indicators,
+                self.provenances,
+                self.entities,
+                self.aliases,
+                self.threat_relationships,
+            )
+        )
+
     def caller_rollback(self):
-        self.records, self.indicators, self.provenances = (
-            list(items) for items in self._snapshot
+        self.records, self.indicators, self.provenances, self.entities, self.aliases, self.threat_relationships = (
+            list(items) for items in deepcopy(self._snapshot)
         )
 
 
@@ -1000,14 +1049,14 @@ def test_missing_source_and_strict_call_arguments_fail_safely():
         )
 
 
-def test_database_failure_is_sanitized_without_commit_or_rollback():
+def test_database_failure_is_sanitized_and_persistence_specific_without_transaction_ownership():
     approved, document = validated([indicator_object()])
     session = FakeSession(source())
     session.execute_error = SQLAlchemyError(
         "secret SQL with submitted observable 8.8.8.8"
     )
 
-    with pytest.raises(StixImportServiceError) as caught:
+    with pytest.raises(StixImportPersistenceError) as caught:
         StixBundleImportService(session).import_document(
             7, approved, document, observed_at=OBSERVED
         )
@@ -1934,15 +1983,12 @@ def test_correctly_hashed_extra_key_cannot_authorize_existing_marking():
 
 
 def test_caller_rollback_removes_atomic_object_indicator_provenance_and_relationship():
-    identity = {
-        "type": "identity",
-        "spec_version": "2.1",
-        "id": IDENTITY_ID,
-        "created": CREATED,
-        "modified": MODIFIED,
-        "name": "Synthetic Organization",
-        "identity_class": "organization",
-    }
+    actor = _threat_object(
+        "threat-actor",
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "Synthetic actor",
+        aliases=["Synthetic alias"],
+    )
     malware = {
         "type": "malware",
         "spec_version": "2.1",
@@ -1959,11 +2005,11 @@ def test_caller_rollback_removes_atomic_object_indicator_provenance_and_relation
         "created": CREATED,
         "modified": MODIFIED,
         "relationship_type": "uses",
-        "source_ref": IDENTITY_ID,
+        "source_ref": actor["id"],
         "target_ref": MALWARE_ID,
     }
     approved, document = validated(
-        [identity, malware, indicator_object(), relationship]
+        [actor, malware, indicator_object(), relationship]
     )
     session = FakeSession(source())
 
@@ -1976,10 +2022,23 @@ def test_caller_rollback_removes_atomic_object_indicator_provenance_and_relation
         1,
         1,
     )
+    assert (
+        len(session.entities),
+        len(session.aliases),
+        len(session.threat_relationships),
+    ) == (2, 1, 1)
     assert_caller_owns_transaction(session)
 
     session.caller_rollback()
-    assert session.records == session.indicators == session.provenances == []
+    assert (
+        session.records
+        == session.indicators
+        == session.provenances
+        == session.entities
+        == session.aliases
+        == session.threat_relationships
+        == []
+    )
 
 
 def test_import_path_performs_no_network_access(monkeypatch):
@@ -2001,3 +2060,509 @@ def test_import_path_performs_no_network_access(monkeypatch):
     )
 
     assert result.objects_created == 1
+
+
+def _threat_object(stix_type, suffix, name, **changes):
+    value = {
+        "type": stix_type,
+        "spec_version": "2.1",
+        "id": f"{stix_type}--{suffix}",
+        "created": CREATED,
+        "modified": MODIFIED,
+        "name": name,
+    }
+    value.update(changes)
+    return value
+
+
+def test_c03a_persists_all_four_entity_types_aliases_and_exact_provenance():
+    actor = _threat_object("threat-actor", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "Shared Name", aliases=["  Alpha  Team ", "ALPHA TEAM"])
+    campaign = _threat_object("campaign", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "Shared Name")
+    malware = _threat_object("malware", "cccccccc-cccc-4ccc-8ccc-cccccccccccc", "Synthetic family", is_family=True)
+    technique = _threat_object("attack-pattern", "dddddddd-dddd-4ddd-8ddd-dddddddddddd", "Synthetic technique", external_references=[{"source_name": "mitre-attack", "external_id": "T1059.001"}])
+    approved, document = validated([actor, campaign, malware, technique])
+    session = FakeSession(source())
+
+    result = StixBundleImportService(session).import_document(7, approved, document, observed_at=OBSERVED)
+
+    assert result.entities_created == 4
+    assert {item.entity_type for item in session.entities} == {"threat_actor", "campaign", "malware_family", "attack_technique"}
+    assert len({item.identity_sha256 for item in session.entities}) == 4
+    assert len(session.aliases) == 1
+    assert session.aliases[0].normalized_value == "alpha team"
+    assert all(item.source_id == 7 and item.source_record_id in {record.id for record in session.records} for item in session.entities)
+    assert next(item for item in session.entities if item.entity_type == "attack_technique").attack_id == "T1059.001"
+    assert_caller_owns_transaction(session)
+
+
+def test_c03a_non_attack_pattern_is_source_record_only():
+    item = _threat_object("attack-pattern", "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", "Unmapped pattern", external_references=[{"source_name": "example", "external_id": "X100"}])
+    approved, document = validated([item])
+    session = FakeSession(source())
+
+    result = StixBundleImportService(session).import_document(7, approved, document, observed_at=OBSERVED)
+
+    assert result.objects_created == 1
+    assert result.threat_objects_unmapped == 1
+    assert session.entities == []
+
+
+def test_c03a_approved_relationship_is_idempotent_and_reconciles_newer_aliases():
+    actor = _threat_object("threat-actor", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "Actor", aliases=["Old Alias"])
+    malware = _threat_object("malware", "cccccccc-cccc-4ccc-8ccc-cccccccccccc", "Family", is_family=True)
+    relationship = {"type": "relationship", "spec_version": "2.1", "id": "relationship--ffffffff-ffff-4fff-8fff-ffffffffffff", "created": CREATED, "modified": MODIFIED, "relationship_type": "uses", "source_ref": actor["id"], "target_ref": malware["id"]}
+    approved, document = validated([actor, malware, relationship])
+    session = FakeSession(source())
+    first = StixBundleImportService(session).import_document(7, approved, document, observed_at=OBSERVED)
+    assert first.threat_relationships_created == 1
+    assert len(session.threat_relationships) == 1
+
+    second = StixBundleImportService(session).import_document(7, approved, document, observed_at=OBSERVED + timedelta(minutes=1))
+    assert second.entities_unchanged == 2
+    assert second.threat_relationships_unchanged == 1
+    assert len(session.entities) == 2 and len(session.threat_relationships) == 1
+
+    newer_actor = {**actor, "modified": "2026-07-02T11:00:00Z", "aliases": ["New Alias"]}
+    _, newer_document = validated([newer_actor])
+    newer = StixBundleImportService(session).import_document(7, approved, newer_document, observed_at=OBSERVED + timedelta(days=1))
+    assert newer.entities_updated == 1
+    assert newer.aliases_created == newer.aliases_deleted == 1
+    actor_entity = next(item for item in session.entities if item.entity_type == "threat_actor")
+    assert [item.normalized_value for item in actor_entity.aliases] == ["new alias"]
+    assert_caller_owns_transaction(session)
+
+
+def test_c03a_rejects_unsupported_normalized_relationship_combination_atomically():
+    actor_a = _threat_object("threat-actor", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "Actor A")
+    actor_b = _threat_object("threat-actor", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "Actor B")
+    relationship = {"type": "relationship", "spec_version": "2.1", "id": "relationship--ffffffff-ffff-4fff-8fff-ffffffffffff", "created": CREATED, "modified": MODIFIED, "relationship_type": "uses", "source_ref": actor_a["id"], "target_ref": actor_b["id"]}
+    approved, document = validated([actor_a, actor_b, relationship])
+    session = FakeSession(source())
+
+    with pytest.raises(StixImportServiceError, match="threat knowledge conflicts"):
+        StixBundleImportService(session).import_document(7, approved, document, observed_at=OBSERVED)
+    assert_caller_owns_transaction(session)
+
+
+def test_c03a_newer_attack_pattern_cannot_remove_attack_identity():
+    technique = _threat_object("attack-pattern", "dddddddd-dddd-4ddd-8ddd-dddddddddddd", "Technique", external_references=[{"source_name": "mitre-attack", "external_id": "T1059"}])
+    approved, document = validated([technique])
+    session = FakeSession(source())
+    StixBundleImportService(session).import_document(7, approved, document, observed_at=OBSERVED)
+    newer = {**technique, "modified": "2026-07-02T11:00:00Z", "external_references": [{"source_name": "example", "external_id": "X100"}]}
+    _, newer_document = validated([newer])
+
+    with pytest.raises(StixImportServiceError, match="threat knowledge conflicts"):
+        StixBundleImportService(session).import_document(7, approved, newer_document, observed_at=OBSERVED + timedelta(days=1))
+    assert len(session.entities) == 1
+    assert session.entities[0].attack_id == "T1059"
+    assert_caller_owns_transaction(session)
+
+
+def _c03a_graph():
+    actor = _threat_object(
+        "threat-actor",
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "Actor",
+        aliases=["Old Alias"],
+        confidence=50,
+    )
+    malware = _threat_object(
+        "malware",
+        "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        "Family",
+        is_family=True,
+        confidence=40,
+    )
+    relationship = {
+        "type": "relationship",
+        "spec_version": "2.1",
+        "id": "relationship--ffffffff-ffff-4fff-8fff-ffffffffffff",
+        "created": CREATED,
+        "modified": MODIFIED,
+        "relationship_type": "uses",
+        "source_ref": actor["id"],
+        "target_ref": malware["id"],
+        "confidence": 50,
+        "start_time": "2026-07-01T10:30:00Z",
+        "stop_time": "2026-07-01T10:45:00Z",
+    }
+    return actor, malware, relationship
+
+
+def _import_c03a_graph():
+    actor, malware, relationship = _c03a_graph()
+    approved, document = validated([actor, malware, relationship])
+    session = FakeSession(source())
+    StixBundleImportService(session).import_document(
+        7,
+        approved,
+        document,
+        observed_at=OBSERVED,
+    )
+    return approved, session, actor, malware, relationship
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda entity: setattr(entity, "name", "Corrupted name"),
+        lambda entity: setattr(entity, "confidence", Decimal("0.100")),
+        lambda entity: setattr(entity, "revoked", True),
+        lambda entity: setattr(
+            entity,
+            "stix_modified_at",
+            datetime(2026, 7, 4, 11, tzinfo=UTC),
+        ),
+    ],
+)
+def test_c03a_newer_entity_fails_closed_when_previous_normalized_state_conflicts(
+    mutation,
+):
+    approved, session, actor, _, _ = _import_c03a_graph()
+    entity = next(item for item in session.entities if item.stix_id == actor["id"])
+    mutation(entity)
+    corrupted = (
+        entity.name,
+        entity.confidence,
+        entity.stix_modified_at,
+        entity.revoked,
+    )
+    newer_actor = {
+        **actor,
+        "name": "Legitimate newer actor",
+        "modified": "2026-07-02T11:00:00Z",
+        "confidence": 75,
+    }
+    _, newer_document = validated([newer_actor])
+
+    with pytest.raises(StixImportServiceError) as caught:
+        StixBundleImportService(session).import_document(
+            7,
+            approved,
+            newer_document,
+            observed_at=OBSERVED + timedelta(days=1),
+        )
+
+    assert str(caught.value) == "Validated STIX threat knowledge conflicts."
+    assert (
+        entity.name,
+        entity.confidence,
+        entity.stix_modified_at,
+        entity.revoked,
+    ) == corrupted
+    assert_caller_owns_transaction(session)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda alias: setattr(alias, "display_value", "Corrupted display"),
+        lambda alias: setattr(alias, "normalized_value", "corrupted identity"),
+    ],
+)
+def test_c03a_newer_entity_rejects_previous_alias_display_or_set_conflict(mutation):
+    approved, session, actor, _, _ = _import_c03a_graph()
+    mutation(session.aliases[0])
+    newer_actor = {
+        **actor,
+        "modified": "2026-07-02T11:00:00Z",
+        "aliases": ["New Alias"],
+    }
+    _, newer_document = validated([newer_actor])
+
+    with pytest.raises(StixImportServiceError) as caught:
+        StixBundleImportService(session).import_document(
+            7,
+            approved,
+            newer_document,
+            observed_at=OBSERVED + timedelta(days=1),
+        )
+
+    assert str(caught.value) == "Validated STIX threat knowledge conflicts."
+    assert [item.normalized_value for item in session.entities[0].aliases] != [
+        "new alias"
+    ]
+    assert_caller_owns_transaction(session)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("confidence", Decimal("0.900")),
+        ("stix_created_at", datetime(2026, 6, 30, 10, tzinfo=UTC)),
+        ("stix_modified_at", datetime(2026, 7, 4, 11, tzinfo=UTC)),
+        ("start_time", datetime(2026, 7, 1, 10, 31, tzinfo=UTC)),
+        ("stop_time", datetime(2026, 7, 1, 10, 46, tzinfo=UTC)),
+        ("revoked", True),
+        ("relationship_type", "attributed-to"),
+        ("source_entity_id", 2),
+        ("target_entity_id", 1),
+    ],
+)
+def test_c03a_newer_relationship_rejects_previous_normalized_state_conflict(
+    field,
+    value,
+):
+    approved, session, actor, malware, relationship = _import_c03a_graph()
+    stored = session.threat_relationships[0]
+    setattr(stored, field, value)
+    newer_relationship = {
+        **relationship,
+        "modified": "2026-07-02T11:00:00Z",
+        "confidence": 75,
+        "stop_time": "2026-07-02T10:45:00Z",
+    }
+    _, newer_document = validated(
+        [newer_relationship],
+        existing={
+            actor["id"]: session.records[0].raw_payload,
+            malware["id"]: session.records[1].raw_payload,
+        },
+    )
+
+    with pytest.raises(StixImportServiceError) as caught:
+        StixBundleImportService(session).import_document(
+            7,
+            approved,
+            newer_document,
+            observed_at=OBSERVED + timedelta(days=1),
+        )
+
+    assert str(caught.value) == "Validated STIX threat knowledge conflicts."
+    assert_caller_owns_transaction(session)
+
+
+def test_c03a_synchronized_entity_aliases_and_relationship_accept_newer_versions():
+    approved, session, actor, malware, relationship = _import_c03a_graph()
+    newer_actor = {
+        **actor,
+        "name": "Updated actor",
+        "modified": "2026-07-02T11:00:00Z",
+        "aliases": ["New Alias"],
+        "confidence": 75,
+    }
+    newer_relationship = {
+        **relationship,
+        "modified": "2026-07-02T11:00:00Z",
+        "confidence": 75,
+        "stop_time": "2026-07-02T10:45:00Z",
+    }
+    _, newer_document = validated([newer_actor, malware, newer_relationship])
+
+    result = StixBundleImportService(session).import_document(
+        7,
+        approved,
+        newer_document,
+        observed_at=OBSERVED + timedelta(days=1),
+    )
+
+    assert result.entities_updated == 1
+    assert result.threat_relationships_updated == 1
+    assert result.aliases_created == result.aliases_deleted == 1
+    assert [item.normalized_value for item in session.entities[0].aliases] == [
+        "new alias"
+    ]
+    assert session.threat_relationships[0].confidence == Decimal("0.750")
+    assert_caller_owns_transaction(session)
+
+
+def test_c03a_newer_relationship_cannot_remove_normalized_mapping_identity():
+    approved, session, actor, _, relationship = _import_c03a_graph()
+    relationship_record = next(
+        item
+        for item in session.records
+        if item.source_external_id == relationship["id"]
+    )
+    previous_record_state = record_state(relationship_record)
+    stored_relationship = session.threat_relationships[0]
+    previous_relationship_state = (
+        stored_relationship.source_id,
+        stored_relationship.source_record_id,
+        stored_relationship.source_entity_id,
+        stored_relationship.target_entity_id,
+        stored_relationship.relationship_type,
+        stored_relationship.stix_id,
+        stored_relationship.identity_sha256,
+        stored_relationship.confidence,
+        stored_relationship.stix_created_at,
+        stored_relationship.stix_modified_at,
+        stored_relationship.start_time,
+        stored_relationship.stop_time,
+        stored_relationship.revoked,
+    )
+    previous_record_count = len(session.records)
+    previous_entity_count = len(session.entities)
+    session.begin_caller_transaction()
+
+    outside_endpoint = identity_object(
+        modified="2026-07-02T11:00:00Z",
+        name="Outside reduced domain",
+    )
+    newer_relationship = {
+        **relationship,
+        "modified": "2026-07-02T11:00:00Z",
+        "target_ref": outside_endpoint["id"],
+    }
+    _, newer_document = validated(
+        [outside_endpoint, newer_relationship],
+        existing={actor["id"]: session.records[0].raw_payload},
+    )
+
+    with pytest.raises(StixImportServiceError) as caught:
+        StixBundleImportService(session).import_document(
+            7,
+            approved,
+            newer_document,
+            observed_at=OBSERVED + timedelta(days=1),
+        )
+
+    assert str(caught.value) == "Validated STIX threat knowledge conflicts."
+    assert isinstance(caught.value.__cause__, ValueError)
+    assert str(caught.value.__cause__) == (
+        "Threat relationship mapping identity cannot be removed."
+    )
+    assert relationship["id"] not in str(caught.value)
+    assert outside_endpoint["id"] not in str(caught.value)
+    assert len(session.entities) == previous_entity_count
+    assert len(session.threat_relationships) == 1
+    assert (
+        stored_relationship.source_id,
+        stored_relationship.source_record_id,
+        stored_relationship.source_entity_id,
+        stored_relationship.target_entity_id,
+        stored_relationship.relationship_type,
+        stored_relationship.stix_id,
+        stored_relationship.identity_sha256,
+        stored_relationship.confidence,
+        stored_relationship.stix_created_at,
+        stored_relationship.stix_modified_at,
+        stored_relationship.start_time,
+        stored_relationship.stop_time,
+        stored_relationship.revoked,
+    ) == previous_relationship_state
+    assert len(session.records) == previous_record_count + 1
+    assert record_state(relationship_record) != previous_record_state
+    assert_caller_owns_transaction(session)
+
+    session.caller_rollback()
+
+    restored_record = next(
+        item
+        for item in session.records
+        if item.source_external_id == relationship["id"]
+    )
+    restored_relationship = session.threat_relationships[0]
+    assert len(session.records) == previous_record_count
+    assert record_state(restored_record) == previous_record_state
+    assert len(session.entities) == previous_entity_count
+    assert (
+        restored_relationship.source_id,
+        restored_relationship.source_record_id,
+        restored_relationship.source_entity_id,
+        restored_relationship.target_entity_id,
+        restored_relationship.relationship_type,
+        restored_relationship.stix_id,
+        restored_relationship.identity_sha256,
+        restored_relationship.confidence,
+        restored_relationship.stix_created_at,
+        restored_relationship.stix_modified_at,
+        restored_relationship.start_time,
+        restored_relationship.stop_time,
+        restored_relationship.revoked,
+    ) == previous_relationship_state
+
+
+def test_c03a_pre_c03_source_record_materializes_missing_normalized_entity():
+    actor, _, _ = _c03a_graph()
+    approved, document = validated([actor])
+    record = current_record(document.objects[0])
+    session = FakeSession(source(), records=[record])
+
+    result = StixBundleImportService(session).import_document(
+        7,
+        approved,
+        document,
+        observed_at=OBSERVED + timedelta(minutes=1),
+    )
+
+    assert result.objects_unchanged == 1
+    assert result.entities_created == 1
+    assert len(session.entities) == len(session.aliases) == 1
+    assert session.entities[0].source_record_id == record.id
+    assert_caller_owns_transaction(session)
+
+
+def test_c03a_relationship_materializes_missing_same_source_normalized_endpoints():
+    actor, malware, relationship = _c03a_graph()
+    _, endpoint_document = validated([actor, malware])
+    endpoint_payloads = {
+        item.stix_id: thaw_json(item.safe_payload)
+        for item in endpoint_document.objects
+    }
+    approved, relationship_document = validated(
+        [relationship],
+        existing=endpoint_payloads,
+    )
+    records = [
+        current_record(endpoint_document.objects[0], id=1),
+        current_record(endpoint_document.objects[1], id=2),
+    ]
+    session = FakeSession(source(), records=records)
+
+    result = StixBundleImportService(session).import_document(
+        7,
+        approved,
+        relationship_document,
+        observed_at=OBSERVED + timedelta(minutes=1),
+    )
+
+    assert result.entities_created == 2
+    assert result.threat_relationships_created == 1
+    assert {item.stix_id for item in session.entities} == {
+        actor["id"],
+        malware["id"],
+    }
+    assert_caller_owns_transaction(session)
+
+
+def test_c03a_one_sided_and_outside_domain_relationships_remain_source_record_only():
+    actor, _, _ = _c03a_graph()
+    identity_a = identity_object()
+    identity_b = {
+        **identity_object(name="Other identity"),
+        "id": OTHER_IDENTITY_ID,
+    }
+    one_sided = {
+        "type": "relationship",
+        "spec_version": "2.1",
+        "id": RELATIONSHIP_ID,
+        "created": CREATED,
+        "modified": MODIFIED,
+        "relationship_type": "related-to",
+        "source_ref": actor["id"],
+        "target_ref": identity_a["id"],
+    }
+    outside_domain = {
+        **one_sided,
+        "id": "relationship--34343434-3434-4434-8434-343434343434",
+        "source_ref": identity_a["id"],
+        "target_ref": identity_b["id"],
+    }
+    approved, document = validated(
+        [actor, identity_a, identity_b, one_sided, outside_domain]
+    )
+    session = FakeSession(source())
+
+    result = StixBundleImportService(session).import_document(
+        7,
+        approved,
+        document,
+        observed_at=OBSERVED,
+    )
+
+    assert result.threat_relationships_unmapped == 2
+    assert len(session.records) == 5
+    assert len(session.entities) == 1
+    assert session.threat_relationships == []
+    assert_caller_owns_transaction(session)

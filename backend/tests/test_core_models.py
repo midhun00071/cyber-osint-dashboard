@@ -42,6 +42,9 @@ IMPLEMENTED_TABLES = {
     "source_records",
     "source_watermarks",
     "tags",
+    "threat_entities",
+    "threat_entity_aliases",
+    "threat_relationships",
     "vulnerabilities",
 }
 
@@ -120,6 +123,9 @@ def test_importing_models_registers_only_implemented_tables_without_engine(monke
         "SourceRecord",
         "SourceWatermark",
         "Tag",
+        "ThreatEntity",
+        "ThreatEntityAlias",
+        "ThreatRelationship",
         "Vulnerability",
     }
 

@@ -12,7 +12,8 @@ The network unit adds no API-root or collection discovery, arbitrary server,
 URL, endpoint, redirect target, request header, cookie, CLI, API route, frontend
 control, scheduler, startup task, or background worker. It does not retrieve
 malware, attachments, binaries, or files; scan or probe; evaluate Indicator
-patterns against systems; or implement P9-11 threat-entity tables. Validation
+patterns against systems. C03A now implements only the reduced threat-entity
+tables documented below. Validation
 uses only synthetic responses through `httpx.MockTransport`; no live TAXII
 request or source check has been performed.
 
@@ -140,6 +141,20 @@ collection, numeric, and supported-value limits before
 `validate_stix_document` runs, allowing relationships and marking references to
 resolve across page boundaries without bypassing whole-document memory bounds.
 
+## C03A reduced threat-knowledge persistence
+
+C03A adds metadata-only entities for `threat_actor`, `campaign`,
+`malware_family`, and MITRE ATT&CK-backed `attack_technique`, plus six approved
+relationship combinations. Identity is always approved source plus canonical
+STIX ID; composite constraints enforce exact SourceRecord and same-source
+endpoint provenance. Names and aliases never merge or attribute entities. See
+[C03A threat knowledge and STIX persistence](c03-threat-knowledge-stix-persistence.md).
+
+The inactive TAXII handler hashes every canonical safe validated version for
+its checkpoint. Collection and validation finish before the atomic persistence
+transaction, while reconstruction uses only committed run evidence. Production
+STIX/TAXII registries and `DEFAULT_SOURCE_HANDLERS` remain empty.
+
 The collection result contains safe counters and the immutable
 `ValidatedStixDocument`. Callers may pass that document to
 `StixBundleImportService`; the client does not duplicate mapping, lineage,
@@ -153,8 +168,8 @@ Bounded immutable JSON reaches the OASIS STIX 2.1 parser with
 document; objects are not silently skipped. Supported types are:
 
 - `marking-definition`, `identity`, `indicator`, and `relationship`;
-- `attack-pattern`, `campaign`, `malware`, and `threat-actor` for later P9-11
-  modelling preparation only;
+- `attack-pattern`, `campaign`, `malware`, and `threat-actor` for the C03A
+  reduced threat-knowledge model;
 - `ipv4-addr`, `ipv6-addr`, `domain-name`, `url`, and `file` observables.
 
 All other standard and custom types are rejected, including observed data,
@@ -219,8 +234,10 @@ Relationships are validated only after the other objects. `source_ref` and
 `target_ref` must resolve inside the document or to an existing `SourceRecord`
 for the same approved source. The allowed vocabulary is `indicates`, `uses`,
 `attributed-to`, `targets`, and `related-to`; time ordering and self-reference
-rules are enforced. Only safe relationship fields are staged. No P9-11 entity
-or normalized threat relationship is created.
+rules are enforced. Only safe relationship fields are staged. C03A normalizes
+only its six explicit same-source combinations; other cases remain
+SourceRecord-only or fail closed when both normalized endpoints form an
+unsupported combination.
 
 Caller-provided `existing_objects` mappings are never treated as trusted
 database evidence. Their bounded safe trees are revalidated and reduced to the
@@ -306,6 +323,27 @@ Validation failure occurs before timestamps, record fields, Indicators,
 provenance, or flush are touched. There is no automatic repair or reconciliation
 workflow in this unit.
 
+For a normalized C03A entity or relationship that already exists, the importer
+retains that revalidated previous payload even after staging a legitimate newer
+SourceRecord version. Before changing normalized state it reconstructs the
+previous entity, complete alias set, or relationship with the same canonical
+name, alias, confidence, timestamp, ATT&CK identity, endpoint, and revocation
+rules used for persistence, then requires an exact match with the stored rows
+and their source/SourceRecord provenance. A mismatch is a sanitized conflict;
+it is never treated as repair authority. A valid pre-C03 SourceRecord with no
+normalized row may still materialize one, and missing same-source normalized
+relationship endpoints may be reconstructed from their revalidated committed
+SourceRecords without any network request.
+
+First-time relationships with one or both endpoints outside the reduced threat
+domain remain SourceRecord-only and count as unmapped. Before taking that path,
+the importer queries normalized relationships by exact source ID and canonical
+relationship STIX ID. If the identity already exists, the newer relationship
+cannot remove its normalized mapping by changing an endpoint outside the domain;
+the import fails with a sanitized conflict and relies on caller rollback to
+restore the previous SourceRecord version. It never deletes, rewrites, or
+silently repairs the existing normalized relationship.
+
 The persistence copy independently revalidates every safe lineage entry,
 reruns stable-created, stable-creator, unique-modified, non-versioned duplicate,
 and terminal-revocation rules, and derives the latest object tuple again. The
@@ -339,3 +377,10 @@ The caller therefore owns one atomic transaction covering staged objects,
 relationships, indicators, and provenance. Results contain immutable bounded
 counters only; they do not return values, patterns, JSON, paths, SQL, headers,
 credentials, or third-party exceptions.
+
+SQLAlchemy failures caught by the import service are wrapped in a fixed-message
+persistence-specific exception. The inactive TAXII handler maps that exception
+through the existing classifier to transient `persistence_contention`; STIX
+validation and normalized-state conflicts remain non-transient
+`validation_failure`. Neither path includes raw database or upstream exception
+text, and failure cannot write progress or committed execution evidence.

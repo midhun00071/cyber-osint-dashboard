@@ -39,6 +39,9 @@ MODEL_NAMES = frozenset(
         "SourceRecord",
         "SourceWatermark",
         "Tag",
+        "ThreatEntity",
+        "ThreatEntityAlias",
+        "ThreatRelationship",
         "Vulnerability",
     }
 )
@@ -420,7 +423,7 @@ def test_article_search_payloads_are_bound_and_wildcards_are_literal(payload: st
 def test_schema_and_migrations_remain_exactly_at_the_frozen_boundary() -> None:
     import app.models  # noqa: F401
 
-    assert len(Base.metadata.tables) == 21
+    assert len(Base.metadata.tables) == 24
     versions = BACKEND_ROOT / "alembic" / "versions"
     revision_pairs: dict[str, str | None] = {}
     for path in sorted(versions.glob("*.py")):
@@ -450,12 +453,13 @@ def test_schema_and_migrations_remain_exactly_at_the_frozen_boundary() -> None:
             check=False,
         )
         assert comparison.returncode == 0
-    assert len(revision_pairs) == 5
+    assert len(revision_pairs) == 6
     head = next(revision for revision in revision_pairs if revision not in revision_pairs.values())
-    assert head == "d7a9e51c2f40"
+    assert head == "e91f4c2a7b60"
+    assert revision_pairs[head] == "d7a9e51c2f40"
     traversed: list[str] = []
     revision: str | None = head
     while revision is not None:
         traversed.append(revision)
         revision = revision_pairs[revision]
-    assert len(traversed) == 5
+    assert len(traversed) == 6

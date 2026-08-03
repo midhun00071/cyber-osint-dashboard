@@ -1,5 +1,21 @@
 # Architecture
 
+## C03A threat-knowledge boundary
+
+The implemented design includes metadata-only `threat_entities`,
+`threat_entity_aliases`, and `threat_relationships`. Deterministic identity uses
+only approved source and canonical STIX ID; composite foreign keys enforce
+exact SourceRecord and same-source endpoint provenance. The caller-owned STIX
+importer stages SourceRecords, entities and aliases, then approved relationships
+in one transaction without owning commit or rollback.
+
+An inactive policy-gated TAXII handler completes collection and validation
+before persistence, writes run-linked evidence atomically, and uses canonical
+safe-document content hashing for network-free checkpoint reconstruction.
+Production TAXII registries and `DEFAULT_SOURCE_HANDLERS` remain empty. No
+source, Prefect deployment, API, or frontend route is activated by C03A. See
+[C03A threat knowledge and STIX persistence](c03-threat-knowledge-stix-persistence.md).
+
 ## Purpose and audience
 
 This document describes the implemented technical design of the Alpha Data /
@@ -278,7 +294,7 @@ rejects the whole document. Safe fields stage into existing `SourceRecord`
 rows, while approved observables pass through P9-08 normalization into
 `Indicator` and exact `IndicatorProvenance` records. Object markings,
 relationships, versions, conflicts, and same-source reference resolution are
-validated without creating P9-11 entity tables.
+validated before C03A creates only its reduced source-scoped threat tables.
 
 Staged mapped observables retain only deterministic type, hash-algorithm, and
 identity fingerprints. A newer STIX object cannot replace a SourceRecord when
@@ -467,8 +483,8 @@ separately reviewed offline title/summary extraction service. P9-10 reuses the
 boundary for approved STIX observables and now includes a fixed-policy TAXII
 client, without a configured production collection, ingestion trigger,
 scheduler, startup processing, public API route, CLI, or frontend exposure. No
-live TAXII request has been tested, and P9-11 threat entities remain
-unimplemented.
+live TAXII request has been tested. Broader P9-11 entity types remain
+unimplemented beyond the C03A reduced model.
 
 ## Normalization, identity, deduplication, and persistence
 
@@ -843,9 +859,9 @@ The current repository does not implement:
 - active scanning/probing, active IOC validation, malware retrieval, file
   submission, or exploit execution;
 - complete historical analytics, relationship graphs, a configured production
-  TAXII source or approved live TAXII collection execution, P9-11 threat
-  entities, or the broader commercial and platform source capabilities excluded
-  above.
+  TAXII source or approved live TAXII collection execution, broader P9-11 threat
+  entity types and graph features beyond C03A, or the commercial and platform
+  source capabilities excluded above.
 
 Persistent database storage is not backup. `docker compose down -v` destroys
 the named PostgreSQL volume and is not routine cleanup. Manual approval remains
