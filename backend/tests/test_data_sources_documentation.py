@@ -234,3 +234,17 @@ def test_document_has_no_private_path_or_obvious_secret_and_links_resolve() -> N
         path_text = parsed.path
         assert path_text
         assert (DATA_SOURCES_PATH.parent / path_text).resolve().is_file()
+
+
+def test_c02_flow_ready_sources_are_documented_without_activation_claims() -> None:
+    document = normalized_document()
+
+    for phrase in (
+        "six reviewed, flow-ready handler implementations",
+        "not bound to the immutable production `DEFAULT_SOURCE_HANDLERS` mapping",
+        "Operational collection therefore remains manual-only",
+        "Anomali, both Censys identities, and both IBM identities remain manual-only",
+        "unavailable as scheduled success paths",
+        "start-after cursor continuation and one wrap-around",
+    ):
+        assert phrase in document

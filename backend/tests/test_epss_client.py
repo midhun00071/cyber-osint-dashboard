@@ -11,6 +11,7 @@ from app.ingestion.collectors.epss_client import (
     EpssRequestError,
     EpssResponseError,
     MAX_CVE_QUERY_CHARS,
+    MAX_RESPONSE_BYTES,
 )
 
 
@@ -89,6 +90,34 @@ def test_invalid_json_is_response_error() -> None:
     )
     try:
         with pytest.raises(EpssResponseError, match="invalid JSON"):
+            client.fetch_batch(["CVE-2026-0001"])
+    finally:
+        http_client.close()
+
+
+def test_oversized_declared_response_is_rejected_before_json_parsing() -> None:
+    client, http_client = make_client(
+        lambda request: httpx.Response(
+            200,
+            headers={"Content-Length": str(MAX_RESPONSE_BYTES + 1)},
+            content=b"{}",
+            request=request,
+        )
+    )
+    try:
+        with pytest.raises(EpssResponseError, match="size limit"):
+            client.fetch_batch(["CVE-2026-0001"])
+    finally:
+        http_client.close()
+
+
+def test_oversized_streamed_response_is_rejected_without_unbounded_join() -> None:
+    body = b"x" * (MAX_RESPONSE_BYTES + 1)
+    client, http_client = make_client(
+        lambda request: httpx.Response(200, content=body, request=request)
+    )
+    try:
+        with pytest.raises(EpssResponseError, match="size limit"):
             client.fetch_batch(["CVE-2026-0001"])
     finally:
         http_client.close()

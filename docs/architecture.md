@@ -46,6 +46,9 @@ for a new live collection method.
 - B2-01 provides the self-hosted Prefect infrastructure. C01 adds typed
   contracts, generic parent/source flows, bounded retry/progress logic, and a
   paused-by-default deployment definition without activating a schedule.
+- C02 adds six source-specific, transaction-owning handlers behind a separate
+  immutable builder. The production default mapping stays empty, so this code
+  is flow-ready but inactive.
 - Absent controls and operational limitations are documented rather than
   implied to exist.
 
@@ -89,9 +92,10 @@ ingestion trigger, or public ingestion API.
 One self-hosted Prefect server and one process worker provide the B2-01
 platform. The worker image now contains `app.orchestration`, registers and polls
 the fixed `alpha-data-process` process work pool, and can use the application
-database role. C01 defines the fixed parent flow and paused deployment contract,
-but the binding registry is empty, Compose does not register it, and no schedule
-was activated.
+database role. C01 defines the fixed parent flow and paused deployment contract.
+C02 provides a separate immutable test/later-staging builder for six reviewed
+handlers, but the binding registry is empty, Compose does not register it, and
+no schedule was activated.
 
 ## Major components and responsibilities
 
@@ -108,7 +112,8 @@ was activated.
 | Next.js | Fetch validated API data and present dashboard/list/detail states safely | No source collection, database connection, credentials, or raw HTML rendering |
 | Orchestration contracts and policies | Define exact result/failure/progress vocabularies, immutable per-source bounds, handler/persistence protocols, and the fixed deployment specification | No credentials, arbitrary network configuration, raw payload, or source-specific collector |
 | Orchestration persistence adapter | Own short application-role transactions and delegate operational mutations to the existing service | Flow bodies issue no SQL, mutate no ORM objects, and hide no commits |
-| Prefect parent/source flows | Evaluate all enabled policies in slug order, isolate source outcomes, apply bounded retries/staggering, and finalize reconciled cycle evidence | C01 production bindings are empty; no real collector is converted or executed |
+| Prefect parent/source flows | Evaluate all enabled policies in slug order, isolate source outcomes, apply bounded retries/staggering, and finalize reconciled cycle evidence | Production bindings remain empty; C02 handlers are available only through the separate inactive builder |
+| C02 source handlers | Directly call existing CISA, NVD, EPSS, RSS, adapter, normalizer, and persistence components; own source-data transactions and immutable run-linked recovery evidence | Separate inactive builder only; manual-only Anomali, Censys, and IBM identities remain unbound |
 | Prefect server | Provide one self-hosted Prefect 3.8.1 API/UI and persist its SQLite orchestration state in `prefect_data` | No production host publication, Cloud dependency, default credential, or application-database access |
 | Prefect process worker | Poll the fixed `alpha-data-process` pool and import the application orchestration package | No direct SQLite/volume access, Docker socket, source mount, bootstrap/migration credential, automatic registration, or C01 live-source execution |
 
@@ -200,8 +205,18 @@ Missing or ambiguous global CVE identity is skipped, and ambiguous identity
 never selects a CVE based on identifier query order. A skipped row that remains
 `unknown` causes the controlled partial result. Catalog-version evidence is a
 bounded safe ASCII token containing only letters, digits, periods, underscores,
-and hyphens. The 500-row cap therefore requires a future cursor/resume
-enhancement for databases containing more than 500 local vulnerabilities.
+and hyphens. The manual CLI's 500-row cap therefore requires a future
+cursor/resume enhancement for databases containing more than 500 local
+vulnerabilities. C02's inactive handler uses the same service's deterministic
+start-after cursor and one bounded wrap-around instead of always restarting at
+the lowest vulnerability IDs.
+C02 additionally filters complete-catalogue enrichment through deterministic
+100-CVE local-identifier lookup chunks. Expected non-local catalogue entries do
+not become run failures, but the complete catalogue still controls hashing and
+reconciliation; genuine matched local integrity failures remain non-success.
+Its EPSS candidate-date subquery also matches the exact CVE external ID as well
+as source and intelligence item, preserving independent fairness dates when one
+vulnerability carries multiple global CVE identifiers.
 These workflows are source-data processing, not active vulnerability scanners.
 
 > This product uses data from the NVD API but is not endorsed or certified by the NVD.
@@ -837,7 +852,8 @@ the named PostgreSQL volume and is not routine cleanup. Manual approval remains
 required for source collection, migration, rollback, volume deletion, and other
 destructive deployment commands.
 
-C02 owns source-specific flow bindings; C07 owns operator controls; C11 and
+C02 now owns reviewed source-specific flow-ready handlers but does not activate
+or production-bind them. C07 owns operator controls; C11 and
 deployment work own authentication, monitoring, backup, and controlled staging
 activation. The B2-01 private network boundary and C01 paused deployment
 contract must not be mistaken for completed authentication or public

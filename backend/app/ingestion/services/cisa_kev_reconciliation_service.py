@@ -78,6 +78,8 @@ class CisaKevReconciliationResult:
     failed: int
     unknown_remaining: int
     records: tuple[CisaKevReconciliationRecord, ...]
+    next_cursor: int = 0
+    wrapped: bool = False
 
     def __post_init__(self) -> None:
         counters = (
@@ -106,6 +108,10 @@ class CisaKevReconciliationResult:
             raise ValueError(
                 "CISA KEV reconciliation audit records do not reconcile."
             )
+        if type(self.next_cursor) is not int or self.next_cursor < 0:
+            raise ValueError("The CISA KEV reconciliation cursor is invalid.")
+        if type(self.wrapped) is not bool:
+            raise ValueError("The CISA KEV wrap indicator is invalid.")
 
 
 def validate_complete_cisa_kev_catalog(
@@ -181,9 +187,19 @@ class CisaKevReconciliationService:
         max_cves: int,
         batch_size: int,
         checked_at: datetime,
+        start_after_id: int = 0,
+        wrap_around: bool = True,
     ) -> CisaKevReconciliationResult:
         """Apply listed/not-listed status to a bounded deterministic local set."""
 
+        if type(max_cves) is not int or not 1 <= max_cves <= 500:
+            raise ValueError("The CISA KEV local reconciliation limit is invalid.")
+        if type(batch_size) is not int or not 1 <= batch_size <= 100:
+            raise ValueError("The CISA KEV reconciliation batch size is invalid.")
+        if type(start_after_id) is not int or start_after_id < 0:
+            raise ValueError("The CISA KEV reconciliation cursor is invalid.")
+        if type(wrap_around) is not bool:
+            raise ValueError("The CISA KEV wrap policy is invalid.")
         if checked_at.tzinfo is None or checked_at.utcoffset() is None:
             raise ValueError("The CISA KEV checked time must be timezone-aware.")
         checked_at = checked_at.astimezone(UTC)
@@ -192,7 +208,10 @@ class CisaKevReconciliationService:
         inspected = listed = not_listed = updated = unchanged = skipped = 0
         unknown_remaining = 0
         records: list[CisaKevReconciliationRecord] = []
-        after_id = 0
+        after_id = start_after_id
+        upper_bound_id: int | None = None
+        wrapped = False
+        next_cursor = start_after_id
 
         try:
             while inspected < max_cves:
@@ -200,8 +219,14 @@ class CisaKevReconciliationService:
                 vulnerabilities = self._load_vulnerability_batch(
                     after_id=after_id,
                     limit=limit,
+                    at_or_before_id=upper_bound_id,
                 )
                 if not vulnerabilities:
+                    if wrap_around and not wrapped and start_after_id > 0:
+                        after_id = 0
+                        upper_bound_id = start_after_id
+                        wrapped = True
+                        continue
                     break
 
                 item_ids = [
@@ -213,6 +238,7 @@ class CisaKevReconciliationService:
                 for vulnerability in vulnerabilities:
                     vulnerability_id, item_id = self._validated_row_ids(vulnerability)
                     after_id = vulnerability_id
+                    next_cursor = vulnerability_id
                     inspected += 1
                     usable_cve_ids = {
                         cve_id
@@ -279,6 +305,11 @@ class CisaKevReconciliationService:
 
                 self._session.flush()
                 if len(vulnerabilities) < limit:
+                    if wrap_around and not wrapped and start_after_id > 0:
+                        after_id = 0
+                        upper_bound_id = start_after_id
+                        wrapped = True
+                        continue
                     break
         except CisaKevReconciliationPersistenceError:
             raise
@@ -297,6 +328,8 @@ class CisaKevReconciliationService:
             failed=0,
             unknown_remaining=unknown_remaining,
             records=tuple(records),
+            next_cursor=next_cursor,
+            wrapped=wrapped,
         )
 
     def _load_vulnerability_batch(
@@ -304,13 +337,12 @@ class CisaKevReconciliationService:
         *,
         after_id: int,
         limit: int,
+        at_or_before_id: int | None = None,
     ) -> list[Vulnerability]:
-        statement = (
-            select(Vulnerability)
-            .where(Vulnerability.id > after_id)
-            .order_by(Vulnerability.id.asc())
-            .limit(limit)
-        )
+        statement = select(Vulnerability).where(Vulnerability.id > after_id)
+        if at_or_before_id is not None:
+            statement = statement.where(Vulnerability.id <= at_or_before_id)
+        statement = statement.order_by(Vulnerability.id.asc()).limit(limit)
         return list(self._session.execute(statement).scalars().all())
 
     def _load_global_cve_identifiers(

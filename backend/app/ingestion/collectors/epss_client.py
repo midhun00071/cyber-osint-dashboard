@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import re
 from typing import Any
 
@@ -16,6 +17,7 @@ FIRST_EPSS_API_URL = get_required_source_base_url(FIRST_EPSS_SOURCE_SLUG)
 DEFAULT_TIMEOUT = httpx.Timeout(20.0, connect=5.0)
 MAX_CVE_QUERY_CHARS = 2000
 DEFAULT_MAX_BATCH_SIZE = 100
+MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 CVE_ID_PATTERN = re.compile(r"^CVE-\d{4}-\d{4,}$", re.IGNORECASE)
 
 
@@ -78,23 +80,42 @@ class EpssClient:
             raise EpssResponseError("The EPSS CVE query exceeds the approved limit.")
 
         try:
-            response = self._http_client.get(
+            with self._http_client.stream(
+                "GET",
                 FIRST_EPSS_API_URL,
                 params={"cve": cve_query, "limit": len(normalized)},
-            )
+            ) as response:
+                if response.status_code == 429:
+                    raise EpssRateLimitError(
+                        "The EPSS API rate limit was reached (HTTP 429)."
+                    )
+                if not response.is_success:
+                    raise EpssHttpError(
+                        f"The EPSS API returned HTTP {response.status_code}."
+                    )
+                declared_length = self._valid_content_length(
+                    response.headers.get("Content-Length")
+                )
+                if declared_length is not None and declared_length > MAX_RESPONSE_BYTES:
+                    raise EpssResponseError(
+                        "The EPSS response exceeded the approved size limit."
+                    )
+                body = bytearray()
+                for chunk in response.iter_bytes():
+                    if len(body) + len(chunk) > MAX_RESPONSE_BYTES:
+                        body.clear()
+                        raise EpssResponseError(
+                            "The EPSS response exceeded the approved size limit."
+                        )
+                    body.extend(chunk)
         except httpx.TimeoutException as exc:
             raise EpssRequestError("The EPSS request timed out.") from exc
         except httpx.TransportError as exc:
             raise EpssRequestError("The EPSS request failed during transport.") from exc
 
-        if response.status_code == 429:
-            raise EpssRateLimitError("The EPSS API rate limit was reached (HTTP 429).")
-        if not response.is_success:
-            raise EpssHttpError(f"The EPSS API returned HTTP {response.status_code}.")
-
         try:
-            payload = response.json()
-        except ValueError as exc:
+            payload = json.loads(body)
+        except (UnicodeDecodeError, ValueError) as exc:
             raise EpssResponseError("The EPSS API returned invalid JSON.") from exc
 
         return EpssBatch(
@@ -174,3 +195,12 @@ class EpssClient:
         ):
             raise EpssResponseError("The EPSS data field must be a list of objects.")
         return records
+
+    @staticmethod
+    def _valid_content_length(value: str | None) -> int | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized.isascii() or not normalized.isdecimal():
+            return None
+        return int(normalized)

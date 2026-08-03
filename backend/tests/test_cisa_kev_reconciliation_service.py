@@ -92,15 +92,24 @@ class FakeSession:
             )
 
         after_id = 0
+        at_or_before_id = None
         for criterion in statement._where_criteria:
             if getattr(getattr(criterion, "left", None), "name", None) == "id":
-                after_id = criterion.right.value
+                operator_name = getattr(criterion.operator, "__name__", "")
+                if operator_name == "gt":
+                    after_id = criterion.right.value
+                elif operator_name == "le":
+                    at_or_before_id = criterion.right.value
         limit = statement._limit_clause.value
         self.limits.append(limit)
         vulnerabilities_by_id = {
             getattr(row[0], "id"): row[0]
             for row in self.rows
             if getattr(row[0], "id") > after_id
+            and (
+                at_or_before_id is None
+                or getattr(row[0], "id") <= at_or_before_id
+            )
         }
         selected = [
             vulnerabilities_by_id[row_id]
@@ -351,6 +360,69 @@ def test_local_limit_applies_to_local_rows_not_catalog_size() -> None:
     assert result.updated == 2
     assert rows[2][0].kev_status == "unknown"
     assert session.limits == [2]
+
+
+def test_start_after_cursor_continues_then_wraps_without_repeating_rows() -> None:
+    rows = [
+        (vulnerability(index, "unknown"), f"CVE-2026-{1000 + index}")
+        for index in range(1, 6)
+    ]
+    session = FakeSession(rows)
+
+    result = CisaKevReconciliationService(session).reconcile(  # type: ignore[arg-type]
+        {value for _, value in rows},
+        max_cves=4,
+        batch_size=2,
+        checked_at=CHECKED_AT,
+        start_after_id=3,
+        wrap_around=True,
+    )
+
+    assert [record.vulnerability_id for record in result.records] == [4, 5, 1, 2]
+    assert result.next_cursor == 2
+    assert result.wrapped is True
+    assert result.inspected == 4
+    assert session.limits == [2, 2, 2]
+
+
+def test_short_tail_wraps_within_same_bounded_reconciliation() -> None:
+    rows = [
+        (vulnerability(index, "unknown"), f"CVE-2026-{1000 + index}")
+        for index in range(1, 6)
+    ]
+    session = FakeSession(rows)
+
+    result = CisaKevReconciliationService(session).reconcile(  # type: ignore[arg-type]
+        {value for _, value in rows},
+        max_cves=4,
+        batch_size=4,
+        checked_at=CHECKED_AT,
+        start_after_id=3,
+        wrap_around=True,
+    )
+
+    assert [record.vulnerability_id for record in result.records] == [4, 5, 1, 2]
+    assert result.next_cursor == 2
+    assert result.wrapped is True
+    assert result.inspected == 4
+    assert session.limits == [4, 2]
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"max_cves": 501, "batch_size": 100, "start_after_id": 0},
+        {"max_cves": 1, "batch_size": 101, "start_after_id": 0},
+        {"max_cves": 1, "batch_size": 1, "start_after_id": -1},
+    ],
+)
+def test_reconciliation_bounds_are_rejected_before_query(arguments) -> None:
+    with pytest.raises(ValueError):
+        CisaKevReconciliationService(FakeSession([])).reconcile(  # type: ignore[arg-type]
+            {"CVE-2026-1001"},
+            checked_at=CHECKED_AT,
+            **arguments,
+        )
 
 
 @pytest.mark.parametrize(

@@ -55,6 +55,16 @@ approved command; local-file imports require a separately reviewed file each
 time. Live network requests occur only through the fixed endpoints used by the
 corresponding command.
 
+C02 adds six reviewed, flow-ready handler implementations for CISA KEV, NVD,
+FIRST EPSS, CERT-EU, Google Threat Intelligence public research, and Mandiant
+public threat research. They are not bound to the immutable production
+`DEFAULT_SOURCE_HANDLERS` mapping, registered as a deployment, or activated.
+Operational collection therefore remains manual-only. The exact capability,
+progress, bounds, and inactive binding status are recorded in
+[C02 existing approved source flows](c02-existing-approved-source-flows.md).
+Anomali, both Censys identities, and both IBM identities remain manual-only,
+unbound, and unavailable as scheduled success paths.
+
 ## Implemented-source summary
 
 Every row below is `implemented`, `enabled: true`, and unauthenticated by
@@ -178,6 +188,10 @@ scheduled refresh instructions.
   2,000-character query limit. The CVE identifier links enrichment to an
   existing item; source external ID and content hash distinguish unchanged from
   updated evidence.
+- **Inactive C02 handler:** the flow-ready handler orders at most 500 global CVE
+  identifiers by unseen/oldest evidence and CVE identity. Its EPSS evidence
+  lookup correlates the source, intelligence item, and exact CVE external ID,
+  so two CVEs on one vulnerability keep independent refresh dates.
 - **Controls and limitations:** HTTPS host and endpoint are fixed, responses and
   probability/date formats are validated, and source evidence is capped at 4
   KiB per record. Missing or non-vulnerability local CVEs are skipped safely.
@@ -240,11 +254,20 @@ scheduled refresh instructions.
   reconciliation, and after reconciliation plus audit processing. Catalog
   version evidence is restricted to a non-empty, bounded ASCII token containing
   only letters, digits, periods, underscores, and hyphens.
-- **Current pagination limit:** The query always begins with the lowest local
-  vulnerability IDs. The 500-row command therefore requires a future
-  cursor/resume enhancement for databases with more than 500 vulnerabilities.
-  Neither command is scheduled or connected to startup, an API route, or the
+- **Current manual-command pagination limit:** The manual reconciliation query
+  always begins with the lowest local vulnerability IDs. The 500-row command
+  therefore still requires a future cursor/resume enhancement for databases
+  with more than 500 vulnerabilities. C02 separately adds deterministic
+  start-after cursor continuation and one wrap-around to the caller-owned
+  reconciliation service for its inactive handler. Neither manual command nor
+  the C02 handler is scheduled or connected to startup, an API route, or the
   frontend.
+- **Inactive C02 enrichment filtering:** The complete catalogue still supplies
+  validation, SHA-256 checkpoint, and listed/not-listed reconciliation input.
+  Before enrichment, catalogue CVEs are matched to existing global local CVE
+  identifiers in deterministic chunks of at most 100. Expected KEV-only entries
+  create no processing failure, while matched invalid/conflicting local targets
+  retain the existing explicit non-success behavior.
 
 ## Advisory and research publication sources
 
