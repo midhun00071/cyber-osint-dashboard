@@ -11,7 +11,8 @@ This document is the authoritative reference for environment-variable names,
 classification, lifecycle, storage, and rotation. The project remains defensive
 and manual-ingestion focused. FastAPI startup does not run ingestion, and the
 repository has no active scheduler, background ingestion job, or public
-ingestion endpoint.
+ingestion endpoint. C01 defines a paused-by-default Prefect deployment, but no
+schedule was activated and the production source-handler registry is empty.
 
 APR-10 is a team-owned decision and does not require separate mentor approval.
 B1-01 selects no secret-management provider, implements no provider-specific
@@ -87,32 +88,32 @@ still be shared only when needed.
 | `POSTGRES_HOST` | Backend, development Compose | Conditional | Sensitive configuration | Runtime | Database host; local host example is `localhost`, while containers use the service name `db`. | Must be a bare DNS name, canonical IP address, or documented bracketed IPv6 representation. Schemes, credentials, paths, ports, control characters, and ambiguous numeric forms are rejected. |
 | `POSTGRES_PORT` | Backend, development Compose | Conditional | Sensitive configuration | Runtime | Database port, normally `5432`. | Must be 1–65535; production Compose fixes the container value to 5432. |
 | `POSTGRES_DB` | PostgreSQL, backend, migration workflow | Required by production Compose; otherwise conditional | Sensitive configuration | Runtime | Database name, for example `cyber_osint`. | Must be a 1–63 character unquoted PostgreSQL identifier using letters, digits, and underscores, beginning with a letter or underscore. |
-| `POSTGRES_USER` | Backend and local development | Conditional | Sensitive configuration | Runtime | Runtime application login for local/backend execution. | Uses strict PostgreSQL identifier syntax. Production Compose maps `POSTGRES_APP_USER` into this application setting. |
+| `POSTGRES_USER` | Backend, Prefect worker, and local development | Conditional | Sensitive configuration | Runtime | Runtime application login for local/backend/worker execution. | Uses strict PostgreSQL identifier syntax. Production Compose maps `POSTGRES_APP_USER` into this application setting. |
 | `POSTGRES_BOOTSTRAP_USER` | PostgreSQL image | Required by production Compose; local placeholder available | Sensitive configuration | Initialization/administration | Bootstrap identity used only by the PostgreSQL container to initialize and administer roles. | Must differ from application and migration identities. The official image may give this identity administrative privileges; backend and migration never receive its credential. |
-| `POSTGRES_APP_USER` | PostgreSQL role provisioning and production backend | Required by production Compose | Sensitive configuration | Runtime | Least-privilege runtime application identity. | Non-superuser with schema `USAGE`, required DML only, no DDL, no schema creation, no truncate, no role administration, and no deletion. |
+| `POSTGRES_APP_USER` | PostgreSQL role provisioning, production backend, and Prefect worker | Required by production Compose | Sensitive configuration | Runtime | Least-privilege runtime application identity. | Non-superuser with schema `USAGE`, required DML only, no DDL, no schema creation, no truncate, no role administration, and no deletion. |
 | `POSTGRES_MIGRATION_USER` | Role provisioning and migration service | Required by production Compose | Sensitive configuration | Manual migration | Separate non-superuser migration identity that owns/manages application schema objects. | Never supplied to the runtime backend. |
 | `POSTGRES_PASSWORD` | Backend and development Compose | Local/test application credential only | Secret value; backend-only | Runtime | Generate a unique random local or isolated-test application credential. | Held as `SecretStr`. It is rejected in staging and production, and cannot be combined with `POSTGRES_PASSWORD_FILE`. |
 | `POSTGRES_BOOTSTRAP_PASSWORD` | Local development PostgreSQL | Local development placeholder only | Secret value | Initialization | Development-only bootstrap credential. | Never use the committed placeholder in staging or production. |
 | `POSTGRES_MIGRATION_PASSWORD` | Local migration workflow | Local development placeholder only | Secret value | Manual migration | Development-only migration credential. | Never use the committed placeholder in staging or production. |
-| `POSTGRES_PASSWORD_FILE` | Backend or migration process | Required in staging/production | Non-secret file reference | Runtime | Container path to that process's mounted role-specific password file. | Must reference a readable regular file of 1–4096 bytes after terminal CR/LF removal. Empty, NUL-containing, oversized, missing, and non-file inputs fail closed without exposing path or content. |
+| `POSTGRES_PASSWORD_FILE` | Backend, Prefect worker, or migration process | Required in staging/production | Non-secret file reference | Runtime | Container path to that process's mounted role-specific password file. | Must reference a readable regular file of 1–4096 bytes after terminal CR/LF removal. Empty, NUL-containing, oversized, missing, and non-file inputs fail closed without exposing path or content. |
 | `POSTGRES_BOOTSTRAP_PASSWORD_SECRET_FILE` | Production Compose host | Required | Non-secret host file reference | Compose deployment | Protected bootstrap-password file mounted only to PostgreSQL. | No checked-in default; absence fails Compose interpolation. |
-| `POSTGRES_APP_PASSWORD_SECRET_FILE` | Production Compose host | Required | Non-secret host file reference | Compose deployment | Protected application-password file mounted to PostgreSQL provisioning and backend only. | No checked-in default; not mounted to migration. |
+| `POSTGRES_APP_PASSWORD_SECRET_FILE` | Production Compose host | Required | Non-secret host file reference | Compose deployment | Protected application-password file mounted to PostgreSQL provisioning, backend, and Prefect worker only. | No checked-in default; not mounted to migration or Prefect server. |
 | `POSTGRES_MIGRATION_PASSWORD_SECRET_FILE` | Production Compose host | Required | Non-secret host file reference | Compose deployment | Protected migration-password file mounted to PostgreSQL provisioning and migration only. | No checked-in default; not mounted to backend. |
 | `DATABASE_URL` | Repository runner, backend, Alembic | Optional local/test alternative to component fields | Secret value; backend-only | Runtime | Do not place a credential-bearing example in documentation. | Local/test only. It has explicit precedence over component fields and accepts only complete PostgreSQL/psycopg URLs. It is rejected in staging and production. |
-| `DATABASE_POOL_SIZE` | Backend and migration settings | Optional | Non-secret operational configuration | Runtime | SQLAlchemy persistent pool size; default `5`. | Strict integer `1..20`; booleans, floats and unsafe string coercion are rejected. |
-| `DATABASE_MAX_OVERFLOW` | Backend and migration settings | Optional | Non-secret operational configuration | Runtime | Temporary connections above pool size; default `5`. | Strict integer `0..20`; combined pool plus overflow cannot exceed `30`. |
-| `DATABASE_POOL_TIMEOUT_SECONDS` | Backend and migration settings | Optional | Non-secret operational configuration | Runtime | Maximum pool checkout wait; default `30`. | Strict integer `1..60`; exhaustion fails instead of waiting indefinitely. |
-| `DATABASE_POOL_RECYCLE_SECONDS` | Backend and migration settings | Optional | Non-secret operational configuration | Runtime | Connection recycle age; default `1800`. | Strict integer `60..3600`. |
-| `DATABASE_CONNECT_TIMEOUT_SECONDS` | Backend and migration settings | Optional | Non-secret operational configuration | Runtime | PostgreSQL connection establishment timeout; default `10`. | Strict integer `1..30`. |
-| `BACKEND_CORS_ALLOWED_ORIGINS` | Backend, production Compose | Explicit in staging/production; bounded default locally/test | Backend-only sensitive configuration | Runtime | Comma-separated exact origins, for example `https://dashboard.example.invalid`. | No wildcard, path, query, fragment, credentials, control character, or empty entry. Staging/production require non-loopback HTTPS. |
-| `BACKEND_TRUSTED_HOSTS` | Backend, production Compose | Explicit in staging/production; bounded default locally/test | Backend-only sensitive configuration | Runtime | Exact comma-separated hostnames such as `api.example.invalid`. | Configuration rejects wildcards, schemes, ports, paths, credentials, malformed/empty entries, ambiguous numeric forms, and protected-environment loopback or unspecified hosts without DNS resolution. Runtime requires exactly one Host header, accepts case-insensitive DNS or canonical IP with an optional valid decimal port, compares the normalized host exactly, and returns a fixed `400` without redirecting or echoing rejected input. |
+| `DATABASE_POOL_SIZE` | Backend, Prefect worker, and migration settings | Optional | Non-secret operational configuration | Runtime | SQLAlchemy persistent pool size; default `5`. | Strict integer `1..20`; booleans, floats and unsafe string coercion are rejected. |
+| `DATABASE_MAX_OVERFLOW` | Backend, Prefect worker, and migration settings | Optional | Non-secret operational configuration | Runtime | Temporary connections above pool size; default `5`. | Strict integer `0..20`; combined pool plus overflow cannot exceed `30`. |
+| `DATABASE_POOL_TIMEOUT_SECONDS` | Backend, Prefect worker, and migration settings | Optional | Non-secret operational configuration | Runtime | Maximum pool checkout wait; default `30`. | Strict integer `1..60`; exhaustion fails instead of waiting indefinitely. |
+| `DATABASE_POOL_RECYCLE_SECONDS` | Backend, Prefect worker, and migration settings | Optional | Non-secret operational configuration | Runtime | Connection recycle age; default `1800`. | Strict integer `60..3600`. |
+| `DATABASE_CONNECT_TIMEOUT_SECONDS` | Backend, Prefect worker, and migration settings | Optional | Non-secret operational configuration | Runtime | PostgreSQL connection establishment timeout; default `10`. | Strict integer `1..30`. |
+| `BACKEND_CORS_ALLOWED_ORIGINS` | Backend, Prefect worker, production Compose | Explicit in staging/production; bounded default locally/test | Backend-only sensitive configuration | Runtime | Comma-separated exact origins, for example `https://dashboard.example.invalid`. | No wildcard, path, query, fragment, credentials, control character, or empty entry. Staging/production require non-loopback HTTPS. The worker supplies this only for the shared protected settings model; it exposes no HTTP API. |
+| `BACKEND_TRUSTED_HOSTS` | Backend, Prefect worker, production Compose | Explicit in staging/production; bounded default locally/test | Backend-only sensitive configuration | Runtime | Exact comma-separated hostnames such as `api.example.invalid`. | Configuration rejects wildcards, schemes, ports, paths, credentials, malformed/empty entries, ambiguous numeric forms, and protected-environment loopback or unspecified hosts without DNS resolution. Runtime requires exactly one Host header, accepts case-insensitive DNS or canonical IP with an optional valid decimal port, compares the normalized host exactly, and returns a fixed `400` without redirecting or echoing rejected input. The worker supplies this only for shared settings validation. |
 | `NEXT_PUBLIC_API_BASE_URL` | Frontend, Docker Compose | Required for staging/production builds; bounded fallback locally/test | Public configuration | Build time | Browser-visible backend base URL, for example `https://api.example.invalid`. | Credential-bearing URLs, non-HTTP(S), query/fragment values, and protected-environment HTTP, loopback, or unspecified hosts are rejected; trailing slashes are normalized. |
 | `NVD_API_KEY` | Approved manual NVD ingestion and smoke test | Conditional | Secret | Runtime | Leave blank when unused; provide only for an explicitly approved manual NVD command. | Masked by backend settings. It is not supplied by production Compose and does not activate ingestion. |
 | `FETCH_INTERVAL_MINUTES` | Backend settings | Optional | Non-secret operational configuration | Runtime | Operational interval placeholder, currently `30`. | The settings model accepts an integer. The current application has no scheduler and does not consume this field to start recurring work. |
 | `ENABLE_ADMIN_INGESTION` | Backend settings, Compose | Optional locally/test; mandatory `false` in staging/production | Backend-only sensitive security control | Runtime | Safe value is `false`. | The current API exposes no ingestion route. This flag neither schedules nor starts ingestion; staging/production reject `true`. |
 | `IMAGE_TAG` | Production Compose | Optional | Non-secret deployment configuration | Compose build and startup | Reviewable image tag, for example `p7-01`. | Used only in backend/frontend image names. |
 
-### B2-01 Prefect configuration boundary
+### B2-01/C01 Prefect configuration boundary
 
 The self-hosted Prefect 3.8.1 image, server API address, state location, worker
 health server, process work-pool type, and `alpha-data-process` pool name are
@@ -123,7 +124,8 @@ widening the fixed `127.0.0.1` bind. Production exposes no Prefect host port.
 No Prefect username, password, API key, Cloud API URL, or default credential is
 defined in Compose or the environment examples. The current B2-01 protection is
 network-only: local administration is loopback-bound and production services
-join only the internal `orchestration` network. Prefect authentication and
+use private networks. The server joins only `orchestration`; the worker joins
+only `orchestration` and `database`. Prefect authentication and
 backend-authorized operator controls remain later work, so the production
 administration surface must not be published or routed publicly.
 
@@ -132,6 +134,22 @@ the SQLite state there. The worker uses the internal self-hosted API and does no
 mount the state volume. Do not add a credential, Cloud workspace setting,
 database URL, arbitrary API root, or worker-accessible SQLite mount as an
 environment override.
+
+C01 adds no new secret. The worker reuses only the application-role database
+configuration already used by the backend: local Compose passes the local
+application role, while production mounts only `postgres_app_password` and sets
+`POSTGRES_PASSWORD_FILE`. The server receives no application, migration, or
+bootstrap database setting. The worker receives no migration or bootstrap
+identity. `APP_ENV=production`, protected-environment CORS/trusted-host values,
+and bounded pool settings are supplied because the worker imports the same
+validated application settings boundary.
+
+Flow, deployment, work-pool, cron, timezone, concurrency, retry, stagger, quota,
+and progress identities are fixed in application code. They are not environment
+overrides. Registration is an explicit command and paused by default; activation
+is staging-only and additionally requires complete scheduled handler bindings
+and an explicit controlled-evidence confirmation. No environment value alone
+activates source execution.
 
 Developer validation commands may temporarily set `TEMP` and `TMP` to a fresh
 directory outside the repository and clear `PYTEST_ADDOPTS` so local user
@@ -218,7 +236,9 @@ must be scoped to its consuming service and rotated or revoked by its owner.
   `POSTGRES_BOOTSTRAP_PASSWORD_SECRET_FILE`,
   `POSTGRES_APP_PASSWORD_SECRET_FILE`, and
   `POSTGRES_MIGRATION_PASSWORD_SECRET_FILE`. Production Compose mounts each
-  file only into its authorized consumers.
+  file only into its authorized consumers. The application password is shared
+  only with the backend and Prefect worker; this is reuse of the existing
+  application role, not a new credential.
 - APR-10 is team-owned; no secret-management provider or credential-delivery
   mechanism has yet been selected or implemented. Any selection must still meet
   the project security controls and receive task-specific validation,

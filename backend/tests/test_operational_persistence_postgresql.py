@@ -6,6 +6,7 @@ import ipaddress
 import os
 from pathlib import Path
 import socket
+from threading import Barrier
 import time
 from uuid import uuid4
 
@@ -22,6 +23,7 @@ from app.core.config import get_settings
 from app.db.base import Base
 import app.models  # noqa: F401
 from app.ingestion.source_registry import list_source_definitions
+from app.ingestion.services.operational_idempotency import build_scheduled_cycle_key
 from app.ingestion.services.operational_persistence_service import (
     DeferReason,
     OperationalConflictError,
@@ -322,6 +324,383 @@ def test_conflicting_duplicate_cycle_inputs_are_rejected(pg_engine) -> None:
             OperationalPersistenceService(session).acquire_cycle(
                 trigger_type="manual", manual_request_key=request, sources_expected=2
             )
+
+
+def test_cycle_finalization_is_evidence_backed_and_exactly_idempotent(pg_engine) -> None:
+    cycle_id = committed_cycle(pg_engine)
+    with Session(pg_engine) as session, session.begin():
+        run = OperationalPersistenceService(session).acquire_source_run(
+            cycle_id=cycle_id,
+            source_slug="censys-arc-research",
+            occurred_at=NOW,
+        )
+        run_id = run.id
+    with Session(pg_engine) as session, session.begin():
+        OperationalPersistenceService(session).record_persistence_commit(
+            run_id=run_id,
+            expected_state_version=1,
+            counters=CREATED,
+            occurred_at=NOW + timedelta(seconds=1),
+        )
+
+    kwargs = dict(
+        cycle_id=cycle_id,
+        status="success",
+        sources_started=1,
+        sources_completed=1,
+        sources_successful=1,
+        sources_non_successful=0,
+        safe_summary="Parent cycle completed with bounded results.",
+        occurred_at=NOW + timedelta(seconds=2),
+    )
+    with Session(pg_engine) as session, session.begin():
+        first = OperationalPersistenceService(session).finalize_cycle(**kwargs)
+        assert (first.status, first.sources_completed) == ("success", 1)
+    with Session(pg_engine) as session, session.begin():
+        second = OperationalPersistenceService(session).finalize_cycle(**kwargs)
+        assert second.id == cycle_id
+
+    with Session(pg_engine) as session, session.begin():
+        with pytest.raises(OperationalConflictError):
+            OperationalPersistenceService(session).finalize_cycle(
+                **{**kwargs, "safe_summary": "A conflicting completion summary."}
+            )
+
+
+def test_cycle_finalization_rejects_fabricated_counters_and_rolls_back(pg_engine) -> None:
+    cycle_id = committed_cycle(pg_engine)
+    with Session(pg_engine) as session:
+        transaction = session.begin()
+        with pytest.raises(OperationalConflictError, match="source-run evidence"):
+            OperationalPersistenceService(session).finalize_cycle(
+                cycle_id=cycle_id,
+                status="success",
+                sources_started=1,
+                sources_completed=1,
+                sources_successful=1,
+                sources_non_successful=0,
+                occurred_at=NOW + timedelta(seconds=1),
+            )
+        transaction.rollback()
+    with Session(pg_engine) as session:
+        cycle_row = session.get(IngestionCycle, cycle_id)
+        assert (cycle_row.status, cycle_row.completed_at) == ("running", None)
+
+
+def test_all_success_evidence_cannot_finalize_as_cancelled(pg_engine) -> None:
+    cycle_id = committed_cycle(pg_engine)
+    with Session(pg_engine) as session, session.begin():
+        run = OperationalPersistenceService(session).acquire_source_run(
+            cycle_id=cycle_id,
+            source_slug="censys-arc-research",
+            occurred_at=NOW,
+        )
+        run_id = run.id
+    with Session(pg_engine) as session, session.begin():
+        OperationalPersistenceService(session).record_persistence_commit(
+            run_id=run_id,
+            expected_state_version=1,
+            counters=CREATED,
+            occurred_at=NOW + timedelta(seconds=1),
+        )
+    with Session(pg_engine) as session, session.begin():
+        with pytest.raises(OperationalValidationError, match="Cancelled"):
+            OperationalPersistenceService(session).finalize_cycle(
+                cycle_id=cycle_id,
+                status="cancelled",
+                sources_started=1,
+                sources_completed=1,
+                sources_successful=1,
+                sources_non_successful=0,
+                occurred_at=NOW + timedelta(seconds=2),
+            )
+
+
+def test_cancelled_cycle_is_evidence_backed_exactly_idempotent_and_conflict_safe(
+    pg_engine,
+) -> None:
+    cycle_id = committed_cycle(pg_engine)
+    with Session(pg_engine) as session, session.begin():
+        run = OperationalPersistenceService(session).acquire_source_run(
+            cycle_id=cycle_id,
+            source_slug="censys-arc-research",
+            occurred_at=NOW,
+        )
+        run_id = run.id
+    with Session(pg_engine) as session, session.begin():
+        OperationalPersistenceService(session).complete_partial_or_failure(
+            run_id=run_id,
+            expected_state_version=1,
+            status="cancelled",
+            counters=ZERO,
+            safe_summary="Source execution was cancelled safely.",
+            occurred_at=NOW + timedelta(seconds=1),
+        )
+
+    arguments = dict(
+        cycle_id=cycle_id,
+        status="cancelled",
+        sources_started=1,
+        sources_completed=1,
+        sources_successful=0,
+        sources_non_successful=1,
+        safe_summary="Parent cycle retained committed cancellation evidence.",
+        occurred_at=NOW + timedelta(seconds=2),
+    )
+    with Session(pg_engine) as session, session.begin():
+        first = OperationalPersistenceService(session).finalize_cycle(**arguments)
+        assert first.status == "cancelled"
+    with Session(pg_engine) as session, session.begin():
+        repeated = OperationalPersistenceService(session).finalize_cycle(**arguments)
+        assert repeated.id == cycle_id
+    with Session(pg_engine) as session, session.begin():
+        with pytest.raises(OperationalConflictError):
+            OperationalPersistenceService(session).finalize_cycle(
+                **{
+                    **arguments,
+                    "safe_summary": "Conflicting cancellation evidence.",
+                }
+            )
+
+
+def test_cancelled_cycle_rejects_non_cancelled_terminal_run_evidence(pg_engine) -> None:
+    cycle_id = committed_cycle(pg_engine)
+    with Session(pg_engine) as session, session.begin():
+        run = OperationalPersistenceService(session).acquire_source_run(
+            cycle_id=cycle_id,
+            source_slug="censys-arc-research",
+            occurred_at=NOW,
+        )
+        run_id = run.id
+    with Session(pg_engine) as session, session.begin():
+        OperationalPersistenceService(session).complete_partial_or_failure(
+            run_id=run_id,
+            expected_state_version=1,
+            status="failed",
+            counters=ZERO,
+            run_level_error=True,
+            occurred_at=NOW + timedelta(seconds=1),
+        )
+    with Session(pg_engine) as session, session.begin():
+        with pytest.raises(OperationalConflictError, match="Cancelled cycle evidence"):
+            OperationalPersistenceService(session).finalize_cycle(
+                cycle_id=cycle_id,
+                status="cancelled",
+                sources_started=1,
+                sources_completed=1,
+                sources_successful=0,
+                sources_non_successful=1,
+                occurred_at=NOW + timedelta(seconds=2),
+            )
+
+
+def test_scheduled_cycle_acquisition_is_exactly_idempotent_and_conflict_safe(
+    pg_engine,
+) -> None:
+    deployment = "alpha-data-ingestion-cycle"
+    slot = NOW
+    with Session(pg_engine) as session, session.begin():
+        first = OperationalPersistenceService(session).acquire_cycle(
+            trigger_type="scheduled",
+            scheduled_for=slot,
+            deployment_ref=deployment,
+            sources_expected=1,
+            occurred_at=slot,
+        )
+        first_id = first.id
+
+    with Session(pg_engine) as session, session.begin():
+        repeated = OperationalPersistenceService(session).acquire_cycle(
+            trigger_type="scheduled",
+            scheduled_for=slot,
+            deployment_ref=deployment,
+            sources_expected=1,
+            occurred_at=slot + timedelta(minutes=1),
+        )
+        assert repeated.id == first_id
+        assert counts(session, IngestionCycle) == 1
+        assert counts(session, AuditEvent) == 1
+
+    with Session(pg_engine) as session, session.begin():
+        with pytest.raises(OperationalConflictError, match="identity conflicts"):
+            OperationalPersistenceService(session).acquire_cycle(
+                trigger_type="scheduled",
+                scheduled_for=slot,
+                deployment_ref=deployment,
+                sources_expected=2,
+                occurred_at=slot + timedelta(minutes=2),
+            )
+
+    with Session(pg_engine) as session:
+        assert counts(session, IngestionCycle) == 1
+        assert counts(session, AuditEvent) == 1
+
+
+def test_running_scheduled_cycle_rejects_new_slot_without_partial_evidence(
+    pg_engine,
+) -> None:
+    deployment = "alpha-data-ingestion-cycle"
+    first_slot = NOW
+    with Session(pg_engine) as session, session.begin():
+        first = OperationalPersistenceService(session).acquire_cycle(
+            trigger_type="scheduled",
+            scheduled_for=first_slot,
+            deployment_ref=deployment,
+            sources_expected=0,
+            occurred_at=first_slot,
+        )
+        first_id = first.id
+
+    with Session(pg_engine) as session:
+        transaction = session.begin()
+        with pytest.raises(OperationalConflictError, match="already active"):
+            OperationalPersistenceService(session).acquire_cycle(
+                trigger_type="scheduled",
+                scheduled_for=first_slot + timedelta(hours=2),
+                deployment_ref=deployment,
+                sources_expected=0,
+                occurred_at=first_slot + timedelta(hours=2),
+            )
+        assert counts(session, IngestionCycle) == 1
+        assert counts(session, AuditEvent) == 1
+        assert counts(session, IngestionRun) == 0
+        transaction.rollback()
+
+    with Session(pg_engine) as session:
+        original = session.get(IngestionCycle, first_id)
+        assert original is not None
+        assert (
+            original.status,
+            original.scheduled_for,
+            original.completed_at,
+            original.sources_expected,
+        ) == ("running", first_slot, None, 0)
+        assert counts(session, IngestionCycle) == 1
+        assert counts(session, AuditEvent) == 1
+
+
+def test_terminal_scheduled_cycle_allows_next_slot_and_manual_is_independent(
+    pg_engine,
+) -> None:
+    deployment = "alpha-data-ingestion-cycle"
+    first_slot = NOW
+    with Session(pg_engine) as session, session.begin():
+        service = OperationalPersistenceService(session)
+        first = service.acquire_cycle(
+            trigger_type="scheduled",
+            scheduled_for=first_slot,
+            deployment_ref=deployment,
+            sources_expected=0,
+            occurred_at=first_slot,
+        )
+        manual = service.acquire_cycle(
+            trigger_type="manual",
+            manual_request_key=f"request-{uuid4()}",
+            sources_expected=0,
+            occurred_at=first_slot,
+        )
+        assert manual.id != first.id
+        first_id = first.id
+        manual_id = manual.id
+
+    with Session(pg_engine) as session, session.begin():
+        OperationalPersistenceService(session).finalize_cycle(
+            cycle_id=first_id,
+            status="success",
+            sources_started=0,
+            sources_completed=0,
+            sources_successful=0,
+            sources_non_successful=0,
+            occurred_at=first_slot + timedelta(minutes=1),
+        )
+
+    with Session(pg_engine) as session, session.begin():
+        next_cycle = OperationalPersistenceService(session).acquire_cycle(
+            trigger_type="scheduled",
+            scheduled_for=first_slot + timedelta(hours=2),
+            deployment_ref=deployment,
+            sources_expected=0,
+            occurred_at=first_slot + timedelta(hours=2),
+        )
+        assert next_cycle.id not in {first_id, manual_id}
+        assert next_cycle.status == "running"
+
+
+def test_scheduled_finalization_overlap_guard_remains_defensive(pg_engine) -> None:
+    deployment = "alpha-data-ingestion-cycle"
+    first_slot = NOW
+    second_slot = NOW + timedelta(hours=2)
+    with Session(pg_engine) as session, session.begin():
+        service = OperationalPersistenceService(session)
+        first = service.acquire_cycle(
+            trigger_type="scheduled",
+            scheduled_for=first_slot,
+            deployment_ref=deployment,
+            sources_expected=0,
+            occurred_at=first_slot,
+        )
+        overlapping = IngestionCycle(
+            idempotency_key=build_scheduled_cycle_key(deployment, second_slot),
+            trigger_type="scheduled",
+            status="running",
+            scheduled_for=second_slot,
+            started_at=second_slot,
+            completed_at=None,
+            sources_expected=0,
+            sources_started=0,
+            sources_completed=0,
+            sources_successful=0,
+            sources_non_successful=0,
+            safe_summary=None,
+            created_at=second_slot,
+        )
+        session.add(overlapping)
+        session.flush()
+
+        with pytest.raises(OperationalConflictError, match="overlapping"):
+            service.finalize_cycle(
+                cycle_id=first.id,
+                status="success",
+                sources_started=0,
+                sources_completed=0,
+                sources_successful=0,
+                sources_non_successful=0,
+                occurred_at=second_slot + timedelta(hours=1),
+            )
+        assert first.status == overlapping.status == "running"
+
+
+def test_concurrent_different_slot_scheduled_acquisitions_cannot_both_start(
+    pg_engine,
+) -> None:
+    start = Barrier(2)
+    hold_winner = Barrier(2)
+
+    def worker(slot: datetime) -> str:
+        with Session(pg_engine) as session, session.begin():
+            start.wait(timeout=10)
+            try:
+                OperationalPersistenceService(session).acquire_cycle(
+                    trigger_type="scheduled",
+                    scheduled_for=slot,
+                    deployment_ref="alpha-data-ingestion-cycle",
+                    sources_expected=0,
+                    occurred_at=slot,
+                )
+                outcome = "started"
+            except (OperationalLockUnavailableError, OperationalConflictError):
+                outcome = "blocked"
+            hold_winner.wait(timeout=10)
+            return outcome
+
+    slots = (NOW, NOW + timedelta(hours=2))
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(worker, slots))
+
+    assert sorted(outcomes) == ["blocked", "started"]
+    with Session(pg_engine) as session:
+        assert counts(session, IngestionCycle) == 1
+        assert counts(session, AuditEvent) == 1
 
 
 def test_initial_operational_run_has_complete_identity_and_acquired_event(pg_engine) -> None:

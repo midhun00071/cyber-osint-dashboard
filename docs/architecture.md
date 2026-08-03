@@ -27,7 +27,8 @@ for a new live collection method.
 
 ## Architecture principles
 
-- Ingestion is manual-only and explicitly operator invoked.
+- Operational source ingestion remains manual-only until C02 handlers are bound
+  and a controlled staging deployment is explicitly activated.
 - Fixed endpoints, exact hosts, closed selectors, or reviewed local files bound
   every implemented source workflow; operators cannot supply network URLs.
 - Collectors, adapters/normalizers, persistence, queries, and presentation have
@@ -42,8 +43,9 @@ for a new live collection method.
   review evidence.
 - Development convenience and production-oriented configuration are separate
   architectures with different risk boundaries.
-- Self-hosted Prefect is present as orchestration infrastructure only; B2-01
-  adds no flow, deployment, or schedule and does not execute ingestion.
+- B2-01 provides the self-hosted Prefect infrastructure. C01 adds typed
+  contracts, generic parent/source flows, bounded retry/progress logic, and a
+  paused-by-default deployment definition without activating a schedule.
 - Absent controls and operational limitations are documented rather than
   implied to exist.
 
@@ -77,16 +79,19 @@ Dashboard and detail API calls originate in the browser. The public
 `NEXT_PUBLIC_API_BASE_URL` value is embedded in the frontend browser assets at
 build time; the frontend container does not proxy the current API requests.
 The browser has no direct access to PostgreSQL or external intelligence
-sources, and the backend remains the only application component that accesses
-PostgreSQL. There is no direct frontend-to-source or frontend-to-PostgreSQL
+sources. The backend and the Prefect process worker are the only application
+components with application-role PostgreSQL access. There is no direct
+frontend-to-source or frontend-to-PostgreSQL
 connection. The diagram does not imply automatic collection: FastAPI startup
 creates no ingestion job, scheduler, recurring background worker, frontend
 ingestion trigger, or public ingestion API.
 
 One self-hosted Prefect server and one process worker provide the B2-01
-orchestration platform. The worker registers and polls the fixed
-`alpha-data-process` process work pool, but no source flow, deployment, or
-schedule exists. These services do not enter the manual data path shown above.
+platform. The worker image now contains `app.orchestration`, registers and polls
+the fixed `alpha-data-process` process work pool, and can use the application
+database role. C01 defines the fixed parent flow and paused deployment contract,
+but the binding registry is empty, Compose does not register it, and no schedule
+was activated.
 
 ## Major components and responsibilities
 
@@ -101,8 +106,11 @@ schedule exists. These services do not enter the manual data path shown above.
 | PostgreSQL and SQLAlchemy | Store normalized intelligence, provenance, identifiers, tags, vulnerabilities, and ingestion audit records | Persistence is not backup; access is through backend/migration sessions |
 | FastAPI | Validate read-only queries and serialize allow-listed health, version, dashboard, article, and intelligence responses | No write, ingestion, administration, authentication, or authorization endpoint |
 | Next.js | Fetch validated API data and present dashboard/list/detail states safely | No source collection, database connection, credentials, or raw HTML rendering |
-| Prefect server | Provide one self-hosted Prefect 3.8.1 API/UI and persist its SQLite orchestration state in `prefect_data` | No production host publication, Cloud dependency, default credential, flow, deployment, or schedule |
-| Prefect process worker | Register and poll the fixed `alpha-data-process` process work pool through the server API | No direct SQLite/volume access, Docker socket, application source mount, or source execution in B2-01 |
+| Orchestration contracts and policies | Define exact result/failure/progress vocabularies, immutable per-source bounds, handler/persistence protocols, and the fixed deployment specification | No credentials, arbitrary network configuration, raw payload, or source-specific collector |
+| Orchestration persistence adapter | Own short application-role transactions and delegate operational mutations to the existing service | Flow bodies issue no SQL, mutate no ORM objects, and hide no commits |
+| Prefect parent/source flows | Evaluate all enabled policies in slug order, isolate source outcomes, apply bounded retries/staggering, and finalize reconciled cycle evidence | C01 production bindings are empty; no real collector is converted or executed |
+| Prefect server | Provide one self-hosted Prefect 3.8.1 API/UI and persist its SQLite orchestration state in `prefect_data` | No production host publication, Cloud dependency, default credential, or application-database access |
+| Prefect process worker | Poll the fixed `alpha-data-process` pool and import the application orchestration package | No direct SQLite/volume access, Docker socket, source mount, bootstrap/migration credential, automatic registration, or C01 live-source execution |
 
 ## Repository and module structure
 
@@ -117,6 +125,8 @@ backend/
     services/            read/query services
     ingestion/           registry, collectors, normalizers, adapters, CLIs,
                          source services, and common publication pipeline
+    orchestration/       typed policies/contracts, transaction adapter,
+                         Prefect flows, and deployment registration CLI
     processing/          deterministic UAE relevance processing
   alembic/               migration environment and versioned schema
   tests/                 backend, security, documentation, Compose, and runner tests
@@ -601,7 +611,8 @@ credentials are not production controls. Although the development Compose
 environment contains legacy interval/admin feature flags, the current
 application has no ingestion scheduler, startup ingestion, or admin ingestion
 route. The Prefect worker remains idle apart from fixed pool registration and
-polling.
+polling until an operator explicitly registers a deployment. The C01 deployment
+is paused by default and has no production source bindings.
 
 ## Production Docker architecture
 
@@ -629,9 +640,9 @@ approved operator/browser
 manual migrate service -------------------------------> PostgreSQL
 
 prefect-worker -- internal orchestration network --> prefect-server
-                                                        |
-                                                        v
-                                                   prefect_data
+      |                                                 |
+      | application role                                v
+      +---------- internal database network --> PostgreSQL   prefect_data
 ```
 
 The database has no production host port by default. Frontend joins only the
@@ -640,9 +651,11 @@ network; PostgreSQL and `migrate` join only the database network. Backend and
 frontend default host bindings are loopback-only. No application source,
 environment file, or Docker socket is mounted into application containers.
 
-Prefect server and worker join only the dedicated internal `orchestration`
-network. Production publishes no Prefect host port. The server alone mounts
-`prefect_data`; the worker uses the internal API and has no state-volume mount.
+Prefect server joins only the dedicated internal `orchestration` network;
+Prefect worker joins only `orchestration` and the internal `database` network.
+Production publishes no Prefect host port. The server alone mounts
+`prefect_data`; the worker uses the internal API, has no state-volume mount, and
+receives only the existing application database credential secret.
 Both use the same project-built image based exactly on
 `prefecthq/prefect:3.8.1-python3.13`. The worker's fixed argument-vector command
 creates `alpha-data-process` only when absent and otherwise reuses the existing
@@ -680,9 +693,11 @@ management; deployment infrastructure must supply those separately.
 No default Prefect credential or Prefect Cloud configuration exists. B2-01
 protects administration through loopback-only local publication and private
 production networking; Prefect authentication and backend-authorized operator
-controls remain later work. Scheduling, source flows, operator controls,
-monitoring, backup/recovery, and staging deployment are also owned by later
-tasks.
+controls remain later work. C01 supplies one fixed schedule specification and
+generic flows, but paused registration is explicit and staging activation is
+blocked unless every scheduled handler is bound and controlled evidence is
+confirmed. Source conversion, operator controls, monitoring, backup/recovery,
+and staging activation evidence remain later tasks.
 
 ### Database-role architecture
 
@@ -781,8 +796,9 @@ Manual cases remain `Not Run` until separately executed and recorded.
 
 - Source collection/enrichment is invoked through reviewed backend CLIs only;
   operators choose timing and bounds. No standard refresh interval exists.
-- The B2-01 Prefect server and process worker are infrastructure-only. Their
-  fixed pool has no flow, deployment, schedule, or source execution.
+- C01's Prefect parent/source flows and fixed schedule contract are implemented,
+  but the deployment is not automatically registered or activated and the
+  production source-handler registry is empty.
 - Development seed data is a separate explicit development-only CLI and is not
   production ingestion or an API fallback.
 - Development startup uses the Windows runner and local Compose boundaries above.
@@ -804,10 +820,10 @@ The current repository does not implement:
 - automated secret rotation, staging activation evidence for the separated
   database roles, or zero-downtime deployment;
 - production load testing or validated public-internet deployment;
-- startup ingestion, scheduled/background ingestion, or recurring refresh;
+- active startup, scheduled/background ingestion, or recurring refresh;
 - Prefect high availability, Redis, a Prefect-specific PostgreSQL database,
-  Prefect authentication, production flows/deployments/schedules, monitoring,
-  backup/restore proof, or staging deployment;
+  Prefect authentication, active production deployments/schedules, monitoring,
+  backup/restore proof, or staging activation;
 - a public ingestion API, frontend ingestion trigger, or arbitrary URL ingestion;
 - active scanning/probing, active IOC validation, malware retrieval, file
   submission, or exploit execution;
@@ -821,10 +837,11 @@ the named PostgreSQL volume and is not routine cleanup. Manual approval remains
 required for source collection, migration, rollback, volume deletion, and other
 destructive deployment commands.
 
-Later B2 and deployment tasks own flow contracts, source conversion, the
-two-hour schedule, operator controls, authentication, monitoring, backup, and
-staging deployment. The B2-01 private network boundary must not be mistaken for
-completed authentication or public administration readiness.
+C02 owns source-specific flow bindings; C07 owns operator controls; C11 and
+deployment work own authentication, monitoring, backup, and controlled staging
+activation. The B2-01 private network boundary and C01 paused deployment
+contract must not be mistaken for completed authentication or public
+administration readiness.
 
 ## Canonical references
 
@@ -839,4 +856,5 @@ completed authentication or public administration readiness.
 - [Environment and secrets](environment-and-secrets.md)
 - [Production Docker deployment](production-docker-deployment.md)
 - [B2-01 self-hosted Prefect platform](b2-01-prefect-platform.md)
+- [C01 Prefect orchestration core](c01-prefect-orchestration-core.md)
 - [Deployment build validation](deployment-build-validation.md)

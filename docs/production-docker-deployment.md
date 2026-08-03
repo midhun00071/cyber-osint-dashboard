@@ -56,7 +56,9 @@ approved TLS proxy / local operator
      migrate (manual profile) --------^ database network only
 
      Prefect worker ---- Prefect server ---- prefect_data
-          (private internal orchestration network; no host ports)
+             |
+             +---- application role ----> PostgreSQL
+          (private orchestration/database networks; no Prefect host ports)
 ```
 
 Frontend and backend share the `application` network. Backend and PostgreSQL
@@ -64,9 +66,11 @@ share the internal `database` network. Frontend cannot join the database
 network, and production PostgreSQL is not published to the host. Backend
 outbound access exists for separately approved manual operations, but startup
 does not collect intelligence or contact external sources.
-Prefect server and worker share only the internal `orchestration` network.
-Neither publishes a production host port, and the worker does not mount the
-server's SQLite volume.
+Prefect server uses only the internal `orchestration` network. Prefect worker
+uses only `orchestration` and the internal `database` network. Neither publishes
+a production host port, and the worker does not mount the server's SQLite
+volume. The worker receives only the existing application database role and
+secret; the server receives no database access.
 
 ## Prerequisites
 
@@ -318,8 +322,9 @@ PostgreSQL starts first. Backend waits for healthy PostgreSQL, and frontend wait
 for a healthy backend. The `migrate` service is not part of normal startup. The
 default host bindings are loopback-only: frontend port `3000` and backend port
 `8000`; PostgreSQL and both Prefect services have no host binding. Prefect uses
-only the internal `orchestration` network. Do not use the development runner for
-production startup.
+the internal `orchestration` network; the worker also uses the internal
+`database` network for application-role operational persistence. Do not use the
+development runner for production startup.
 
 Container health checks use `pg_isready` for PostgreSQL, `/api/health` for
 FastAPI, `/` for the production Next.js server, Prefect's `/api/health` endpoint
@@ -433,6 +438,11 @@ by contacting the unapproved domain.
   Only the server mounts it; the worker communicates through the self-hosted API.
 - The Prefect server and worker use the same project-built image based exactly
   on `prefecthq/prefect:3.8.1-python3.13` and run as fixed UID/GID `10001`.
+- The image contains the backend Python runtime and `app.orchestration` under
+  fixed `PYTHONPATH=/opt/alpha-data/backend`; no host source mount is used.
+- The Prefect worker receives only the existing application-role database
+  secret and joins only orchestration/database networks. The server receives no
+  database setting; neither service receives migration or bootstrap credentials.
 - Prefect has no production host port, Docker socket, source-code bind mount,
   Cloud API configuration, default credentials, or privileged mode. Its private
   internal network is the B2-01 administration boundary.
@@ -440,9 +450,9 @@ by contacting the unapproved domain.
   provisioning shell. Grants SQL is mounted read-only at its fixed
   non-automatic path and invoked once by that shell.
 - Bootstrap, application and migration passwords use separate read-only Compose
-  secrets. Backend receives only the runtime application identity; migration
-  receives only the migration identity; neither receives administrative
-  credentials.
+  secrets. Backend and Prefect worker receive only the runtime application
+  identity; migration receives only the migration identity; none receives an
+  administrative credential.
 - Runtime services use `restart: unless-stopped`.
 - The local Docker log driver is bounded to three 10 MB files per service.
 - Backend and frontend images define local health checks and contain no reload
@@ -456,8 +466,9 @@ by contacting the unapproved domain.
 
 The FastAPI startup path performs no ingestion. P7-01 does not add a scheduler,
 ingestion service, ingestion startup hook, or public ingestion trigger.
-The B2-01 Prefect worker has no flows, deployments, or schedules, so it does not
-change that ingestion behavior.
+C01 adds generic parent/source flows and one paused-by-default deployment
+definition. Compose does not register or activate it, the production binding
+registry is empty, and no source-specific handler or live schedule is active.
 
 The earlier P7-03 limitation said that a shared database user could hold
 superuser privileges, that backend and migration access used that identity,
@@ -499,6 +510,23 @@ work pool only when absent. Repeated worker starts reuse the existing pool. The
 server owns SQLite under `/var/lib/prefect` in `prefect_data`; the worker has no
 direct volume access. A failed endpoint request exits non-zero, allowing Docker
 to mark the service unhealthy rather than reporting fake success.
+
+After offline validation, an operator may explicitly register the single C01
+deployment in its default paused state:
+
+```powershell
+docker compose -f $ComposeFile --env-file $ProdEnv exec -T prefect-worker `
+    python -m app.orchestration.deployments
+docker compose -f $ComposeFile --env-file $ProdEnv exec -T prefect-worker `
+    prefect deployment inspect alpha-data-parent-ingestion-cycle/alpha-data-ingestion-cycle
+```
+
+Registration performs no source request and does not run during Compose startup.
+It validates an existing deployment's single schedule before applying the fixed
+contract. Do not pass `--activate` in production. Activation is staging-only and
+also requires complete C02 scheduled-source bindings plus explicit controlled
+staging-evidence confirmation. C01 provides neither binding nor activation
+evidence. See [C01 Prefect orchestration core](c01-prefect-orchestration-core.md).
 
 For controlled restart-persistence verification, record only the work-pool ID
 and type, restart both services, and compare that identity after both become
@@ -699,7 +727,8 @@ resolved Compose output, response bodies, or sensitive logs:
   orchestration infrastructure only.
 - Prefect uses a single server with SQLite and has no high availability, Redis,
   Prefect-specific PostgreSQL, authentication, backup automation, restore proof,
-  RPO/RTO evidence, flows, deployments, schedules, or staging activation.
+  RPO/RTO evidence, source-specific flow bindings, an active deployment/schedule,
+  or staging activation.
 - Enterprise secret management and automated secret rotation are not
   integrated. APR-10 is team-owned, but no provider is selected or implemented;
   any selected baseline still requires security-control compliance and

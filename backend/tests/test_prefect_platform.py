@@ -31,10 +31,13 @@ def test_prefect_dockerfile_uses_only_the_exact_pinned_base() -> None:
     ]
 
     assert from_lines == [f"FROM {PINNED_UPSTREAM_IMAGE}"]
-    assert "COPY " not in dockerfile
-    assert "pip install" not in dockerfile
+    assert "COPY backend/requirements.txt" in dockerfile
+    assert "COPY --chown=10001:10001 backend/app" in dockerfile
+    assert "pip install --no-cache-dir -r /tmp/alpha-data-requirements.txt" in dockerfile
     assert "apt-get" not in dockerfile
     assert "PREFECT_HOME=/var/lib/prefect" in dockerfile
+    assert "PYTHONPATH=/opt/alpha-data/backend" in dockerfile
+    assert "WORKDIR /opt/alpha-data/backend" in dockerfile
 
 
 def test_prefect_image_has_a_fixed_unprivileged_identity() -> None:
@@ -162,7 +165,8 @@ def test_production_prefect_is_private_and_has_no_host_publication() -> None:
         "driver": "bridge",
         "internal": True,
     }
-    assert server["networks"] == worker["networks"] == ["orchestration"]
+    assert server["networks"] == ["orchestration"]
+    assert worker["networks"] == ["orchestration", "database"]
     assert "ports" not in server
     assert "ports" not in worker
 
@@ -194,6 +198,35 @@ def test_production_prefect_has_no_source_or_host_bind_mounts() -> None:
     assert not any(volume.startswith(("./", "../", "/")) for volume in server["volumes"])
 
 
+def test_worker_has_application_database_access_only() -> None:
+    local_server, local_worker = prefect_services(load_yaml(LOCAL_COMPOSE_PATH))
+    production_server, production_worker = prefect_services(
+        load_yaml(PRODUCTION_COMPOSE_PATH)
+    )
+
+    assert "POSTGRES_USER" not in local_server.get("environment", {})
+    assert local_worker["environment"]["POSTGRES_USER"] == "${POSTGRES_USER:-alpha_data_user}"
+    assert "POSTGRES_MIGRATION_USER" not in local_worker["environment"]
+    assert "POSTGRES_BOOTSTRAP_USER" not in local_worker["environment"]
+
+    assert "POSTGRES_USER" not in production_server.get("environment", {})
+    assert production_worker["environment"]["POSTGRES_USER"] == (
+        "${POSTGRES_APP_USER:?POSTGRES_APP_USER must be set}"
+    )
+    assert production_worker["secrets"] == ["postgres_app_password"]
+    assert "POSTGRES_MIGRATION_USER" not in production_worker["environment"]
+    assert "POSTGRES_BOOTSTRAP_USER" not in production_worker["environment"]
+
+
+def test_compose_never_registers_or_executes_a_deployment_automatically() -> None:
+    for compose_path in (LOCAL_COMPOSE_PATH, PRODUCTION_COMPOSE_PATH):
+        server, worker = prefect_services(load_yaml(compose_path))
+        combined = " ".join(server["command"] + worker["command"])
+        assert "deploy" not in combined
+        assert "deployment" not in combined
+        assert "app.orchestration" not in combined
+
+
 def test_prefect_configuration_has_no_cloud_or_default_credentials() -> None:
     prefect_configurations = [
         PREFECT_DOCKERFILE.read_text(encoding="utf-8"),
@@ -220,9 +253,11 @@ def test_prefect_configuration_has_no_cloud_or_default_credentials() -> None:
     assert "prefect_cloud" not in lower
     assert "prefect_api_key" not in lower
     assert "api.prefect.cloud" not in lower
-    assert "username" not in lower
-    assert "password" not in lower
     assert "authorization" not in lower
+    assert "local-bootstrap-change-me" not in lower
+    assert "local-migration-change-me" not in lower
+    assert "postgres_bootstrap_password" not in lower
+    assert "postgres_migration_password" not in lower
 
 
 def test_apscheduler_is_removed_and_has_no_runtime_import() -> None:
@@ -238,6 +273,19 @@ def test_apscheduler_is_removed_and_has_no_runtime_import() -> None:
 
     assert "apscheduler" not in requirements
     assert "apscheduler" not in runtime_python
+
+
+def test_backend_runtime_pins_exact_prefect_compatibility() -> None:
+    requirements = {
+        line.strip().lower()
+        for line in REQUIREMENTS.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+    assert "prefect==3.8.1" in requirements
+    assert not any(
+        line.startswith("prefect") and line != "prefect==3.8.1"
+        for line in requirements
+    )
 
 
 def test_existing_application_and_database_network_boundaries_remain_intact() -> None:

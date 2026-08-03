@@ -58,6 +58,20 @@ def test_service_has_no_transaction_or_session_ownership_calls() -> None:
     )
 
 
+def test_scheduled_cycle_acquisition_uses_deterministic_lock_order() -> None:
+    source = inspect.getsource(OperationalPersistenceService.acquire_cycle)
+    identity_lock = source.index(
+        'self._advisory_lock("cycle-idempotency", cycle_key)'
+    )
+    exact_return = source.index("return existing")
+    scheduled_lock = source.index("_SCHEDULED_CYCLE_LOCK_NAMESPACE")
+    ordered_overlap = source.index(".order_by(IngestionCycle.id)")
+    cycle_insert = source.index("cycle = IngestionCycle(")
+
+    assert identity_lock < exact_return < scheduled_lock < ordered_overlap < cycle_insert
+    assert source.count("_SCHEDULED_CYCLE_LOCK_IDENTITY") == 1
+
+
 def test_every_mutation_requires_an_active_caller_transaction() -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     try:
@@ -130,6 +144,7 @@ def test_public_api_is_narrow_and_contains_no_generic_status_or_event_setter() -
         "advance_watermark",
         "complete_non_request",
         "complete_partial_or_failure",
+        "finalize_cycle",
         "record_persistence_commit",
         "update_rate_limit_state",
     }

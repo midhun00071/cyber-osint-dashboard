@@ -36,8 +36,10 @@ views, security hardening, automated tests, development runners, a self-hosted
 Prefect 3.8.1 server and process worker, and production-oriented Docker
 documentation. Ingestion remains manual-only: there is no active scheduler,
 startup ingestion, recurring background ingestion, public ingestion API, or
-frontend ingestion trigger. The Prefect platform is present but has no flows,
-deployments, or schedules.
+frontend ingestion trigger. C01 adds typed source-execution contracts, a
+deterministic parent/source flow core, bounded retry and progress handling, and
+a paused-by-default deployment definition. No source-specific handler is bound,
+no deployment has been activated, and no live source schedule is claimed.
 
 Key implemented capabilities include:
 
@@ -57,7 +59,12 @@ Key implemented capabilities include:
 - Separate development and production-oriented Compose definitions with manual
   Alembic migrations in the production-oriented workflow.
 - A pinned, non-root self-hosted Prefect server and process worker with
-  persistent orchestration state and the fixed `alpha-data-process` work pool.
+  persistent orchestration state, application orchestration code, application-
+  role database access for the worker, and the fixed `alpha-data-process` work
+  pool.
+- Immutable policies for every enabled implemented source, caller-transaction-
+  owned operational persistence, database-backed source no-overlap, safe
+  checkpoint resume, and a fixed two-hour parent schedule contract.
 
 ## Technology stack
 
@@ -69,10 +76,10 @@ Key implemented capabilities include:
 - Workflow orchestration platform: self-hosted Prefect 3.8.1.
 - Testing: pytest; Vitest, jsdom, React Testing Library, and TypeScript checks.
 
-APScheduler has been removed from the shared backend dependency file. No
-scheduler is implemented, active, or approved for the current ingestion
-workflows; the idle Prefect worker only registers and polls its fixed process
-work pool during B2-01.
+APScheduler remains removed. Prefect is pinned exactly to 3.8.1. The C01
+deployment contract uses `17 */2 * * *` in `Asia/Dubai` with parent concurrency
+one, but registration is explicit and paused by default. C01 did not activate a
+schedule or execute a source workflow.
 
 ## Repository structure
 
@@ -83,7 +90,7 @@ work pool during B2-01.
 | [`database/`](database/) | PostgreSQL initialization material and database notes. |
 | [`docs/`](docs/) | Architecture, source, security, testing, environment, and deployment documentation. |
 | [`scripts/`](scripts/) | Safe local developer setup helper. |
-| [`prefect/`](prefect/) | Minimal pinned non-root Prefect server/worker image. |
+| [`prefect/`](prefect/) | Pinned non-root Prefect server/worker image containing the backend runtime and orchestration package. |
 | [`run.cmd`](run.cmd) / [`run.ps1`](run.ps1) | Windows entry point and PowerShell implementation for setup, validation, and local execution. |
 | [`docker-compose.yml`](docker-compose.yml) | Local development Compose stack. |
 | [`compose.prod.yml`](compose.prod.yml) | Standalone production-oriented Compose baseline. |
@@ -139,10 +146,14 @@ workflows, and IBM X-Force catalogue imports remain manual-only: they are not
 scheduled and are not connected to FastAPI startup, background ingestion, API
 routes, or the frontend dashboard.
 
-The self-hosted Prefect platform is implemented as infrastructure only. It does
-not invoke any of these manual workflows. Flow contracts, deployments,
-schedules, source conversion, operator controls, authentication, monitoring,
-backup, and staging activation remain later tasks.
+The historical B2-01 platform remains the infrastructure foundation. C01 now
+adds reusable orchestration contracts, generic flow logic, persistence adapters,
+and a reproducible deployment definition without converting any manual source
+collector. The production binding registry is intentionally empty, activation
+fails closed while scheduled-eligible handlers are missing, and Compose does
+not register or execute the deployment. Source conversion belongs to C02;
+operator controls, authentication, monitoring, and activation remain later
+tasks.
 
 ### Source registry foundation
 
@@ -417,9 +428,12 @@ not the `127.0.0.1` bind address. The worker health port is not published. The
 server owns the `prefect_data` volume; the worker reaches state only through
 `http://prefect-server:4200/api` and creates or reuses the fixed process work
 pool `alpha-data-process`. This local platform boundary does not mean that any
-ingestion flow, deployment, or schedule exists yet. See
-[B2-01 Prefect platform](docs/b2-01-prefect-platform.md) for health and
-persistence validation.
+source-specific ingestion handler or active schedule exists. C01's fixed
+deployment must be registered explicitly and remains paused by default. See the
+[C01 orchestration core](docs/c01-prefect-orchestration-core.md) for offline
+validation and paused registration, and the historical
+[B2-01 Prefect platform](docs/b2-01-prefect-platform.md) for infrastructure
+health and persistence validation.
 
 ## Production-oriented deployment
 
@@ -430,7 +444,9 @@ servers, or development environment values for production. The standalone
 images, private database networking, loopback-default application bindings,
 health checks, bounded local logs, a manual Alembic migration profile, and a
 private self-hosted Prefect server/worker pair. Production publishes no Prefect
-host port; both Prefect services use only the internal `orchestration` network.
+host port. The server uses only the internal `orchestration` network; the worker
+uses only `orchestration` and the internal `database` network and receives only
+the existing application database credential secret.
 
 Use the canonical guides rather than duplicating or improvising secret and
 deployment procedures here:
@@ -439,6 +455,7 @@ deployment procedures here:
 - [Production Docker deployment](docs/production-docker-deployment.md)
 - [Deployment build validation](docs/deployment-build-validation.md)
 - [B2-01 Prefect platform](docs/b2-01-prefect-platform.md)
+- [C01 Prefect orchestration core](docs/c01-prefect-orchestration-core.md)
 
 This is a hardened production-oriented baseline, not a complete or validated
 public-internet production platform. The official PostgreSQL image uses the
@@ -1029,15 +1046,17 @@ authoritative detailed references:
 | Environment variables and secrets | [Environment and secret handling](docs/environment-and-secrets.md) |
 | Production-oriented operation | [Production Docker deployment](docs/production-docker-deployment.md) |
 | Self-hosted workflow orchestration platform | [B2-01 Prefect platform](docs/b2-01-prefect-platform.md) |
+| Prefect flow, deployment, reliability, and progress contracts | [C01 Prefect orchestration core](docs/c01-prefect-orchestration-core.md) |
 | Verified local deployment-build evidence | [Deployment build validation](docs/deployment-build-validation.md) |
 | Development deployment notes | [Deployment notes](docs/deployment-notes.md) |
 | UAE classification semantics | [UAE classification](docs/uae-classification.md) |
 
 ## Known limitations
 
-- Ingestion is manual-only. Prefect has no flows, deployments, or schedules;
-  there is no recurring ingestion, startup ingestion, public ingestion route,
-  or frontend ingestion control.
+- Operational ingestion remains manual-only. C01 defines generic flows and one
+  paused-by-default deployment specification, but no source handler is bound,
+  no schedule is active, and there is no startup ingestion, public ingestion
+  route, or frontend ingestion control.
 - Some dashboard preview panels still use deterministic preview data; the
   implemented article, vulnerability, summary, detail, and recent-trend views
   use read-only backend APIs as described above.

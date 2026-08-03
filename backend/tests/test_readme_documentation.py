@@ -65,7 +65,16 @@ def test_readme_states_manual_only_ingestion_without_stale_scheduler_claims() ->
     ):
         assert stale_claim not in raw_readme
 
-    assert "no scheduler is implemented, active, or approved" in readme
+    for c01_phrase in (
+        "prefect is pinned exactly to 3.8.1",
+        "`17 */2 * * *` in `asia/dubai` with parent concurrency one",
+        "registration is explicit and paused by default",
+        "c01 did not activate a schedule or execute a source workflow",
+        "production binding registry is intentionally empty",
+        "activation fails closed while scheduled-eligible handlers are missing",
+        "compose does not register or execute the deployment",
+    ):
+        assert c01_phrase in readme
 
 
 def test_readme_documents_curated_nvd_as_bounded_manual_sample() -> None:
@@ -152,6 +161,8 @@ def test_readme_links_the_canonical_handover_documents() -> None:
         "docs/manual-test-cases.md",
         "docs/environment-and-secrets.md",
         "docs/production-docker-deployment.md",
+        "docs/b2-01-prefect-platform.md",
+        "docs/c01-prefect-orchestration-core.md",
         "docs/deployment-build-validation.md",
     ):
         assert f"({relative_path})" in raw_readme

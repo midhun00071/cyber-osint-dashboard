@@ -1,0 +1,137 @@
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+import pytest
+from prefect.client.schemas.schedules import CronSchedule
+
+from app.orchestration.contracts import (
+    ContractValidationError,
+    EligibilityMode,
+    list_source_policies,
+)
+from app.orchestration.deployments import (
+    CRON,
+    DEPLOYMENT_CONCURRENCY,
+    DEPLOYMENT_NAME,
+    TIMEZONE,
+    WORK_POOL_NAME,
+    build_runner_deployment,
+    deployment_specification,
+    register_deployment,
+    validate_activation,
+    validate_existing_schedules,
+)
+from app.orchestration.flows import PARENT_FLOW_NAME
+
+
+class FakeHandler:
+    def execute(self, context):
+        raise AssertionError("registration must not execute a source handler")
+
+    def reconstruct_progress(self, context, committed_counters):
+        raise AssertionError("registration must not reconstruct source progress")
+
+
+def scheduled_bindings():
+    return {
+        policy.source_slug: FakeHandler()
+        for policy in list_source_policies()
+        if policy.eligibility_mode is EligibilityMode.SCHEDULED
+    }
+
+
+def test_fixed_deployment_contract_is_exact_and_paused_by_default() -> None:
+    spec = deployment_specification()
+    assert (
+        spec.flow_name,
+        spec.deployment_name,
+        spec.work_pool_name,
+        spec.cron,
+        spec.timezone,
+        spec.concurrency_limit,
+        spec.paused,
+    ) == (
+        PARENT_FLOW_NAME,
+        DEPLOYMENT_NAME,
+        WORK_POOL_NAME,
+        CRON,
+        TIMEZONE,
+        DEPLOYMENT_CONCURRENCY,
+        True,
+    )
+
+    deployment = build_runner_deployment()
+    assert deployment.name == DEPLOYMENT_NAME
+    assert deployment.work_pool_name == WORK_POOL_NAME
+    assert deployment.paused is True
+    assert deployment.concurrency_limit == 1
+    assert len(deployment.schedules) == 1
+    schedule = deployment.schedules[0].schedule
+    assert (schedule.cron, schedule.timezone) == (CRON, TIMEZONE)
+
+
+def test_duplicate_or_conflicting_schedules_fail_closed() -> None:
+    fixed = SimpleNamespace(schedule=CronSchedule(cron=CRON, timezone=TIMEZONE))
+    validate_existing_schedules([fixed])
+    with pytest.raises(ContractValidationError, match="exactly one"):
+        validate_existing_schedules([])
+    with pytest.raises(ContractValidationError, match="exactly one"):
+        validate_existing_schedules([fixed, fixed])
+    with pytest.raises(ContractValidationError, match="conflicts"):
+        validate_existing_schedules(
+            [SimpleNamespace(schedule=CronSchedule(cron="0 * * * *", timezone=TIMEZONE))]
+        )
+
+
+@pytest.mark.parametrize(
+    "app_env,confirmed,handlers,pool_valid",
+    (
+        ("production", True, scheduled_bindings(), True),
+        ("staging", False, scheduled_bindings(), True),
+        ("staging", True, {}, True),
+        ("staging", True, scheduled_bindings(), False),
+    ),
+)
+def test_activation_gates_fail_closed(app_env, confirmed, handlers, pool_valid) -> None:
+    with pytest.raises(ContractValidationError):
+        validate_activation(
+            activate=True,
+            app_env=app_env,
+            controlled_staging_evidence_confirmed=confirmed,
+            handlers=handlers,
+            work_pool_valid=pool_valid,
+        )
+
+
+def test_paused_registration_is_idempotent_and_does_not_run_sources() -> None:
+    applied = []
+    existing = SimpleNamespace(
+        name=DEPLOYMENT_NAME,
+        work_pool_name=WORK_POOL_NAME,
+        schedules=[
+            SimpleNamespace(
+                schedule=CronSchedule(cron=CRON, timezone=TIMEZONE)
+            )
+        ],
+    )
+
+    result = register_deployment(
+        inspect_existing=lambda activate: (existing, not activate),
+        apply_deployment=lambda deployment: applied.append(deployment) or "fixed-id",
+    )
+
+    assert result == "fixed-id"
+    assert len(applied) == 1
+    assert applied[0].paused is True
+    assert len(applied[0].schedules) == 1
+
+
+def test_activation_contract_can_pass_only_with_all_explicit_staging_gates() -> None:
+    validate_activation(
+        activate=True,
+        app_env="staging",
+        controlled_staging_evidence_confirmed=True,
+        handlers=scheduled_bindings(),
+        work_pool_valid=True,
+    )

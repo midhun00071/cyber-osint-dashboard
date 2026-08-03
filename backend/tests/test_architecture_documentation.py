@@ -85,7 +85,7 @@ def test_manual_ingestion_and_publication_transaction_ownership_are_accurate() -
     document = normalized_architecture()
 
     for phrase in (
-        "Ingestion is manual-only",
+        "Operational source ingestion remains manual-only until C02 handlers are bound",
         "does not fetch upstream content",
         "does not commit transactions",
         "Transaction ownership is workflow-specific",
@@ -212,7 +212,7 @@ def test_browser_api_data_path_is_distinct_from_compose_network_topology() -> No
         "public `NEXT_PUBLIC_API_BASE_URL` value is embedded in the frontend browser assets at build time",
         "frontend container does not proxy the current API requests",
         "browser has no direct access to PostgreSQL or external intelligence sources",
-        "backend remains the only application component that accesses PostgreSQL",
+        "backend and the Prefect process worker are the only application components with application-role PostgreSQL access",
         "container-topology property, not the current client-side API request path",
         "external browser cannot automatically resolve the Docker service hostname `backend`",
         "production CORS must allow the actual browser frontend origin",
@@ -285,12 +285,23 @@ def test_production_architecture_matches_compose_service_and_network_contracts()
         "internal": True,
     }
     assert prefect_server["networks"] == ["orchestration"]
-    assert prefect_worker["networks"] == ["orchestration"]
+    assert prefect_worker["networks"] == ["orchestration", "database"]
     assert "ports" not in prefect_server
     assert "ports" not in prefect_worker
     assert set(compose["volumes"]) == {"postgres_data", "prefect_data"}
     assert prefect_server["volumes"] == ["prefect_data:/var/lib/prefect"]
     assert "volumes" not in prefect_worker
+    assert "secrets" not in prefect_server
+    assert not any(key.startswith("POSTGRES_") for key in prefect_server["environment"])
+    assert prefect_worker["secrets"] == ["postgres_app_password"]
+    assert prefect_worker["environment"]["POSTGRES_USER"] == (
+        "${POSTGRES_APP_USER:?POSTGRES_APP_USER must be set}"
+    )
+    assert prefect_worker["environment"]["POSTGRES_PASSWORD_FILE"] == (
+        "/run/secrets/postgres_app_password"
+    )
+    assert "POSTGRES_BOOTSTRAP_USER" not in str(prefect_worker)
+    assert "POSTGRES_MIGRATION_USER" not in str(prefect_worker)
     assert prefect_worker["environment"]["PREFECT_API_URL"] == (
         "http://prefect-server:4200/api"
     )
@@ -333,7 +344,11 @@ def test_production_architecture_matches_compose_service_and_network_contracts()
         "Local Prefect administration is published only on `127.0.0.1`",
         "Production publishes no Prefect host port",
         "No default Prefect credential or Prefect Cloud configuration exists",
-        "B2-01 adds no flow, deployment, or schedule",
+        "B2-01 provides the self-hosted Prefect infrastructure",
+        "C01 adds typed contracts, generic parent/source flows, bounded retry/progress logic",
+        "paused-by-default deployment definition without activating a schedule",
+        "binding registry is empty, Compose does not register it, and no schedule was activated",
+        "C01 deployment is paused by default and has no production source bindings",
         "dedicated non-root users (`appuser` and `nextjs`)",
         "fixed non-root UID/GID `10001:10001`",
         "`no-new-privileges`",

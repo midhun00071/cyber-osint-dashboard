@@ -74,6 +74,9 @@ class DeferReason(str, Enum):
 MAX_COUNTER = 2_147_483_647
 MAX_EVENT_SEQUENCE = 100_000
 _CYCLE_AUDIT_ACTION = "ingestion.cycle.acquired"
+_SCHEDULED_CYCLE_LOCK_NAMESPACE = "scheduled-cycle-acquisition"
+_SCHEDULED_CYCLE_LOCK_IDENTITY = "all-scheduled-cycles"
+_TERMINAL_CYCLE_STATUSES = frozenset({"success", "partial", "failed", "cancelled"})
 _SAFE_ACTOR_TYPES = frozenset({"user", "service", "system"})
 _SAFE_ACTOR_REF = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,159}$")
 _SAFE_NAME = re.compile(r"^[a-z][a-z0-9_.-]{0,79}$")
@@ -244,6 +247,26 @@ class OperationalPersistenceService:
                 raise OperationalConflictError("The cycle identity conflicts with existing evidence.")
             return existing
 
+        if trigger_type == "scheduled":
+            self._advisory_lock(
+                _SCHEDULED_CYCLE_LOCK_NAMESPACE,
+                _SCHEDULED_CYCLE_LOCK_IDENTITY,
+            )
+            overlapping = self._session.scalars(
+                select(IngestionCycle)
+                .where(
+                    IngestionCycle.trigger_type == "scheduled",
+                    IngestionCycle.status == "running",
+                )
+                .order_by(IngestionCycle.id)
+                .limit(1)
+                .with_for_update()
+            ).first()
+            if overlapping is not None:
+                raise OperationalConflictError(
+                    "Another scheduled cycle is already active."
+                )
+
         cycle = IngestionCycle(
             idempotency_key=cycle_key,
             trigger_type=trigger_type,
@@ -278,6 +301,119 @@ class OperationalPersistenceService:
                 created_at=now,
             )
         )
+        self._session.flush()
+        return cycle
+
+    @_translate_database_errors
+    def finalize_cycle(
+        self,
+        *,
+        cycle_id: int,
+        status: str,
+        sources_started: int,
+        sources_completed: int,
+        sources_successful: int,
+        sources_non_successful: int,
+        safe_summary: str | None = None,
+        occurred_at: datetime | None = None,
+    ) -> IngestionCycle:
+        """Finalize one locked parent cycle with exact, reconciled evidence."""
+
+        self._require_transaction()
+        if status not in _TERMINAL_CYCLE_STATUSES:
+            raise OperationalValidationError("The cycle terminal status is unsupported.")
+        counters = (
+            sources_started,
+            sources_completed,
+            sources_successful,
+            sources_non_successful,
+        )
+        if any(type(value) is not int for value in counters):
+            raise OperationalValidationError("Cycle counters must be integers.")
+        if any(value < 0 or value > 10_000 for value in counters):
+            raise OperationalValidationError("Cycle counters are outside the supported range.")
+        summary = _persisted_safe_summary(safe_summary)
+        cycle = self._lock_cycle(cycle_id)
+        expected = cycle.sources_expected
+        if not (
+            sources_completed <= sources_started <= expected
+            and sources_successful + sources_non_successful == sources_completed
+        ):
+            raise OperationalValidationError("Cycle counters do not reconcile.")
+        latest_statuses = self._cycle_run_statuses(cycle.id)
+        if _cycle_counts_from_statuses(latest_statuses) != (
+            sources_started,
+            sources_completed,
+            sources_successful,
+            sources_non_successful,
+        ):
+            raise OperationalConflictError(
+                "Cycle counters conflict with committed source-run evidence."
+            )
+        _validate_cycle_outcome(
+            status=status,
+            expected=expected,
+            started=sources_started,
+            completed=sources_completed,
+            successful=sources_successful,
+            non_successful=sources_non_successful,
+        )
+        if (
+            status == "cancelled"
+            and "cancelled" not in latest_statuses
+            and sources_completed == expected
+        ):
+            raise OperationalConflictError(
+                "Cancelled cycle evidence conflicts with committed source outcomes."
+            )
+
+        if cycle.status in _TERMINAL_CYCLE_STATUSES:
+            repeated = (
+                cycle.status == status
+                and cycle.sources_started == sources_started
+                and cycle.sources_completed == sources_completed
+                and cycle.sources_successful == sources_successful
+                and cycle.sources_non_successful == sources_non_successful
+                and cycle.safe_summary == summary
+            )
+            if not repeated:
+                raise OperationalConflictError(
+                    "The cycle completion conflicts with existing evidence."
+                )
+            if occurred_at is not None and _normalize_db_timestamp(
+                cycle.completed_at
+            ) != _utc_timestamp(occurred_at):
+                raise OperationalConflictError(
+                    "The cycle completion conflicts with existing evidence."
+                )
+            return cycle
+        if cycle.status != "running":
+            raise OperationalConflictError("The cycle cannot be finalized.")
+
+        if cycle.trigger_type == "scheduled":
+            overlapping = self._session.scalars(
+                select(IngestionCycle)
+                .where(
+                    IngestionCycle.id != cycle.id,
+                    IngestionCycle.trigger_type == "scheduled",
+                    IngestionCycle.status == "running",
+                )
+                .with_for_update()
+            ).first()
+            if overlapping is not None:
+                raise OperationalConflictError(
+                    "An overlapping scheduled cycle is active."
+                )
+
+        now = _utc_timestamp(occurred_at)
+        _ensure_not_before(now, cycle.started_at)
+        cycle.status = status
+        cycle.completed_at = now
+        cycle.sources_started = sources_started
+        cycle.sources_completed = sources_completed
+        cycle.sources_successful = sources_successful
+        cycle.sources_non_successful = sources_non_successful
+        cycle.safe_summary = summary
         self._session.flush()
         return cycle
 
@@ -622,6 +758,12 @@ class OperationalPersistenceService:
             raise OperationalValidationError("The progress commit time is invalid.")
         current = self._current_checkpoint(source.id, scope, partition, name)
         _verify_previous(current, expected_previous)
+        if current is not None and current.checkpoint_value == value:
+            self._finalize_unchanged_progress_run(
+                run, expected_run_state_version, now
+            )
+            self._session.flush()
+            return current
         checkpoint = SourceCheckpoint(
             source_id=source.id,
             scope_kind=scope,
@@ -681,8 +823,16 @@ class OperationalPersistenceService:
             raise OperationalValidationError("The progress commit time is invalid.")
         current = self._current_watermark(source.id, scope, partition, name)
         _verify_previous(current, expected_previous)
-        if current is not None and value <= _normalize_db_timestamp(current.watermark_value):
-            raise OperationalConflictError("The watermark must advance monotonically.")
+        if current is not None:
+            current_value = _normalize_db_timestamp(current.watermark_value)
+            if value == current_value:
+                self._finalize_unchanged_progress_run(
+                    run, expected_run_state_version, now
+                )
+                self._session.flush()
+                return current
+            if value < current_value:
+                raise OperationalConflictError("The watermark must advance monotonically.")
         watermark = SourceWatermark(
             source_id=source.id,
             scope_kind=scope,
@@ -797,6 +947,26 @@ class OperationalPersistenceService:
         if cycle is None:
             raise OperationalMissingRecordError("The ingestion cycle was not found.")
         return cycle
+
+    def _cycle_run_statuses(self, cycle_id: int) -> tuple[str, ...]:
+        latest_attempts = (
+            select(
+                IngestionRun.source_id.label("source_id"),
+                func.max(IngestionRun.attempt_number).label("attempt_number"),
+            )
+            .where(IngestionRun.cycle_id == cycle_id)
+            .group_by(IngestionRun.source_id)
+            .subquery()
+        )
+        return tuple(self._session.scalars(
+            select(IngestionRun.status)
+            .join(
+                latest_attempts,
+                (IngestionRun.source_id == latest_attempts.c.source_id)
+                & (IngestionRun.attempt_number == latest_attempts.c.attempt_number),
+            )
+            .where(IngestionRun.cycle_id == cycle_id)
+        ).all())
 
     def _lock_source_by_slug(self, source_slug: str):
         definition = get_source_definition(source_slug)
@@ -998,6 +1168,14 @@ class OperationalPersistenceService:
                 and row.version == previous + 1
             ):
                 return row
+        if len(rows) == 0 and run.status == "no_change" and run.state_version == expected + 1:
+            current = self._current_checkpoint(run.source_id, scope, partition, name)
+            if (
+                current is not None
+                and current.version == previous
+                and current.checkpoint_value == value
+            ):
+                return current
         raise OperationalConflictError("The checkpoint retry conflicts with committed evidence.")
 
     def _existing_watermark_retry(self, run, expected, scope, partition, name, value, previous):
@@ -1016,6 +1194,14 @@ class OperationalPersistenceService:
                 and row.version == previous + 1
             ):
                 return row
+        if len(rows) == 0 and run.status == "no_change" and run.state_version == expected + 1:
+            current = self._current_watermark(run.source_id, scope, partition, name)
+            if (
+                current is not None
+                and current.version == previous
+                and _normalize_db_timestamp(current.watermark_value) == value
+            ):
+                return current
         raise OperationalConflictError("The watermark retry conflicts with committed evidence.")
 
     def _finalize_progress_run(self, run, expected_version, now):
@@ -1037,6 +1223,32 @@ class OperationalPersistenceService:
                 ("checkpoint_advanced", "checkpoint_pending", outcome),
                 ("completed", None, None),
             ),
+        )
+
+    def _finalize_unchanged_progress_run(self, run, expected_version, now):
+        outcome = _successful_outcome(
+            RunCounters(
+                run.records_fetched,
+                run.records_created,
+                run.records_updated,
+                run.records_unchanged,
+                run.records_skipped,
+                run.records_failed,
+                run.error_count,
+            )
+        )
+        if outcome != "no_change":
+            raise OperationalConflictError(
+                "Unchanged progress conflicts with successful processing."
+            )
+        run.status = "no_change"
+        run.completed_at = now
+        run.defer_reason = None
+        run.state_version = expected_version + 1
+        self._append_events(
+            run,
+            now,
+            (("completed", "checkpoint_pending", "no_change"),),
         )
 
 
@@ -1136,6 +1348,49 @@ def _validate_persistence_counters(counters: RunCounters) -> None:
     if counters.failed or counters.skipped:
         raise OperationalValidationError("Persistence completion counters contain partial work.")
     _successful_outcome(counters)
+
+
+def _validate_cycle_outcome(
+    *,
+    status: str,
+    expected: int,
+    started: int,
+    completed: int,
+    successful: int,
+    non_successful: int,
+) -> None:
+    if status == "success":
+        if not (
+            started == completed == expected
+            and successful == completed
+            and non_successful == 0
+        ):
+            raise OperationalValidationError("Successful cycle evidence is incomplete.")
+    elif status == "partial":
+        if successful < 1 or (non_successful == 0 and completed == expected):
+            raise OperationalValidationError("Partial cycle evidence is invalid.")
+    elif status == "failed":
+        if successful != 0 or (non_successful == 0 and completed == expected):
+            raise OperationalValidationError("Failed cycle evidence is invalid.")
+    elif status == "cancelled":
+        if (
+            completed == expected
+            and successful == expected
+            and non_successful == 0
+        ):
+            raise OperationalValidationError("Cancelled cycle evidence is invalid.")
+
+
+def _cycle_counts_from_statuses(statuses: tuple[str, ...]) -> tuple[int, int, int, int]:
+    started = len(statuses)
+    completed_statuses = [
+        status for status in statuses if status in _TERMINAL_RUN_STATUSES
+    ]
+    completed = len(completed_statuses)
+    successful = sum(
+        status in {"success", "no_change"} for status in completed_statuses
+    )
+    return started, completed, successful, completed - successful
 
 
 def _successful_outcome(counters: RunCounters) -> str:
