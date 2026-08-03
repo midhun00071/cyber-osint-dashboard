@@ -22,7 +22,14 @@ def load_production_compose() -> dict:
 def test_production_compose_has_only_expected_runtime_and_manual_services() -> None:
     compose = load_production_compose()
 
-    assert set(compose["services"]) == {"db", "backend", "frontend", "migrate"}
+    assert set(compose["services"]) == {
+        "db",
+        "backend",
+        "frontend",
+        "migrate",
+        "prefect-server",
+        "prefect-worker",
+    }
     assert "container_name" not in PRODUCTION_COMPOSE.read_text(encoding="utf-8")
 
 

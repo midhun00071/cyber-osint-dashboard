@@ -32,10 +32,12 @@ separate review of access, terms, rate limits, and project approval.
 
 The current MVP includes the database schema and migrations, manual defensive
 ingestion and enrichment services, read-only APIs, backend-connected dashboard
-views, security hardening, automated tests, development runners, and
-production-oriented Docker documentation. Ingestion remains manual-only: there
-is no active scheduler, startup ingestion, recurring background ingestion,
-public ingestion API, or frontend ingestion trigger.
+views, security hardening, automated tests, development runners, a self-hosted
+Prefect 3.8.1 server and process worker, and production-oriented Docker
+documentation. Ingestion remains manual-only: there is no active scheduler,
+startup ingestion, recurring background ingestion, public ingestion API, or
+frontend ingestion trigger. The Prefect platform is present but has no flows,
+deployments, or schedules.
 
 Key implemented capabilities include:
 
@@ -54,6 +56,8 @@ Key implemented capabilities include:
   validation evidence.
 - Separate development and production-oriented Compose definitions with manual
   Alembic migrations in the production-oriented workflow.
+- A pinned, non-root self-hosted Prefect server and process worker with
+  persistent orchestration state and the fixed `alpha-data-process` work pool.
 
 ## Technology stack
 
@@ -62,10 +66,13 @@ Key implemented capabilities include:
 - Persistence: PostgreSQL, SQLAlchemy, and Alembic.
 - Source clients: httpx and feedparser.
 - Containers: Docker and Docker Compose.
+- Workflow orchestration platform: self-hosted Prefect 3.8.1.
 - Testing: pytest; Vitest, jsdom, React Testing Library, and TypeScript checks.
 
-`apscheduler` remains in the shared backend dependency file, but no scheduler is
-implemented, active, or approved for the current ingestion workflows.
+APScheduler has been removed from the shared backend dependency file. No
+scheduler is implemented, active, or approved for the current ingestion
+workflows; the idle Prefect worker only registers and polls its fixed process
+work pool during B2-01.
 
 ## Repository structure
 
@@ -76,6 +83,7 @@ implemented, active, or approved for the current ingestion workflows.
 | [`database/`](database/) | PostgreSQL initialization material and database notes. |
 | [`docs/`](docs/) | Architecture, source, security, testing, environment, and deployment documentation. |
 | [`scripts/`](scripts/) | Safe local developer setup helper. |
+| [`prefect/`](prefect/) | Minimal pinned non-root Prefect server/worker image. |
 | [`run.cmd`](run.cmd) / [`run.ps1`](run.ps1) | Windows entry point and PowerShell implementation for setup, validation, and local execution. |
 | [`docker-compose.yml`](docker-compose.yml) | Local development Compose stack. |
 | [`compose.prod.yml`](compose.prod.yml) | Standalone production-oriented Compose baseline. |
@@ -130,6 +138,11 @@ ingestion, Google TI/Mandiant publication ingestion, both Anomali publication
 workflows, and IBM X-Force catalogue imports remain manual-only: they are not
 scheduled and are not connected to FastAPI startup, background ingestion, API
 routes, or the frontend dashboard.
+
+The self-hosted Prefect platform is implemented as infrastructure only. It does
+not invoke any of these manual workflows. Flow contracts, deployments,
+schedules, source conversion, operator controls, authentication, monitoring,
+backup, and staging activation remain later tasks.
 
 ### Source registry foundation
 
@@ -376,7 +389,7 @@ validation commands, not production deployment commands.
 | `.\run.cmd setup` | Check prerequisites and create missing local environment files without installing dependencies. |
 | `.\run.cmd install` | Run setup, create the Python virtual environment when absent, and install backend and frontend dependencies. |
 | `.\run.cmd test` | Run the complete backend pytest suite, frontend Vitest suite, frontend type-check, and frontend production build. |
-| `.\run.cmd docker` | Validate development Compose, build and start its `db`, `backend`, and `frontend` services, check local endpoints, and show service status. |
+| `.\run.cmd docker` | Validate development Compose, then build and start its default `db`, `backend`, `frontend`, `prefect-server`, and `prefect-worker` services, check local application endpoints, and show service status. The profile-gated `migrate` service does not start. |
 | `.\run.cmd dev` | Start PostgreSQL with development Compose, then run the backend and frontend on the host with reload support. |
 | `.\run.cmd full` | Run setup, install missing dependencies, execute the complete test workflow, then run the development Docker workflow. |
 | `.\run.cmd help` | Display the runner command reference. |
@@ -389,6 +402,25 @@ exact Compose hostname `db`, the runner gives only the child backend process an
 equivalent `localhost` URL without printing it. Press Ctrl+C to stop the local
 backend and frontend. The database container remains running for reuse.
 
+### Local Prefect platform
+
+Build and start only the local Prefect services from the repository root:
+
+```powershell
+docker compose up --build -d prefect-server prefect-worker
+docker compose ps
+```
+
+The Prefect administration UI and API are published only on loopback at
+`http://127.0.0.1:4200` by default. `PREFECT_PORT` may change the host port, but
+not the `127.0.0.1` bind address. The worker health port is not published. The
+server owns the `prefect_data` volume; the worker reaches state only through
+`http://prefect-server:4200/api` and creates or reuses the fixed process work
+pool `alpha-data-process`. This local platform boundary does not mean that any
+ingestion flow, deployment, or schedule exists yet. See
+[B2-01 Prefect platform](docs/b2-01-prefect-platform.md) for health and
+persistence validation.
+
 ## Production-oriented deployment
 
 Local development and production-oriented deployment are separate workflows.
@@ -396,7 +428,9 @@ Do not use `.\run.cmd dev`, `.\run.cmd docker`, `docker-compose.yml`, reload
 servers, or development environment values for production. The standalone
 [`compose.prod.yml`](compose.prod.yml) baseline uses production application
 images, private database networking, loopback-default application bindings,
-health checks, bounded local logs, and a manual Alembic migration profile.
+health checks, bounded local logs, a manual Alembic migration profile, and a
+private self-hosted Prefect server/worker pair. Production publishes no Prefect
+host port; both Prefect services use only the internal `orchestration` network.
 
 Use the canonical guides rather than duplicating or improvising secret and
 deployment procedures here:
@@ -404,14 +438,19 @@ deployment procedures here:
 - [Environment and secret handling](docs/environment-and-secrets.md)
 - [Production Docker deployment](docs/production-docker-deployment.md)
 - [Deployment build validation](docs/deployment-build-validation.md)
+- [B2-01 Prefect platform](docs/b2-01-prefect-platform.md)
 
 This is a hardened production-oriented baseline, not a complete or validated
-public-internet production platform. In particular, the official PostgreSQL
-image initializes `POSTGRES_USER` with superuser privileges, and current Compose
-reuses that privileged role for backend and migration access; no separate
-restricted application role is provisioned. The named `postgres_data` volume is
-persistent storage, not a backup. Automated backup and tested recovery are not
-implemented.
+public-internet production platform. The official PostgreSQL image uses the
+operator-selected bootstrap identity for initialization and administration;
+normal runtime does not reuse it. Provisioning creates a separate non-superuser
+migration identity, a separate least-privilege runtime application identity,
+and fixed read-only, logical-backup, and retention-planning groups. Production
+delivers the three login passwords through separate secret files and publishes
+no PostgreSQL host port. The named `postgres_data` volume is persistent storage,
+not a backup. Automated backup and tested recovery are not implemented, and
+destructive retention remains disabled until its safety and recovery evidence
+exists.
 
 Routine shutdown and destructive recovery procedures belong in the production
 deployment guide. `docker compose down -v` deletes the persistent PostgreSQL
@@ -989,14 +1028,16 @@ authoritative detailed references:
 | Human-executed QA cases | [Manual test cases](docs/manual-test-cases.md) |
 | Environment variables and secrets | [Environment and secret handling](docs/environment-and-secrets.md) |
 | Production-oriented operation | [Production Docker deployment](docs/production-docker-deployment.md) |
+| Self-hosted workflow orchestration platform | [B2-01 Prefect platform](docs/b2-01-prefect-platform.md) |
 | Verified local deployment-build evidence | [Deployment build validation](docs/deployment-build-validation.md) |
 | Development deployment notes | [Deployment notes](docs/deployment-notes.md) |
 | UAE classification semantics | [UAE classification](docs/uae-classification.md) |
 
 ## Known limitations
 
-- Ingestion is manual-only. There is no scheduler, recurring worker, startup
-  ingestion, public ingestion route, or frontend ingestion control.
+- Ingestion is manual-only. Prefect has no flows, deployments, or schedules;
+  there is no recurring ingestion, startup ingestion, public ingestion route,
+  or frontend ingestion control.
 - Some dashboard preview panels still use deterministic preview data; the
   implemented article, vulnerability, summary, detail, and recent-trend views
   use read-only backend APIs as described above.
@@ -1006,10 +1047,17 @@ authoritative detailed references:
   disaster recovery are not included. The persistent volume is not a backup.
 - Logs are bounded locally, but centralized logging, production monitoring, and
   alerting are not integrated.
-- CI/CD deployment, Kubernetes or another orchestration platform, autoscaling,
-  zero-downtime deployment, and automated secret rotation are not implemented.
-- Current production Compose reuses the privileged PostgreSQL initialization
-  role; it does not provision a separate restricted application role.
+- CI/CD deployment, Kubernetes or another orchestration platform for container
+  deployment, autoscaling, zero-downtime deployment, and automated secret
+  rotation are not implemented. Prefect provides workflow orchestration only.
+- Prefect uses one server and SQLite state, with no high availability, Redis,
+  Prefect-specific PostgreSQL, authentication, backup/restore proof, or staging
+  deployment. Network isolation is the current administration boundary.
+- Current production Compose separates the privileged PostgreSQL bootstrap
+  identity from non-superuser migration and runtime application identities;
+  read-only, logical-backup, and retention-planning groups remain bounded to
+  their implemented duties. Staging/production provisioning, backup execution,
+  destructive retention, and recovery evidence remain future operational work.
 - Production load, capacity, failover, and public-internet deployment have not
   been validated.
 - The backend production image currently installs the shared requirements file,

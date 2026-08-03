@@ -33,13 +33,16 @@ container names, a published PostgreSQL port, and a single shared network.
 Keeping the production definition separate prevents those development settings
 from being inherited accidentally and leaves `.\run.cmd dev` unchanged.
 
-The stack contains four services:
+The stack contains six services:
 
 - `db`: PostgreSQL 17 with persistent data in the named `postgres_data` volume;
 - `backend`: the FastAPI application on container port `8000`;
 - `frontend`: the standalone Next.js server on container port `3000`; and
 - `migrate`: a manual, one-shot Alembic service enabled only through the
-  `migration` profile.
+  `migration` profile;
+- `prefect-server`: the self-hosted Prefect 3.8.1 API/UI with SQLite state in
+  the named `prefect_data` volume; and
+- `prefect-worker`: the process worker for the fixed `alpha-data-process` pool.
 
 ```text
 approved TLS proxy / local operator
@@ -51,6 +54,9 @@ approved TLS proxy / local operator
      PostgreSQL (internal database network, no host port)
 
      migrate (manual profile) --------^ database network only
+
+     Prefect worker ---- Prefect server ---- prefect_data
+          (private internal orchestration network; no host ports)
 ```
 
 Frontend and backend share the `application` network. Backend and PostgreSQL
@@ -58,6 +64,9 @@ share the internal `database` network. Frontend cannot join the database
 network, and production PostgreSQL is not published to the host. Backend
 outbound access exists for separately approved manual operations, but startup
 does not collect intelligence or contact external sources.
+Prefect server and worker share only the internal `orchestration` network.
+Neither publishes a production host port, and the worker does not mount the
+server's SQLite volume.
 
 ## Prerequisites
 
@@ -66,8 +75,9 @@ does not collect intelligence or contact external sources.
 - Git and PowerShell for the documented Windows workflow.
 - A running Docker Engine and the Docker Compose v2 plugin (`docker compose`).
   On Windows, confirm Docker Desktop is running and using Linux containers.
-- Sufficient host CPU, memory, and disk for PostgreSQL plus two application
-  images. Exact minimum resources have not been measured; monitor the controlled
+- Sufficient host CPU, memory, and disk for PostgreSQL, two application images,
+  and the shared Prefect image. Exact minimum resources have not been measured;
+  monitor the controlled
   validation host rather than treating an invented minimum as a guarantee.
 - Available loopback host ports `8000` and `3000`, unless reviewed
   `BACKEND_PORT` and `FRONTEND_PORT` overrides are used.
@@ -137,10 +147,13 @@ unsafe CORS/trusted-host entries, `DEBUG=true`, or
 `ENABLE_ADMIN_INGESTION=true` stop staging and production startup. The public
 health response does not disclose the configured environment identity.
 
-APR-10 remains `Need Approval`. No secret-management provider or
-provider-specific credential-delivery mechanism is selected by B1-01. Keep
-credential-dependent approval-gated integrations disabled until both approval
-and valid configuration exist.
+APR-10 is team-owned and does not require separate mentor approval. B1-01 did
+not select or implement a secret-management provider or provider-specific
+credential-delivery mechanism. Team ownership is not deployment evidence: any
+selected baseline must meet the project security controls and receive
+task-specific implementation, validation, deployment, and activation evidence.
+Keep credential-dependent integrations disabled until that work and valid
+configuration exist, and never commit or document secret values.
 
 In the examples below, set `$ProdEnv` to the absolute path of the completed
 external file:
@@ -187,9 +200,10 @@ docker compose `
     config --services
 ```
 
-Normal runtime validation excludes profiled services. Its expected service set
-is `db`, `backend`, and `frontend`. With the `migration` profile enabled, the
-service set additionally includes `migrate`.
+Normal runtime validation excludes profiled services. The application expected
+service set is `db`, `backend`, and `frontend`; B2-01 additionally includes
+`prefect-server` and `prefect-worker` in the normal runtime set. With the
+`migration` profile enabled, the service set additionally includes `migrate`.
 
 `migrate` is intentionally excluded from normal runtime configuration and
 normal startup. It appears only when the `migration` profile is enabled or when
@@ -201,7 +215,8 @@ Both `config --quiet` commands validate interpolation and structure without
 printing resolved configuration. Do not replace them with unrestricted `docker
 compose config` when real secrets are loaded.
 
-Check the default Windows host ports without opening or printing configuration:
+Check the default Windows application host ports without opening or printing
+configuration. Prefect has no production host port:
 
 ```powershell
 Get-NetTCPConnection -State Listen -LocalPort 3000,8000 -ErrorAction SilentlyContinue
@@ -214,18 +229,18 @@ port in production.
 
 ## Image build
 
-Normally build the two application images from the repository root with the
-reviewed environment file:
+Normally build the two application images and the single shared Prefect image
+from the repository root with the reviewed environment file:
 
 ```powershell
-docker compose -f $ComposeFile --env-file $ProdEnv build backend frontend
+docker compose -f $ComposeFile --env-file $ProdEnv build backend frontend prefect-server
 ```
 
 Use a no-cache build only when validating all layers from scratch, investigating
 a suspected stale layer, or following an approved release procedure:
 
 ```powershell
-docker compose -f $ComposeFile --env-file $ProdEnv build --no-cache backend frontend
+docker compose -f $ComposeFile --env-file $ProdEnv build --no-cache backend frontend prefect-server
 ```
 
 `APP_ENV=production` and `NEXT_PUBLIC_API_BASE_URL` are the frontend build
@@ -257,10 +272,14 @@ docker compose -f $ComposeFile --env-file $ProdEnv exec -T db `
 ```
 
 No production roles have been provisioned merely by committing these files.
-The command is a staging/production database-administration action and requires
-the approved owner and APR-09 boundary. After provisioning, start PostgreSQL,
-wait for its health check, inspect the packaged Alembic head, run the one-shot
-migration service, and verify the current database revision:
+APR-09 is team-owned and does not require separate mentor approval, but this
+command remains an authorized staging/production database-administration action
+that requires the designated owner plus task-specific implementation,
+validation, deployment, and activation evidence. Destructive retention remains
+disabled until its required safety and recovery evidence exists. After
+provisioning, start PostgreSQL, wait for its health check, inspect the packaged
+Alembic head, run the one-shot migration service, and verify the current
+database revision:
 
 ```powershell
 docker compose -f $ComposeFile --env-file $ProdEnv up -d db
@@ -286,9 +305,11 @@ troubleshooting migration output.
 
 ## Production startup
 
-Start the normal production services after the migration succeeds:
+Start the private orchestration services and the application services after the
+migration succeeds:
 
 ```powershell
+docker compose -f $ComposeFile --env-file $ProdEnv up -d prefect-server prefect-worker
 docker compose -f $ComposeFile --env-file $ProdEnv up -d db backend frontend
 docker compose -f $ComposeFile --env-file $ProdEnv ps
 ```
@@ -296,12 +317,14 @@ docker compose -f $ComposeFile --env-file $ProdEnv ps
 PostgreSQL starts first. Backend waits for healthy PostgreSQL, and frontend waits
 for a healthy backend. The `migrate` service is not part of normal startup. The
 default host bindings are loopback-only: frontend port `3000` and backend port
-`8000`; PostgreSQL has no host binding. Do not use the development runner for
+`8000`; PostgreSQL and both Prefect services have no host binding. Prefect uses
+only the internal `orchestration` network. Do not use the development runner for
 production startup.
 
 Container health checks use `pg_isready` for PostgreSQL, `/api/health` for
-FastAPI, and `/` for the production Next.js server. Wait until `docker compose
-ps` reports all three runtime services healthy before continuing.
+FastAPI, `/` for the production Next.js server, Prefect's `/api/health` endpoint
+for the server, and the worker's enabled `/health` endpoint. Wait until
+`docker compose ps` reports all five runtime services healthy before continuing.
 
 ## Health and functional smoke validation
 
@@ -406,6 +429,13 @@ by contacting the unapproved domain.
 - No application source, Docker socket, environment file, or host directory is
   mounted into a production container.
 - PostgreSQL data is stored in the named `postgres_data` volume.
+- Prefect server state is stored in the separate named `prefect_data` volume.
+  Only the server mounts it; the worker communicates through the self-hosted API.
+- The Prefect server and worker use the same project-built image based exactly
+  on `prefecthq/prefect:3.8.1-python3.13` and run as fixed UID/GID `10001`.
+- Prefect has no production host port, Docker socket, source-code bind mount,
+  Cloud API configuration, default credentials, or privileged mode. Its private
+  internal network is the B2-01 administration boundary.
 - PostgreSQL's automatic initialization directory contains only the role
   provisioning shell. Grants SQL is mounted read-only at its fixed
   non-automatic path and invoked once by that shell.
@@ -426,6 +456,8 @@ by contacting the unapproved domain.
 
 The FastAPI startup path performs no ingestion. P7-01 does not add a scheduler,
 ingestion service, ingestion startup hook, or public ingestion trigger.
+The B2-01 Prefect worker has no flows, deployments, or schedules, so it does not
+change that ingestion behavior.
 
 The earlier P7-03 limitation said that a shared database user could hold
 superuser privileges, that backend and migration access used that identity,
@@ -448,6 +480,33 @@ memberships fail provisioning. Do not publish PostgreSQL,
 mount the Docker socket, enable privileged containers, or run the application
 images as root to compensate for a deployment problem.
 
+## Prefect health and state inspection
+
+Use service-scoped commands that do not render resolved configuration:
+
+```powershell
+docker compose -f $ComposeFile --env-file $ProdEnv ps prefect-server prefect-worker
+docker compose -f $ComposeFile --env-file $ProdEnv exec -T prefect-server `
+    python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4200/api/health', timeout=3).read()"
+docker compose -f $ComposeFile --env-file $ProdEnv exec -T prefect-worker `
+    python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3).read()"
+docker compose -f $ComposeFile --env-file $ProdEnv exec -T prefect-worker `
+    prefect work-pool inspect alpha-data-process
+```
+
+The process worker starts its supported health server and creates the fixed
+work pool only when absent. Repeated worker starts reuse the existing pool. The
+server owns SQLite under `/var/lib/prefect` in `prefect_data`; the worker has no
+direct volume access. A failed endpoint request exits non-zero, allowing Docker
+to mark the service unhealthy rather than reporting fake success.
+
+For controlled restart-persistence verification, record only the work-pool ID
+and type, restart both services, and compare that identity after both become
+healthy. Then recreate both containers without removing volumes and compare it
+again. Never use `down -v`, remove `prefect_data`, or claim backup/restore proof
+from this restart test. The complete procedure is in
+[B2-01 Prefect platform](b2-01-prefect-platform.md).
+
 ## Logging and troubleshooting
 
 Review bounded, service-scoped logs. Never print the resolved Compose
@@ -456,7 +515,7 @@ database URLs, or raw external payloads:
 
 ```powershell
 docker compose -f $ComposeFile --env-file $ProdEnv ps
-docker compose -f $ComposeFile --env-file $ProdEnv logs --tail 200 backend frontend db
+docker compose -f $ComposeFile --env-file $ProdEnv logs --tail 200 backend frontend db prefect-server prefect-worker
 docker compose -f $ComposeFile --env-file $ProdEnv logs --tail 200 backend
 ```
 
@@ -484,6 +543,7 @@ restarts.
 | PostgreSQL is unhealthy | Review `ps` and bounded `db` logs, then check storage availability and protected database settings without printing values. |
 | Backend cannot resolve the database | Confirm the service is attached to the `database` network and uses service hostname `db`; do not publish PostgreSQL or replace the internal boundary. |
 | Migration not applied | Run the manual `heads` and `current` checks, then the approved `migrate` service; do not generate or casually downgrade migrations. |
+| Prefect server or worker is unhealthy | Review service-scoped `ps` and bounded logs, then call only the documented container-local health endpoint; do not publish Prefect, mount its state into the worker, or bypass the health check. |
 | Database volume permission or corruption indicators | Stop repeated writes, preserve the volume, collect sanitized evidence, and invoke the deployment recovery plan; do not delete the volume, run the application as root, or change permissions blindly. |
 
 ## Controlled restart
@@ -494,6 +554,7 @@ are unchanged:
 ```powershell
 docker compose -f $ComposeFile --env-file $ProdEnv restart backend
 docker compose -f $ComposeFile --env-file $ProdEnv restart frontend
+docker compose -f $ComposeFile --env-file $ProdEnv restart prefect-server prefect-worker
 docker compose -f $ComposeFile --env-file $ProdEnv ps
 ```
 
@@ -616,7 +677,9 @@ resolved Compose output, response bodies, or sensitive logs:
 - backend and frontend image tags and immutable IDs;
 - deployment environment identifier;
 - expected and current Alembic migration revision;
-- `db`, `backend`, and `frontend` health result;
+- `db`, `backend`, `frontend`, `prefect-server`, and `prefect-worker` health result;
+- the non-sensitive `alpha-data-process` work-pool identity and restart/recreate
+  persistence result;
 - functional and CORS validation result;
 - validation timestamp and operator;
 - backup and rollback reference;
@@ -631,15 +694,24 @@ resolved Compose output, response bodies, or sensitive logs:
 - No monitoring or alerting platform is integrated.
 - Logs are bounded locally but there is no centralized logging platform.
 - No CI/CD deployment workflow is implemented.
-- No orchestration platform, autoscaling, or zero-downtime deployment exists.
+- No orchestration platform for container scheduling, autoscaling, or
+  zero-downtime deployment exists. Self-hosted Prefect provides bounded workflow
+  orchestration infrastructure only.
+- Prefect uses a single server with SQLite and has no high availability, Redis,
+  Prefect-specific PostgreSQL, authentication, backup automation, restore proof,
+  RPO/RTO evidence, flows, deployments, schedules, or staging activation.
 - Enterprise secret management and automated secret rotation are not
-  integrated; APR-10 remains `Need Approval` and no provider is selected.
+  integrated. APR-10 is team-owned, but no provider is selected or implemented;
+  any selected baseline still requires security-control compliance and
+  task-specific validation, deployment, and activation evidence.
 - B1-05 defines separate least-privilege PostgreSQL roles, but no staging or
   production provisioning is claimed until an authorized operator executes and
-  verifies it under APR-09.
+  verifies it. APR-09 is team-owned; that ownership is not provisioning or
+  deployment evidence, and destructive retention remains disabled until its
+  required safety and recovery evidence exists.
 - The former "no separate restricted PostgreSQL application role" limitation
   is superseded in configuration and disposable tests, but remains unproven in
-  staging until approved provisioning and verification occur.
+  staging until authorized provisioning and verification occur.
 - The backend production image installs the shared `requirements.txt`, which
   currently includes development/test dependencies as well as runtime packages.
 - Production load, capacity, failover, and disaster-recovery testing have not

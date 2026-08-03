@@ -161,18 +161,23 @@ def test_readme_records_current_database_and_persistence_limitations() -> None:
     readme = normalized_readme()
 
     for required_phrase in (
-        "official postgresql image initializes `postgres_user` with superuser privileges",
-        "reuses that privileged role for backend and migration access",
-        "no separate restricted application role is provisioned",
+        "operator-selected bootstrap identity for initialization and administration",
+        "normal runtime does not reuse it",
+        "separate non-superuser migration identity",
+        "separate least-privilege runtime application identity",
+        "three login passwords through separate secret files",
+        "publishes no postgresql host port",
         "named `postgres_data` volume is persistent storage, not a backup",
         "automated backup and tested recovery are not implemented",
+        "destructive retention remains disabled until its safety and recovery evidence exists",
         "`docker compose down -v` deletes the persistent postgresql volume",
         "it is not routine cleanup",
         "explicit authorization",
     ):
         assert required_phrase in readme
 
-    assert "least-privilege application role" not in readme
+    assert "reuses that privileged role for backend and migration access" not in readme
+    assert "no separate restricted application role is provisioned" not in readme
 
 
 def test_readme_represents_production_limitations_honestly() -> None:

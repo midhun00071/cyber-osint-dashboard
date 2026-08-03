@@ -12,6 +12,7 @@ from app.main import app
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ARCHITECTURE_PATH = PROJECT_ROOT / "docs" / "architecture.md"
 PRODUCTION_COMPOSE_PATH = PROJECT_ROOT / "compose.prod.yml"
+DEVELOPMENT_COMPOSE_PATH = PROJECT_ROOT / "docker-compose.yml"
 RUN_SCRIPT_PATH = PROJECT_ROOT / "run.ps1"
 FRONTEND_API_CLIENT_PATH = PROJECT_ROOT / "frontend" / "src" / "services" / "apiClient.ts"
 FRONTEND_CLIENT_COMPONENT_PATHS = (
@@ -254,9 +255,19 @@ def test_development_runner_architecture_matches_implemented_commands() -> None:
 
 def test_production_architecture_matches_compose_service_and_network_contracts() -> None:
     compose = yaml.safe_load(PRODUCTION_COMPOSE_PATH.read_text(encoding="utf-8"))
+    development_compose = yaml.safe_load(
+        DEVELOPMENT_COMPOSE_PATH.read_text(encoding="utf-8")
+    )
     document = normalized_architecture()
 
-    assert set(compose["services"]) == {"db", "backend", "frontend", "migrate"}
+    assert set(compose["services"]) == {
+        "db",
+        "backend",
+        "frontend",
+        "migrate",
+        "prefect-server",
+        "prefect-worker",
+    }
     assert compose["services"]["migrate"]["profiles"] == ["migration"]
     assert "ports" not in compose["services"]["db"]
     assert compose["networks"]["database"]["internal"] is True
@@ -267,15 +278,68 @@ def test_production_architecture_matches_compose_service_and_network_contracts()
     ]
     assert compose["services"]["db"]["networks"] == ["database"]
 
+    prefect_server = compose["services"]["prefect-server"]
+    prefect_worker = compose["services"]["prefect-worker"]
+    assert compose["networks"]["orchestration"] == {
+        "driver": "bridge",
+        "internal": True,
+    }
+    assert prefect_server["networks"] == ["orchestration"]
+    assert prefect_worker["networks"] == ["orchestration"]
+    assert "ports" not in prefect_server
+    assert "ports" not in prefect_worker
+    assert set(compose["volumes"]) == {"postgres_data", "prefect_data"}
+    assert prefect_server["volumes"] == ["prefect_data:/var/lib/prefect"]
+    assert "volumes" not in prefect_worker
+    assert prefect_worker["environment"]["PREFECT_API_URL"] == (
+        "http://prefect-server:4200/api"
+    )
+    assert prefect_worker["command"] == [
+        "prefect",
+        "worker",
+        "start",
+        "--pool",
+        "alpha-data-process",
+        "--type",
+        "process",
+        "--with-healthcheck",
+        "--create-pool-if-not-found",
+    ]
+    for service in (prefect_server, prefect_worker):
+        assert service["user"] == "10001:10001"
+        assert service["security_opt"] == ["no-new-privileges:true"]
+        assert service["cap_drop"] == ["ALL"]
+        assert service.get("privileged") is not True
+        assert service.get("network_mode") != "host"
+        assert "/var/run/docker.sock" not in str(service.get("volumes", []))
+
+    local_server = development_compose["services"]["prefect-server"]
+    local_worker = development_compose["services"]["prefect-worker"]
+    assert local_server["ports"] == [
+        "127.0.0.1:${PREFECT_PORT:-4200}:4200"
+    ]
+    assert "ports" not in local_worker
+
     for phrase in (
-        "lists `db`, `backend`, and `frontend`",
+        "lists `db`, `backend`, `frontend`, `prefect-server`, and `prefect-worker`",
         "`migrate` service appears only when the `migration` profile is enabled",
         "database has no production host port by default",
         "internal database network",
+        "internal `orchestration` network",
+        "`prefect_data`",
+        "Only `prefect-server` mounts this volume",
+        "worker communicates through `http://prefect-server:4200/api`",
+        "fixed `alpha-data-process` process work pool",
+        "Local Prefect administration is published only on `127.0.0.1`",
+        "Production publishes no Prefect host port",
+        "No default Prefect credential or Prefect Cloud configuration exists",
+        "B2-01 adds no flow, deployment, or schedule",
         "dedicated non-root users (`appuser` and `nextjs`)",
+        "fixed non-root UID/GID `10001:10001`",
         "`no-new-privileges`",
         "drop all Linux capabilities",
         "three 10 MiB files",
+        "No Docker socket",
         "No development reload server",
     ):
         assert phrase in document
@@ -290,10 +354,16 @@ def test_database_migrations_role_and_persistence_limitations_are_honest() -> No
         "persistent storage across container recreation",
         "It is not a backup",
         "`docker compose down -v` deletes the persistent PostgreSQL volume",
-        "creates a privileged PostgreSQL role",
-        "reuse that privileged role",
-        "No separate restricted application database role is provisioned",
-        "must not be described as least privilege",
+        "`POSTGRES_USER` remains the bootstrap/initialization identity",
+        "is not reused for normal application runtime",
+        "backend uses the separate runtime application identity",
+        "`migrate` uses the separate migration identity",
+        "fixed `alpha_data_readonly` and `alpha_data_backup` groups receive",
+        "fixed `alpha_data_retention` group can read only the operational evidence",
+        "Destructive retention remains disabled",
+        "three login passwords through separate secret files",
+        "publishes no PostgreSQL host port",
+        "prevents managed role memberships from collapsing the least-privilege separation",
     ):
         assert phrase in document
 

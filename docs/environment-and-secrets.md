@@ -13,11 +13,14 @@ and manual-ingestion focused. FastAPI startup does not run ingestion, and the
 repository has no active scheduler, background ingestion job, or public
 ingestion endpoint.
 
-APR-10 remains **Need Approval**. B1-01 selects no secret-management provider,
-implements no provider-specific delivery mechanism, requests no credentials,
-and makes no staging or production deployment claim. Until a later approved
-task defines delivery, credential-dependent approval-gated integrations remain
-disabled and make no external request.
+APR-10 is a team-owned decision and does not require separate mentor approval.
+B1-01 selects no secret-management provider, implements no provider-specific
+delivery mechanism, requests no credentials, and makes no staging or production
+deployment claim. Team ownership is not implementation or deployment evidence:
+a selected provider or delivery baseline still requires task-specific secure
+implementation, validation, deployment, and activation evidence. Until that
+work exists, credential-dependent integrations remain disabled and make no
+external request. No secret value may be committed or documented.
 
 ## Configuration file hierarchy
 
@@ -78,6 +81,7 @@ still be shared only when needed.
 | `BACKEND_HOST` | Backend settings | Optional | Local development value | Runtime | Bind address accepted by settings, for example `0.0.0.0`. | Current repository launch commands set their own host explicitly. |
 | `BACKEND_PORT` | Backend settings, Docker Compose | Optional | Local/deployment configuration | Runtime | Backend host-port override, for example `8000`. | The current settings field accepts an integer; Compose and the server still require a valid available TCP port. Production maps the selected host port to container port 8000. |
 | `FRONTEND_PORT` | Docker Compose | Optional | Local/deployment configuration | Runtime | Frontend host-port override, for example `3000`. | Production maps it to container port 3000. |
+| `PREFECT_PORT` | Development Compose | Optional | Local development configuration | Runtime | Loopback host port for local Prefect administration; default `4200`. | The bind address is fixed to `127.0.0.1`. Production publishes no Prefect host port and does not consume this variable. |
 | `BACKEND_BIND_ADDRESS` | Production Compose | Optional | Sensitive configuration | Runtime | Host interface for publishing the backend; safe default is `127.0.0.1`. | Keep loopback-bound when an approved TLS terminator fronts the service. |
 | `FRONTEND_BIND_ADDRESS` | Production Compose | Optional | Sensitive configuration | Runtime | Host interface for publishing the frontend; safe default is `127.0.0.1`. | Review before widening the bind address. |
 | `POSTGRES_HOST` | Backend, development Compose | Conditional | Sensitive configuration | Runtime | Database host; local host example is `localhost`, while containers use the service name `db`. | Must be a bare DNS name, canonical IP address, or documented bracketed IPv6 representation. Schemes, credentials, paths, ports, control characters, and ambiguous numeric forms are rejected. |
@@ -107,6 +111,27 @@ still be shared only when needed.
 | `FETCH_INTERVAL_MINUTES` | Backend settings | Optional | Non-secret operational configuration | Runtime | Operational interval placeholder, currently `30`. | The settings model accepts an integer. The current application has no scheduler and does not consume this field to start recurring work. |
 | `ENABLE_ADMIN_INGESTION` | Backend settings, Compose | Optional locally/test; mandatory `false` in staging/production | Backend-only sensitive security control | Runtime | Safe value is `false`. | The current API exposes no ingestion route. This flag neither schedules nor starts ingestion; staging/production reject `true`. |
 | `IMAGE_TAG` | Production Compose | Optional | Non-secret deployment configuration | Compose build and startup | Reviewable image tag, for example `p7-01`. | Used only in backend/frontend image names. |
+
+### B2-01 Prefect configuration boundary
+
+The self-hosted Prefect 3.8.1 image, server API address, state location, worker
+health server, process work-pool type, and `alpha-data-process` pool name are
+fixed platform configuration rather than operator environment inputs. Local
+Compose exposes only `PREFECT_PORT`; it changes the loopback host port without
+widening the fixed `127.0.0.1` bind. Production exposes no Prefect host port.
+
+No Prefect username, password, API key, Cloud API URL, or default credential is
+defined in Compose or the environment examples. The current B2-01 protection is
+network-only: local administration is loopback-bound and production services
+join only the internal `orchestration` network. Prefect authentication and
+backend-authorized operator controls remain later work, so the production
+administration surface must not be published or routed publicly.
+
+The server alone mounts `prefect_data` at its explicit `PREFECT_HOME` and owns
+the SQLite state there. The worker uses the internal self-hosted API and does not
+mount the state volume. Do not add a credential, Cloud workspace setting,
+database URL, arbitrary API root, or worker-accessible SQLite mount as an
+environment override.
 
 Developer validation commands may temporarily set `TEMP` and `TMP` to a fresh
 directory outside the repository and clear `PYTEST_ADDOPTS` so local user
@@ -144,8 +169,11 @@ The provisioning scripts support fresh initialization and an existing database
 at the B1-04 head, revoke public schema creation, transfer application-object
 ownership only to the migration identity, and define future-object default
 privileges. Running or documenting B1-05 does not mean production roles have
-been provisioned; staging/production administration and APR-09 remain separate
-approval-gated operations.
+been provisioned. APR-09 is team-owned and requires no separate mentor
+approval, but staging/production administration still requires task-specific
+implementation, validation, deployment, and activation evidence. Destructive
+retention remains disabled until its required safety and recovery evidence
+exists.
 
 ## Secret ownership, references, and storage
 
@@ -191,8 +219,11 @@ must be scoped to its consuming service and rotated or revoked by its owner.
   `POSTGRES_APP_PASSWORD_SECRET_FILE`, and
   `POSTGRES_MIGRATION_PASSWORD_SECRET_FILE`. Production Compose mounts each
   file only into its authorized consumers.
-- APR-10 remains `Need Approval`; no secret-management provider or credential
-  delivery mechanism has been selected or approved.
+- APR-10 is team-owned; no secret-management provider or credential-delivery
+  mechanism has yet been selected or implemented. Any selection must still meet
+  the project security controls and receive task-specific validation,
+  deployment, and activation evidence; no secret value may be committed or
+  documented.
 - The repository does not integrate with a cloud secret manager, Vault product,
   CI/CD injector, or automated rotation service.
 - Never pass secrets as Docker build arguments. Build arguments and image layers

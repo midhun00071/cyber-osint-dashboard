@@ -253,7 +253,9 @@ def test_production_compose_still_requires_sensitive_values() -> None:
 
 
 def test_b1_01_environment_matrix_and_pending_provider_boundary_are_documented() -> None:
-    documentation = ENVIRONMENT_DOCUMENTATION.read_text(encoding="utf-8").lower()
+    documentation = " ".join(
+        ENVIRONMENT_DOCUMENTATION.read_text(encoding="utf-8").lower().split()
+    )
 
     for identity in ("local", "test", "staging", "production"):
         assert f"`{identity}`" in documentation
@@ -265,9 +267,18 @@ def test_b1_01_environment_matrix_and_pending_provider_boundary_are_documented()
         "backend-only",
         "secret reference",
         "secret value",
-        "apr-10",
-        "need approval",
+        "apr-10 is a team-owned decision and does not require separate mentor approval",
+        "team ownership is not implementation or deployment evidence",
+        "task-specific secure implementation, validation, deployment, and activation evidence",
         "no secret-management provider",
+        "committed example files contain only safe local values, blank secret fields",
+        "real values must never be committed, copied into documentation",
+        "uploaded for review, or exposed in logs",
+        "no secret value may be committed or documented",
+        "rotation and incident response",
+        "record the time, affected component, response, and validation result without",
+        "completed environment files must never be included in review zips, task",
+        "sheets, reports, screenshots, or uploaded artifacts",
     ):
         assert required_phrase in documentation
 

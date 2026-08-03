@@ -42,6 +42,8 @@ for a new live collection method.
   review evidence.
 - Development convenience and production-oriented configuration are separate
   architectures with different risk boundaries.
+- Self-hosted Prefect is present as orchestration infrastructure only; B2-01
+  adds no flow, deployment, or schedule and does not execute ingestion.
 - Absent controls and operational limitations are documented rather than
   implied to exist.
 
@@ -81,6 +83,11 @@ connection. The diagram does not imply automatic collection: FastAPI startup
 creates no ingestion job, scheduler, recurring background worker, frontend
 ingestion trigger, or public ingestion API.
 
+One self-hosted Prefect server and one process worker provide the B2-01
+orchestration platform. The worker registers and polls the fixed
+`alpha-data-process` process work pool, but no source flow, deployment, or
+schedule exists. These services do not enter the manual data path shown above.
+
 ## Major components and responsibilities
 
 | Component | Implemented responsibility | Boundary |
@@ -94,6 +101,8 @@ ingestion trigger, or public ingestion API.
 | PostgreSQL and SQLAlchemy | Store normalized intelligence, provenance, identifiers, tags, vulnerabilities, and ingestion audit records | Persistence is not backup; access is through backend/migration sessions |
 | FastAPI | Validate read-only queries and serialize allow-listed health, version, dashboard, article, and intelligence responses | No write, ingestion, administration, authentication, or authorization endpoint |
 | Next.js | Fetch validated API data and present dashboard/list/detail states safely | No source collection, database connection, credentials, or raw HTML rendering |
+| Prefect server | Provide one self-hosted Prefect 3.8.1 API/UI and persist its SQLite orchestration state in `prefect_data` | No production host publication, Cloud dependency, default credential, flow, deployment, or schedule |
+| Prefect process worker | Register and poll the fixed `alpha-data-process` process work pool through the server API | No direct SQLite/volume access, Docker socket, application source mount, or source execution in B2-01 |
 
 ## Repository and module structure
 
@@ -117,6 +126,7 @@ frontend/
   src/services/          browser API clients and response validators
   src/types/             public frontend data contracts
   src/utils/             safe URL and display helpers
+prefect/Dockerfile       pinned non-root Prefect server/worker image
 compose.prod.yml         production-oriented runtime and manual migration profile
 docker-compose.yml       local development container stack
 run.cmd / run.ps1        Windows setup, test, Docker, and host-development runner
@@ -490,6 +500,13 @@ down -v` deletes the persistent PostgreSQL volume and is a destructive operation
 not routine cleanup; it requires explicit authorization and verified recovery
 evidence.
 
+Prefect state is separate from application data. The single server stores its
+SQLite database inside `PREFECT_HOME` on the named `prefect_data` volume. Only
+`prefect-server` mounts this volume; the worker communicates through
+`http://prefect-server:4200/api` and cannot directly open the SQLite file.
+Controlled container restart/recreation preserves this state, but the volume is
+not a backup and B2-01 provides no restore, RPO, or RTO evidence.
+
 ## Backend API architecture
 
 FastAPI registers these implemented read-only routes:
@@ -573,13 +590,18 @@ The parent environment is restored in `finally`, and the credential-bearing URL
 must not be printed or passed on the process command line. Stopping `dev` ends
 only the host process trees; the database container remains running.
 
-The development Compose stack runs `db`, `backend`, and `frontend` containers on
-a shared bridge network and publishes PostgreSQL, backend, and frontend ports to
-the host. Its local defaults, development environment, fixed container names,
-and placeholder credentials are not production controls. Although the
-development Compose environment contains legacy interval/admin feature flags,
-the current application has no scheduler, startup ingestion, or admin ingestion
-route.
+The development Compose stack runs `db`, `backend`, `frontend`,
+`prefect-server`, and `prefect-worker` containers on a shared bridge network;
+`migrate` remains a manual profile. PostgreSQL, backend, and frontend retain
+their local host publications. Local Prefect administration is published only
+on `127.0.0.1` at `${PREFECT_PORT:-4200}`; its bind host is not configurable,
+and the worker health port is not published. Its local defaults, development
+environment, fixed application container names, and placeholder database
+credentials are not production controls. Although the development Compose
+environment contains legacy interval/admin feature flags, the current
+application has no ingestion scheduler, startup ingestion, or admin ingestion
+route. The Prefect worker remains idle apart from fixed pool registration and
+polling.
 
 ## Production Docker architecture
 
@@ -590,10 +612,10 @@ development Compose. Normal:
 docker compose -f compose.prod.yml config --services
 ```
 
-lists `db`, `backend`, and `frontend`. The `migrate` service appears only when
-the `migration` profile is enabled or that service is explicitly targeted; it
-runs `alembic upgrade head` as a manual one-shot operation and is not normal
-startup.
+lists `db`, `backend`, `frontend`, `prefect-server`, and `prefect-worker`. The
+`migrate` service appears only when the `migration` profile is enabled or that
+service is explicitly targeted; it runs `alembic upgrade head` as a manual
+one-shot operation and is not normal startup.
 
 ```text
 approved operator/browser
@@ -605,6 +627,11 @@ approved operator/browser
                     +--> internal database network --> PostgreSQL
 
 manual migrate service -------------------------------> PostgreSQL
+
+prefect-worker -- internal orchestration network --> prefect-server
+                                                        |
+                                                        v
+                                                   prefect_data
 ```
 
 The database has no production host port by default. Frontend joins only the
@@ -612,6 +639,15 @@ application network; backend joins application and the internal database
 network; PostgreSQL and `migrate` join only the database network. Backend and
 frontend default host bindings are loopback-only. No application source,
 environment file, or Docker socket is mounted into application containers.
+
+Prefect server and worker join only the dedicated internal `orchestration`
+network. Production publishes no Prefect host port. The server alone mounts
+`prefect_data`; the worker uses the internal API and has no state-volume mount.
+Both use the same project-built image based exactly on
+`prefecthq/prefect:3.8.1-python3.13`. The worker's fixed argument-vector command
+creates `alpha-data-process` only when absent and otherwise reuses the existing
+fixed `alpha-data-process` process work pool. No Docker socket, host network,
+source-code bind mount, broad host mount, or privileged mode is present.
 
 Compose attaches frontend and backend to the `application` network, but that is
 a container-topology property, not the current client-side API request path.
@@ -624,10 +660,12 @@ approved TLS/reverse-proxy boundary may provide external routing, but this
 repository does not implement it.
 
 Backend and frontend images run as dedicated non-root users (`appuser` and
-`nextjs`). Application services and `migrate` enable an init process,
-`no-new-privileges`, and drop all Linux capabilities; all services are
-non-privileged. Runtime services use `restart: unless-stopped`, health checks,
-and the bounded local log driver with three 10 MiB files. PostgreSQL uses the
+`nextjs`). The Prefect image uses fixed non-root UID/GID `10001:10001` for both
+server and worker. Application, migration, and Prefect services enable an init
+process, `no-new-privileges`, and drop all Linux capabilities; all services are
+non-privileged. Runtime services use `restart: unless-stopped`, real local
+health endpoints, and the bounded local log driver with three 10 MiB files.
+PostgreSQL uses the
 official image’s `postgres` operating-system user. No development reload server,
 Next.js development server, startup migration, or automatic ingestion command is
 present.
@@ -639,14 +677,35 @@ build-time configuration. The production Compose file does not provide TLS
 termination, a reverse proxy/load balancer, monitoring, backups, or secret
 management; deployment infrastructure must supply those separately.
 
-### Database-role limitation
+No default Prefect credential or Prefect Cloud configuration exists. B2-01
+protects administration through loopback-only local publication and private
+production networking; Prefect authentication and backend-authorized operator
+controls remain later work. Scheduling, source flows, operator controls,
+monitoring, backup/recovery, and staging deployment are also owned by later
+tasks.
 
-`POSTGRES_USER` initializes PostgreSQL through the official image behavior,
-which creates a privileged PostgreSQL role. The current backend and manual
-migration service reuse that privileged role. No separate restricted
-application database role is provisioned, and the current role must not be
-described as least privilege. Introducing a non-superuser application role and
-separate migration ownership is future reviewed database/deployment work.
+### Database-role architecture
+
+`POSTGRES_USER` remains the bootstrap/initialization identity inside the
+PostgreSQL administration boundary and is not reused for normal application
+runtime. The backend uses the separate runtime application identity, while
+`migrate` uses the separate migration identity that owns application objects.
+Both are non-superuser logins: the runtime identity has schema `USAGE`, bounded
+table DML, and sequence use but no DDL, ownership, role administration,
+`TRUNCATE`, or `DELETE`; the migration identity has schema creation and object
+ownership but no database or role creation, replication, or RLS bypass.
+
+The fixed `alpha_data_readonly` and `alpha_data_backup` groups receive
+`SELECT`-only access to application tables. The fixed `alpha_data_retention`
+group can read only the operational evidence required by the non-mutating
+retention planner and has no destructive privilege. Destructive retention
+remains disabled until its required safety and recovery evidence exists.
+Production delivers the three login passwords through separate secret files,
+mounts each only into its authorized consumers, and publishes no PostgreSQL
+host port. Provisioning revokes public schema creation and prevents managed
+role memberships from collapsing the least-privilege separation. Committing
+the configuration is not evidence that staging or production provisioning,
+backup, retention, or recovery work has been executed or validated.
 
 ## Trust boundaries and security controls
 
@@ -662,6 +721,9 @@ separate migration ownership is future reviewed database/deployment work.
    public response fields.
 5. **Browser boundary:** frontend clients validate response shapes, React
    escapes text, and external links pass scheme/credential/character checks.
+6. **Orchestration boundary:** local Prefect administration is loopback-only;
+   production server/worker traffic remains on the private internal network.
+   The worker reaches the server API but not the server-owned SQLite volume.
 
 Backend settings use environment variables and `SecretStr` for sensitive
 values. Production rejects debug mode and non-HTTPS/loopback CORS origins. CORS
@@ -719,6 +781,8 @@ Manual cases remain `Not Run` until separately executed and recorded.
 
 - Source collection/enrichment is invoked through reviewed backend CLIs only;
   operators choose timing and bounds. No standard refresh interval exists.
+- The B2-01 Prefect server and process worker are infrastructure-only. Their
+  fixed pool has no flow, deployment, schedule, or source execution.
 - Development seed data is a separate explicit development-only CLI and is not
   production ingestion or an API fallback.
 - Development startup uses the Windows runner and local Compose boundaries above.
@@ -736,11 +800,14 @@ The current repository does not implement:
 - automated PostgreSQL backups, representative restore tests, or validated
   disaster recovery;
 - centralized logging, production monitoring, or alerting;
-- CI/CD deployment, Kubernetes, or another orchestration platform;
-- automated secret rotation, a restricted application database role, or
-  zero-downtime deployment;
+- CI/CD deployment, Kubernetes, or another container orchestration platform;
+- automated secret rotation, staging activation evidence for the separated
+  database roles, or zero-downtime deployment;
 - production load testing or validated public-internet deployment;
 - startup ingestion, scheduled/background ingestion, or recurring refresh;
+- Prefect high availability, Redis, a Prefect-specific PostgreSQL database,
+  Prefect authentication, production flows/deployments/schedules, monitoring,
+  backup/restore proof, or staging deployment;
 - a public ingestion API, frontend ingestion trigger, or arbitrary URL ingestion;
 - active scanning/probing, active IOC validation, malware retrieval, file
   submission, or exploit execution;
@@ -754,6 +821,11 @@ the named PostgreSQL volume and is not routine cleanup. Manual approval remains
 required for source collection, migration, rollback, volume deletion, and other
 destructive deployment commands.
 
+Later B2 and deployment tasks own flow contracts, source conversion, the
+two-hour schedule, operator controls, authentication, monitoring, backup, and
+staging deployment. The B2-01 private network boundary must not be mistaken for
+completed authentication or public administration readiness.
+
 ## Canonical references
 
 - [Project handover and runner commands](../README.md)
@@ -766,4 +838,5 @@ destructive deployment commands.
 - [Manual test cases](manual-test-cases.md)
 - [Environment and secrets](environment-and-secrets.md)
 - [Production Docker deployment](production-docker-deployment.md)
+- [B2-01 self-hosted Prefect platform](b2-01-prefect-platform.md)
 - [Deployment build validation](deployment-build-validation.md)

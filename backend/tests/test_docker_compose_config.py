@@ -12,6 +12,17 @@ def load_compose_config() -> dict:
         return yaml.safe_load(compose_file)
 
 
+def test_local_compose_has_exact_expected_service_set() -> None:
+    assert set(load_compose_config()["services"]) == {
+        "db",
+        "backend",
+        "migrate",
+        "frontend",
+        "prefect-server",
+        "prefect-worker",
+    }
+
+
 def test_backend_compose_uses_component_database_settings() -> None:
     compose_config = load_compose_config()
     backend_environment = compose_config["services"]["backend"]["environment"]

@@ -168,8 +168,73 @@ services:
     secrets:
       - postgres_migration_password
 
+  prefect-server:
+    <<: *application-security
+    image: alpha-data-prefect:3.8.1-python3.13
+    build:
+      context: .
+      dockerfile: prefect/Dockerfile
+    user: "10001:10001"
+    restart: unless-stopped
+    command: ["prefect", "server", "start", "--host", "0.0.0.0", "--port", "4200"]
+    environment:
+      PREFECT_HOME: /var/lib/prefect
+    volumes:
+      - prefect_data:/var/lib/prefect
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4200/api/health', timeout=3).read()"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - orchestration
+
+  prefect-worker:
+    <<: *application-security
+    image: alpha-data-prefect:3.8.1-python3.13
+    build:
+      context: .
+      dockerfile: prefect/Dockerfile
+    user: "10001:10001"
+    restart: unless-stopped
+    command:
+      - prefect
+      - worker
+      - start
+      - --pool
+      - alpha-data-process
+      - --type
+      - process
+      - --with-healthcheck
+      - --create-pool-if-not-found
+    environment:
+      PREFECT_HOME: /var/lib/prefect
+      PREFECT_API_URL: http://prefect-server:4200/api
+    depends_on:
+      prefect-server:
+        condition: service_healthy
+        restart: true
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3).read()"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    networks:
+      - orchestration
+
 volumes:
   postgres_data:
+  prefect_data:
 
 secrets:
   postgres_bootstrap_password:
@@ -183,5 +248,8 @@ networks:
   application:
     driver: bridge
   database:
+    driver: bridge
+    internal: true
+  orchestration:
     driver: bridge
     internal: true
