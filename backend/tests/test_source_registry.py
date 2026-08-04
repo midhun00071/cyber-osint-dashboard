@@ -40,6 +40,12 @@ from app.ingestion.source_registry import (
     source_allows_publication_hostname,
     validate_source_definition,
 )
+from app.ingestion.stix_taxii.policy import (
+    PRODUCTION_STIX_SOURCE_POLICIES,
+    PRODUCTION_TAXII_COLLECTION_POLICIES,
+)
+from app.orchestration.contracts import SOURCE_POLICIES
+from app.orchestration.flows import DEFAULT_SOURCE_HANDLERS
 
 
 IMPLEMENTED_SLUGS = {
@@ -55,7 +61,13 @@ IMPLEMENTED_SLUGS = {
     "google-threat-intelligence-public-research",
     "mandiant-public-threat-research",
 }
-PLANNED_PUBLIC_SLUGS: set[str] = set()
+PLANNED_PUBLIC_SLUGS = {
+    "ae-cert",
+    "uae-cyber-security-council",
+    "uae-cyber-security-council-nibras",
+    "desc-news",
+    "desc-published-research",
+}
 
 
 def valid_definition(slug: str = "example-source") -> SourceDefinition:
@@ -157,6 +169,58 @@ def test_planned_sources_remain_disabled() -> None:
     for slug in PLANNED_PUBLIC_SLUGS:
         assert sources[slug].implementation_status is ImplementationStatus.PLANNED
         assert sources[slug].enabled is False
+
+
+def test_exact_uae_planned_source_registry_contract() -> None:
+    expected = {
+        "ae-cert": (
+            ContentFamily.SECURITY_ADVISORY,
+            ("tdra.gov.ae",),
+            None,
+        ),
+        "uae-cyber-security-council": (
+            ContentFamily.PUBLIC_OSINT_ADVISORY,
+            ("csc.gov.ae",),
+            "https://csc.gov.ae/en/stay-alert",
+        ),
+        "uae-cyber-security-council-nibras": (
+            ContentFamily.THREAT_RESEARCH,
+            ("csc.gov.ae",),
+            None,
+        ),
+        "desc-news": (
+            ContentFamily.PUBLIC_OSINT_ADVISORY,
+            ("www.desc.gov.ae",),
+            "https://www.desc.gov.ae/media-hub/news/",
+        ),
+        "desc-published-research": (
+            ContentFamily.THREAT_RESEARCH,
+            ("www.desc.gov.ae",),
+            "https://www.desc.gov.ae/research-innovation/published-research/",
+        ),
+    }
+
+    for slug, (content_family, hosts, base_url) in expected.items():
+        source = get_source_definition(slug)
+        assert source.content_family is content_family
+        assert source.allowed_hosts == hosts
+        assert source.base_url == base_url
+        assert source.implementation_status is ImplementationStatus.PLANNED
+        assert source.enabled is False
+        assert source.progress_contract is ProgressContract.NONE
+        assert source.authentication_required is False
+
+    assert "uae-cert" not in {source.slug for source in list_source_definitions()}
+
+
+def test_planned_uae_sources_do_not_activate_any_production_policy() -> None:
+    enabled_slugs = {source.slug for source in list_enabled_implemented_sources()}
+
+    assert PLANNED_PUBLIC_SLUGS.isdisjoint(enabled_slugs)
+    assert PLANNED_PUBLIC_SLUGS.isdisjoint(SOURCE_POLICIES)
+    assert PLANNED_PUBLIC_SLUGS.isdisjoint(DEFAULT_SOURCE_HANDLERS)
+    assert PLANNED_PUBLIC_SLUGS.isdisjoint(PRODUCTION_STIX_SOURCE_POLICIES)
+    assert PLANNED_PUBLIC_SLUGS.isdisjoint(PRODUCTION_TAXII_COLLECTION_POLICIES)
 
 
 @pytest.mark.parametrize(
@@ -271,6 +335,11 @@ def test_exact_frozen_progress_contract_mapping() -> None:
         "anomali-cyber-watch": ProgressContract.NONE,
         "ibm-x-force-public-research": ProgressContract.NONE,
         "ibm-x-force-public-osint-advisories": ProgressContract.NONE,
+        "ae-cert": ProgressContract.NONE,
+        "uae-cyber-security-council": ProgressContract.NONE,
+        "uae-cyber-security-council-nibras": ProgressContract.NONE,
+        "desc-news": ProgressContract.NONE,
+        "desc-published-research": ProgressContract.NONE,
     }
 
     assert {

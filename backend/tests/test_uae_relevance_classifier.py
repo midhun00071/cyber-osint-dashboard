@@ -5,6 +5,7 @@ from decimal import Decimal
 import pytest
 
 from app.processing.uae_relevance_classifier import (
+    UAE_CLASSIFICATION_SOURCE_SLUGS,
     UAE_RELEVANCE_CONFIDENCE_BY_RULE,
     UaeClassificationInput,
     classify_uae_relevance,
@@ -135,6 +136,18 @@ def test_approved_canonical_source_slug_matches_without_url_or_display_trust() -
     assert result.uae_relevance_status == "confirmed"
     assert result.matched_rule_id == "approved_uae_source"
     assert result.uae_relevance_confidence == Decimal("0.950")
+
+
+def test_classification_source_boundary_is_not_network_approval_or_registry_sync() -> None:
+    assert UAE_CLASSIFICATION_SOURCE_SLUGS == {
+        "ae-cert",
+        "uae-cert",
+        "uae-cyber-security-council",
+    }
+    assert "uae-cert" in UAE_CLASSIFICATION_SOURCE_SLUGS
+    assert "uae-cyber-security-council-nibras" not in UAE_CLASSIFICATION_SOURCE_SLUGS
+    assert "desc-news" not in UAE_CLASSIFICATION_SOURCE_SLUGS
+    assert "desc-published-research" not in UAE_CLASSIFICATION_SOURCE_SLUGS
 
 
 @pytest.mark.parametrize(

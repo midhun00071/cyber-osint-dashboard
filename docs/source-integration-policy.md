@@ -6,6 +6,12 @@ This policy defines approved integration classes, onboarding requirements, and e
 
 This is planning documentation only. It does not approve new live ingestion, credentials, scheduler behavior, background workers, API routes, frontend behavior, packages, migrations, or database schema changes.
 
+The five C04A UAE identities are governed by
+[UAE Source Governance](uae-source-governance.md). Their exact evidence-derived
+host/path boundaries are not network approvals: every UAE definition remains
+`planned`, `enabled: false`, automation approval remains `pending`, and all UAE
+collectors remain disabled.
+
 ## Approved Integration Classes
 
 ### A. Public Publication Ingestion
@@ -205,6 +211,21 @@ source-expansion workstream does not include Tor, onion sources, dark-web
 marketplaces, dark-web forums, dark-web credentials, or dark-web collectors.
 
 ## Source Onboarding Requirements
+
+### UAE approval gate
+
+For `ae-cert`, `uae-cyber-security-council`,
+`uae-cyber-security-council-nibras`, `desc-news`, and
+`desc-published-research`, APR-05 requires an explicit source-specific decision
+before any automated request. Assessed listing paths may be used only as design
+evidence. CSC `/en/w/<safe-lowercase-publication-slug>` pages and future DESC
+article/research links are canonical metadata identities, not approved request
+targets. PDF, attachment, binary, report-body, article-body, external-host,
+arbitrary URL, API, form, search, and callback requests remain prohibited.
+
+Proposed minimum cadences apply only after approval: six hours for the CSC
+listing family and DESC published research, twelve hours for DESC news, and
+unset for aeCERT and NibraS. No cadence is enabled by this policy.
 
 Every future source must have a source review before implementation. At minimum, the review must document:
 

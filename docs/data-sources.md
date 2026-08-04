@@ -55,7 +55,10 @@ and reviewing an approved collector.
 tests exist for the registered workflow. `enabled: true` allows that specific
 workflow to create or validate its `IntelligenceSource` row. Neither field
 starts ingestion or broadens the registered endpoint, content family, or access
-method. The current registry has no planned definitions; future and excluded
+method. The current registry also has five C04A UAE definitions with
+`implementation_status: planned` and `enabled: false`. They are governance
+metadata only, remain outside enabled-source and generated orchestration
+policies, and do not create an approved request path. Other future and excluded
 vendors are recorded separately in the assessment documents.
 
 All ingestion and enrichment is manual-only and explicitly operator invoked.
@@ -550,6 +553,27 @@ from EPSS or KEV input.
 
 ## Planned and assessed sources
 
+The five exact planned UAE registry identities are `ae-cert`,
+`uae-cyber-security-council`, `uae-cyber-security-council-nibras`, `desc-news`,
+and `desc-published-research`. All are `planned`, `enabled: false`, use
+`progress_contract: none`, and remain absent from enabled-source listings,
+generated orchestration policies, `DEFAULT_SOURCE_HANDLERS`, and production
+STIX/TAXII policies. No UAE collector, adapter, flow, schedule, deployment, or
+live network request is implemented.
+
+| Planned identity | Exact assessed host | Evidence-derived assessed listing paths | Automation state |
+| --- | --- | --- | --- |
+| `ae-cert` | `tdra.gov.ae` | None; no stable advisory/security-publication listing demonstrated | Approval pending; disabled; cadence unset |
+| `uae-cyber-security-council` | `csc.gov.ae` | `/en/stay-alert`, `/en/all-threats`, `/en/all-updates`; `/en/w/<safe-lowercase-publication-slug>` is a metadata-link family, not a request target | Approval required/pending; disabled; proposed minimum 6 hours only after approval |
+| `uae-cyber-security-council-nibras` | `csc.gov.ae` | None; navigation text did not demonstrate a stable path or extraction model | Manual/disabled only; cadence unset; B5-03 incomplete |
+| `desc-news` | `www.desc.gov.ae` | `/media-hub/news/`; no pagination or article-body path approved | Approval required/pending; disabled; proposed minimum 12 hours only after approval |
+| `desc-published-research` | `www.desc.gov.ae` | `/research-innovation/published-research/`; PDF, external-host, attachment, binary, and body requests prohibited | Approval required/pending; disabled; proposed minimum 6 hours only after approval |
+
+The immutable evidence and approval boundary is documented in
+[UAE Source Governance](uae-source-governance.md). An assessed URL match is not
+network approval. APR-05 remains `Need Approval`; its decision and decision date
+remain `Pending`; all UAE collectors remain disabled.
+
 The [Source Assessment Matrix](source-assessment-matrix.md) evaluates additional
 families from Censys, Anomali, VirusTotal / Google Threat Intelligence, Recorded
 Future, Mandiant / Google Security, and IBM X-Force. The
@@ -561,8 +585,11 @@ Only the eleven registry identities in the implemented-source table are
 implemented. No other Censys data, Anomali family, IBM/X-Force platform feature,
 VirusTotal capability, Recorded Future source, STIX/TAXII endpoint, commercial
 API, or UAE live source is implemented. Controlled classifier slugs such as
-`ae-cert`, `uae-cert`, and `uae-cyber-security-council` do not authorize live
-collection.
+`ae-cert`, the legacy classification alias `uae-cert`, and
+`uae-cyber-security-council` form a classification trust boundary only and do
+not authorize live collection. `uae-cert` is not a network source, and adding a
+planned registry identity does not automatically make it classification-trusted
+or collection-eligible.
 
 Any future integration requires a new explicit task, current authorization and
 licensing verification, an exact source definition, a bounded collector or

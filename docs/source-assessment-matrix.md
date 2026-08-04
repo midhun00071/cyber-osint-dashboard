@@ -16,6 +16,27 @@ Implemented sources include NVD, FIRST EPSS, CISA KEV, CERT-EU Security Advisori
 | `developer_reference_only` | Useful for architecture, API, protocol, or integration design, but not an intelligence feed. |
 | `exclude` | Out of project scope or unsafe for this dashboard. |
 
+## UAE source governance (C04A / B5-01)
+
+Assessment below creates planned, disabled governance identities only. It does
+not implement collection or provide legal approval. Exact paths and evidence
+references are recorded in [UAE Source Governance](uae-source-governance.md).
+
+| Source slug | Exact assessed host | Assessed listing paths | Outcome | Proposed minimum cadence after approval | Status |
+|---|---|---|---|---|---|
+| `ae-cert` | `tdra.gov.ae` | None | No stable advisory/security-publication listing demonstrated | Unset | `planned`; disabled; `Need Approval` |
+| `uae-cyber-security-council` | `csc.gov.ae` | `/en/stay-alert`; `/en/all-threats`; `/en/all-updates` | Listing metadata assessed; `/en/w/<safe-lowercase-publication-slug>` is a canonical metadata-link family only | 6 hours | `planned`; disabled; `Need Approval` |
+| `uae-cyber-security-council-nibras` | `csc.gov.ae` | None | Navigation text only; no stable path, listing, feed, record structure, or deterministic extraction | Unset | manual/disabled planning only; B5-03 incomplete |
+| `desc-news` | `www.desc.gov.ae` | `/media-hub/news/` | Titles, dates, and canonical links observed; no pagination or article requests approved | 12 hours | `planned`; disabled; `Need Approval` |
+| `desc-published-research` | `www.desc.gov.ae` | `/research-innovation/published-research/` | Metadata and links observed; PDF, external-host, attachment, binary, and body requests prohibited | 6 hours | `planned`; disabled; `Need Approval` |
+
+CSC robots evidence disallowed `/documents/`, `/o/`, `/c/`, `/combo`,
+`/cdn-cgi/`, and group paths. CSC property-rights language requires explicit
+permission before automated copying or republication. DESC terms require
+project-owner review before automated staging collection or republication. All
+UAE automated-access decisions remain false/pending and all UAE collectors
+remain disabled.
+
 ## Assessment Matrix
 
 | Vendor | Source family | Intelligence/content type | Public or gated | Structured or unstructured | Authentication requirement | Official API availability | RSS/feed availability | STIX/TAXII relevance | Report/PDF relevance | Expected entities/data | Likely update pattern | Legal/licensing/automation concern | Safe project ingestion approach | Project usefulness | Implementation priority | Final implementation decision |

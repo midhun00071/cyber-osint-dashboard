@@ -1,4 +1,4 @@
-"""Immutable developer-controlled registry for approved intelligence sources."""
+"""Immutable developer-controlled registry for current and planned sources."""
 
 from __future__ import annotations
 
@@ -122,7 +122,7 @@ def list_source_definitions_by_vendor(vendor: str) -> tuple[SourceDefinition, ..
 
 
 def source_allows_hostname(slug: str, hostname: str) -> bool:
-    """Return whether a source explicitly allows the exact hostname."""
+    """Match exact registry host metadata without granting network approval."""
 
     source = get_source_definition(slug)
     try:
@@ -133,7 +133,7 @@ def source_allows_hostname(slug: str, hostname: str) -> bool:
 
 
 def source_allows_publication_hostname(slug: str, hostname: str) -> bool:
-    """Return whether a source allows the exact canonical publication hostname."""
+    """Match publication-host metadata without granting network approval."""
 
     source = get_source_definition(slug)
     try:
@@ -580,6 +580,103 @@ _IMPLEMENTED_DEFINITIONS = (
     ),
 )
 
-_PLANNED_DEFINITIONS: tuple[SourceDefinition, ...] = ()
+_PLANNED_DEFINITIONS: tuple[SourceDefinition, ...] = (
+    SourceDefinition(
+        slug="ae-cert",
+        display_name="UAE Computer Emergency Response Team (aeCERT)",
+        vendor="TDRA / aeCERT",
+        source_family="Public security advisories",
+        content_family=ContentFamily.SECURITY_ADVISORY,
+        access_method=AccessMethod.MANUAL_CATALOGUE,
+        allowed_hosts=("tdra.gov.ae",),
+        authentication_required=False,
+        structured=False,
+        implementation_status=ImplementationStatus.PLANNED,
+        enabled=False,
+        progress_contract=ProgressContract.NONE,
+        rate_limit_notes=(
+            "No stable advisory or security-publication listing or assessed "
+            "request path; automation and cadence remain unapproved."
+        ),
+    ),
+    SourceDefinition(
+        slug="uae-cyber-security-council",
+        display_name="UAE Cyber Security Council Public Updates",
+        vendor="UAE Cyber Security Council",
+        source_family="Stay Alert and public update metadata",
+        content_family=ContentFamily.PUBLIC_OSINT_ADVISORY,
+        access_method=AccessMethod.PUBLIC_PUBLICATION,
+        allowed_hosts=("csc.gov.ae",),
+        authentication_required=False,
+        structured=False,
+        implementation_status=ImplementationStatus.PLANNED,
+        enabled=False,
+        progress_contract=ProgressContract.NONE,
+        base_url="https://csc.gov.ae/en/stay-alert",
+        rate_limit_notes=(
+            "Automation requires explicit permission; proposed minimum cadence "
+            "after approval is six hours."
+        ),
+    ),
+    SourceDefinition(
+        slug="uae-cyber-security-council-nibras",
+        display_name="UAE Cyber Security Council NibraS",
+        vendor="UAE Cyber Security Council",
+        source_family="NibraS navigation reference",
+        content_family=ContentFamily.THREAT_RESEARCH,
+        access_method=AccessMethod.MANUAL_CATALOGUE,
+        allowed_hosts=("csc.gov.ae",),
+        authentication_required=False,
+        structured=False,
+        implementation_status=ImplementationStatus.PLANNED,
+        enabled=False,
+        progress_contract=ProgressContract.NONE,
+        rate_limit_notes=(
+            "Navigation text only; no stable listing, record structure, feed, "
+            "deterministic extraction, or assessed request path."
+        ),
+    ),
+    SourceDefinition(
+        slug="desc-news",
+        display_name="DESC News",
+        vendor="Dubai Electronic Security Center (DESC)",
+        source_family="Public news metadata",
+        content_family=ContentFamily.PUBLIC_OSINT_ADVISORY,
+        access_method=AccessMethod.PUBLIC_PUBLICATION,
+        allowed_hosts=("www.desc.gov.ae",),
+        authentication_required=False,
+        structured=False,
+        implementation_status=ImplementationStatus.PLANNED,
+        enabled=False,
+        progress_contract=ProgressContract.NONE,
+        base_url="https://www.desc.gov.ae/media-hub/news/",
+        rate_limit_notes=(
+            "Automation requires project-owner terms review; proposed minimum "
+            "cadence after approval is twelve hours."
+        ),
+    ),
+    SourceDefinition(
+        slug="desc-published-research",
+        display_name="DESC Published Research",
+        vendor="Dubai Electronic Security Center (DESC)",
+        source_family="Published research metadata",
+        content_family=ContentFamily.THREAT_RESEARCH,
+        access_method=AccessMethod.PUBLIC_PUBLICATION,
+        allowed_hosts=("www.desc.gov.ae",),
+        authentication_required=False,
+        structured=False,
+        implementation_status=ImplementationStatus.PLANNED,
+        enabled=False,
+        progress_contract=ProgressContract.NONE,
+        base_url=(
+            "https://www.desc.gov.ae/research-innovation/published-research/"
+        ),
+        rate_limit_notes=(
+            "Metadata links only in future work; PDF, binary, attachment, body, "
+            "and external-host requests are prohibited. Proposed minimum cadence "
+            "after approval is six hours."
+        ),
+    ),
+)
 
 _REGISTRY = build_source_registry(_IMPLEMENTED_DEFINITIONS + _PLANNED_DEFINITIONS)

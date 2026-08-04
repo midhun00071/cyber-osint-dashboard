@@ -10,7 +10,10 @@ import unicodedata
 
 MAX_TEXT_CHARS = 8000
 
-APPROVED_UAE_SOURCE_SLUGS = frozenset(
+# This is a classification trust boundary, not a source registry or network
+# approval list. ``uae-cert`` is retained only as a legacy classification alias;
+# adding a planned registry source does not add it here automatically.
+UAE_CLASSIFICATION_SOURCE_SLUGS = frozenset(
     {
         "ae-cert",
         "uae-cert",
@@ -128,7 +131,7 @@ def classify_uae_relevance(
     """Classify direct UAE relevance using ordered conservative rules."""
 
     source_slugs = {normalize_source_slug(slug) for slug in fields.source_slugs}
-    if source_slugs & APPROVED_UAE_SOURCE_SLUGS:
+    if source_slugs & UAE_CLASSIFICATION_SOURCE_SLUGS:
         return _result(
             geographic_scope="uae",
             uae_relevance_status="confirmed",

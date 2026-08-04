@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 from pathlib import Path
 import re
 from urllib.parse import urlparse
@@ -9,6 +10,10 @@ from app.ingestion.source_registry import list_enabled_implemented_sources
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_SOURCES_PATH = PROJECT_ROOT / "docs" / "data-sources.md"
+UAE_GOVERNANCE_PATH = PROJECT_ROOT / "docs" / "uae-source-governance.md"
+SOURCE_INTEGRATION_POLICY_PATH = PROJECT_ROOT / "docs" / "source-integration-policy.md"
+SOURCE_ASSESSMENT_MATRIX_PATH = PROJECT_ROOT / "docs" / "source-assessment-matrix.md"
+APPROVAL_REGISTER_PATH = PROJECT_ROOT / "docs" / "b0-05-approval-register.csv"
 
 
 def document_text() -> str:
@@ -261,3 +266,107 @@ def test_c03a_taxii_eligibility_is_documented_without_activation() -> None:
         "No live TAXII request was performed",
     ):
         assert phrase in document
+
+
+def test_c04a_uae_governance_documents_exact_disabled_boundaries() -> None:
+    assert UAE_GOVERNANCE_PATH.is_file()
+    governance = " ".join(
+        UAE_GOVERNANCE_PATH.read_text(encoding="utf-8").split()
+    )
+
+    for phrase in (
+        "C04A / B5-01",
+        "37a8906e0f65f2391fbbbe42c2980bdbb6c945e3",
+        "4 August 2026",
+        "`ae-cert`",
+        "`uae-cyber-security-council`",
+        "`uae-cyber-security-council-nibras`",
+        "`desc-news`",
+        "`desc-published-research`",
+        "`tdra.gov.ae`",
+        "`csc.gov.ae`",
+        "`www.desc.gov.ae`",
+        "`https://csc.gov.ae/en/stay-alert`",
+        "`https://csc.gov.ae/en/all-threats`",
+        "`https://csc.gov.ae/en/all-updates`",
+        "`https://www.desc.gov.ae/media-hub/news/`",
+        "`https://www.desc.gov.ae/research-innovation/published-research/`",
+        "automated_access_approved: false",
+        "All five sources",
+        "approval state `pending`",
+        "No live source request was made",
+        "This does not complete B5-03",
+    ):
+        assert phrase in governance
+
+    for bundle, digest in (
+        (
+            "c04-source-discovery-20260804-104617.zip",
+            "8993FBE95288EBF8019942CFCA8D474E72D05D9D61AF0B5C1229BE34EA7EAA9B",
+        ),
+        (
+            "c04-source-discovery-pass2-20260804-105156.zip",
+            "3FBCD687DA0D6B9A599C8C3E2C7E4E0A976550F6371370E2498876C31174B9F3",
+        ),
+        (
+            "c04-source-discovery-pass3-20260804-105959.zip",
+            "69CAE79E9D10E9CA54A2683ACF51E13CBAE8AB5FFC1FF5B59E21958BFD9C3BFB",
+        ),
+    ):
+        assert bundle in governance
+        assert digest in governance
+
+    assert not re.search(r"(?i)[a-z]:\\users\\[^\\\s]+", governance)
+
+
+def test_c04a_policy_matrix_and_data_sources_consistently_deny_activation() -> None:
+    documents = (
+        normalized_document(),
+        " ".join(SOURCE_INTEGRATION_POLICY_PATH.read_text(encoding="utf-8").split()),
+        " ".join(SOURCE_ASSESSMENT_MATRIX_PATH.read_text(encoding="utf-8").split()),
+    )
+
+    for document in documents:
+        for slug in (
+            "ae-cert",
+            "uae-cyber-security-council",
+            "uae-cyber-security-council-nibras",
+            "desc-news",
+            "desc-published-research",
+        ):
+            assert f"`{slug}`" in document
+        assert "all UAE collectors remain disabled" in document
+
+    data_sources = documents[0]
+    assert "`planned`, `enabled: false`" in data_sources
+    assert "`uae-cert` is not a network source" in data_sources
+    assert "does not automatically make it classification-trusted" in data_sources
+    assert "APR-05 remains `Need Approval`" in data_sources
+    assert "decision date remain `Pending`" in data_sources
+
+
+def test_apr_05_remains_pending_with_exact_evidence_references() -> None:
+    with APPROVAL_REGISTER_PATH.open(encoding="utf-8", newline="") as handle:
+        rows = {row["Approval ID"]: row for row in csv.DictReader(handle)}
+
+    apr_05 = rows["APR-05"]
+    assert apr_05["Current Status"] == "Need Approval"
+    assert apr_05["Decision"] == "Pending"
+    assert apr_05["Decision Date"] == "Pending"
+    assert apr_05["Review or Expiry Date"] == "Pending"
+    assert "all uae collectors remain disabled" in (
+        apr_05["What Remains Disabled"].casefold()
+    )
+    assert "must not be interpreted as legal approval" in apr_05["Notes"]
+
+    evidence = apr_05["Evidence Reference"]
+    for expected in (
+        "c04-source-discovery-20260804-104617.zip",
+        "8993FBE95288EBF8019942CFCA8D474E72D05D9D61AF0B5C1229BE34EA7EAA9B",
+        "c04-source-discovery-pass2-20260804-105156.zip",
+        "3FBCD687DA0D6B9A599C8C3E2C7E4E0A976550F6371370E2498876C31174B9F3",
+        "c04-source-discovery-pass3-20260804-105959.zip",
+        "69CAE79E9D10E9CA54A2683ACF51E13CBAE8AB5FFC1FF5B59E21958BFD9C3BFB",
+    ):
+        assert expected in evidence
+    assert not re.search(r"(?i)[a-z]:\\users\\", evidence)
