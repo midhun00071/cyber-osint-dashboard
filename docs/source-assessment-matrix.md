@@ -18,8 +18,9 @@ Implemented sources include NVD, FIRST EPSS, CISA KEV, CERT-EU Security Advisori
 
 ## UAE source governance (C04A / B5-01)
 
-Assessment below creates planned, disabled governance identities only. It does
-not implement collection or provide legal approval. Exact paths and evidence
+Assessment below records three planned identities and two
+implemented-but-disabled DESC metadata collectors. It does not provide legal or
+automation approval. Exact paths and evidence
 references are recorded in [UAE Source Governance](uae-source-governance.md).
 
 | Source slug | Exact assessed host | Assessed listing paths | Outcome | Proposed minimum cadence after approval | Status |
@@ -27,8 +28,8 @@ references are recorded in [UAE Source Governance](uae-source-governance.md).
 | `ae-cert` | `tdra.gov.ae` | None | No stable advisory/security-publication listing demonstrated | Unset | `planned`; disabled; `Need Approval` |
 | `uae-cyber-security-council` | `csc.gov.ae` | `/en/stay-alert`; `/en/all-threats`; `/en/all-updates` | Listing metadata assessed; `/en/w/<safe-lowercase-publication-slug>` is a canonical metadata-link family only | 6 hours | `planned`; disabled; `Need Approval` |
 | `uae-cyber-security-council-nibras` | `csc.gov.ae` | None | Navigation text only; no stable path, listing, feed, record structure, or deterministic extraction | Unset | manual/disabled planning only; B5-03 incomplete |
-| `desc-news` | `www.desc.gov.ae` | `/media-hub/news/` | Titles, dates, and canonical links observed; no pagination or article requests approved | 12 hours | `planned`; disabled; `Need Approval` |
-| `desc-published-research` | `www.desc.gov.ae` | `/research-innovation/published-research/` | Metadata and links observed; PDF, external-host, attachment, binary, and body requests prohibited | 6 hours | `planned`; disabled; `Need Approval` |
+| `desc-news` | `www.desc.gov.ae` | `/media-hub/news/` | B5-04 fixture-tested metadata collector complete; no pagination or article requests | 12 hours | `implemented`; disabled; `Need Approval`; no live coverage claim |
+| `desc-published-research` | `www.desc.gov.ae` | `/research-innovation/published-research/` | B5-04 fixture-tested metadata collector complete; allow-listed landing links are metadata only; direct PDFs rejected | 6 hours | `implemented`; disabled; `Need Approval`; no live coverage claim |
 
 CSC robots evidence disallowed `/documents/`, `/o/`, `/c/`, `/combo`,
 `/cdn-cgi/`, and group paths. CSC property-rights language requires explicit

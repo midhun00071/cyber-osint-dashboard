@@ -65,9 +65,8 @@ PLANNED_PUBLIC_SLUGS = {
     "ae-cert",
     "uae-cyber-security-council",
     "uae-cyber-security-council-nibras",
-    "desc-news",
-    "desc-published-research",
 }
+UAE_SOURCE_SLUGS = PLANNED_PUBLIC_SLUGS | {"desc-news", "desc-published-research"}
 
 
 def valid_definition(slug: str = "example-source") -> SourceDefinition:
@@ -171,7 +170,7 @@ def test_planned_sources_remain_disabled() -> None:
         assert sources[slug].enabled is False
 
 
-def test_exact_uae_planned_source_registry_contract() -> None:
+def test_exact_uae_source_registry_contract() -> None:
     expected = {
         "ae-cert": (
             ContentFamily.SECURITY_ADVISORY,
@@ -205,22 +204,42 @@ def test_exact_uae_planned_source_registry_contract() -> None:
         assert source.content_family is content_family
         assert source.allowed_hosts == hosts
         assert source.base_url == base_url
-        assert source.implementation_status is ImplementationStatus.PLANNED
         assert source.enabled is False
-        assert source.progress_contract is ProgressContract.NONE
         assert source.authentication_required is False
+        if slug.startswith("desc-"):
+            assert source.implementation_status is ImplementationStatus.IMPLEMENTED
+            assert source.progress_contract is ProgressContract.WATERMARK
+            assert source.source_type == "html"
+        else:
+            assert source.implementation_status is ImplementationStatus.PLANNED
+            assert source.progress_contract is ProgressContract.NONE
 
     assert "uae-cert" not in {source.slug for source in list_source_definitions()}
 
 
-def test_planned_uae_sources_do_not_activate_any_production_policy() -> None:
+def test_uae_sources_do_not_activate_any_production_policy() -> None:
     enabled_slugs = {source.slug for source in list_enabled_implemented_sources()}
 
-    assert PLANNED_PUBLIC_SLUGS.isdisjoint(enabled_slugs)
-    assert PLANNED_PUBLIC_SLUGS.isdisjoint(SOURCE_POLICIES)
-    assert PLANNED_PUBLIC_SLUGS.isdisjoint(DEFAULT_SOURCE_HANDLERS)
-    assert PLANNED_PUBLIC_SLUGS.isdisjoint(PRODUCTION_STIX_SOURCE_POLICIES)
-    assert PLANNED_PUBLIC_SLUGS.isdisjoint(PRODUCTION_TAXII_COLLECTION_POLICIES)
+    assert UAE_SOURCE_SLUGS.isdisjoint(enabled_slugs)
+    assert UAE_SOURCE_SLUGS.isdisjoint(SOURCE_POLICIES)
+    assert UAE_SOURCE_SLUGS.isdisjoint(DEFAULT_SOURCE_HANDLERS)
+    assert UAE_SOURCE_SLUGS.isdisjoint(PRODUCTION_STIX_SOURCE_POLICIES)
+    assert UAE_SOURCE_SLUGS.isdisjoint(PRODUCTION_TAXII_COLLECTION_POLICIES)
+
+
+def test_desc_publication_registry_contract_is_exact() -> None:
+    news = get_source_definition("desc-news")
+    research = get_source_definition("desc-published-research")
+
+    assert news.canonical_publication_hosts == ("www.desc.gov.ae",)
+    assert research.canonical_publication_hosts == (
+        "ieeexplore.ieee.org",
+        "www.sciencedirect.com",
+        "dl.acm.org",
+        "www.researchgate.net",
+    )
+    assert news.access_method is research.access_method is AccessMethod.PUBLIC_PUBLICATION
+    assert news.structured is research.structured is False
 
 
 @pytest.mark.parametrize(
@@ -338,8 +357,8 @@ def test_exact_frozen_progress_contract_mapping() -> None:
         "ae-cert": ProgressContract.NONE,
         "uae-cyber-security-council": ProgressContract.NONE,
         "uae-cyber-security-council-nibras": ProgressContract.NONE,
-        "desc-news": ProgressContract.NONE,
-        "desc-published-research": ProgressContract.NONE,
+        "desc-news": ProgressContract.WATERMARK,
+        "desc-published-research": ProgressContract.WATERMARK,
     }
 
     assert {

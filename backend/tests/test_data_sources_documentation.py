@@ -13,6 +13,7 @@ DATA_SOURCES_PATH = PROJECT_ROOT / "docs" / "data-sources.md"
 UAE_GOVERNANCE_PATH = PROJECT_ROOT / "docs" / "uae-source-governance.md"
 SOURCE_INTEGRATION_POLICY_PATH = PROJECT_ROOT / "docs" / "source-integration-policy.md"
 SOURCE_ASSESSMENT_MATRIX_PATH = PROJECT_ROOT / "docs" / "source-assessment-matrix.md"
+DESC_PUBLICATIONS_PATH = PROJECT_ROOT / "docs" / "desc-publications.md"
 APPROVAL_REGISTER_PATH = PROJECT_ROOT / "docs" / "b0-05-approval-register.csv"
 
 
@@ -213,7 +214,7 @@ def test_assessed_sources_are_separated_from_implemented_support() -> None:
 
     assert "## Planned and assessed sources" in document
     assert "Assessment is not implementation" in document
-    assert "Only the eleven registry identities" in document
+    assert "Thirteen registry identities are implemented" in document
     assert "No other Censys data" in document
     assert "Recorded Future source" in document
     assert "Scheduling remains out of scope" in document
@@ -338,11 +339,32 @@ def test_c04a_policy_matrix_and_data_sources_consistently_deny_activation() -> N
         assert "all UAE collectors remain disabled" in document
 
     data_sources = documents[0]
-    assert "`planned`, `enabled: false`" in data_sources
+    assert "three planned C04A UAE definitions" in data_sources
+    assert "two B5-04 DESC definitions" in data_sources
     assert "`uae-cert` is not a network source" in data_sources
     assert "does not automatically make it classification-trusted" in data_sources
     assert "APR-05 remains `Need Approval`" in data_sources
     assert "decision date remain `Pending`" in data_sources
+
+
+def test_b5_04_desc_documentation_is_metadata_only_and_disabled() -> None:
+    assert DESC_PUBLICATIONS_PATH.is_file()
+    document = " ".join(DESC_PUBLICATIONS_PATH.read_text(encoding="utf-8").split())
+    for phrase in (
+        "`desc-news`",
+        "`desc-published-research`",
+        "`https://www.desc.gov.ae/media-hub/news/`",
+        "`https://www.desc.gov.ae/research-innovation/published-research/`",
+        "`enabled: false`",
+        "No live DESC request was made",
+        "no claim of current live DESC coverage",
+        "no pagination",
+        "Article bodies are never fetched",
+        "They are never request targets",
+        "Direct-PDF cards are known skipped entries",
+        "B5-02 and B5-03 remain deferred",
+    ):
+        assert phrase in document
 
 
 def test_apr_05_remains_pending_with_exact_evidence_references() -> None:

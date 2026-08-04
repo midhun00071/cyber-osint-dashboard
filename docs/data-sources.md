@@ -55,10 +55,11 @@ and reviewing an approved collector.
 tests exist for the registered workflow. `enabled: true` allows that specific
 workflow to create or validate its `IntelligenceSource` row. Neither field
 starts ingestion or broadens the registered endpoint, content family, or access
-method. The current registry also has five C04A UAE definitions with
-`implementation_status: planned` and `enabled: false`. They are governance
-metadata only, remain outside enabled-source and generated orchestration
-policies, and do not create an approved request path. Other future and excluded
+method. The current registry has three planned C04A UAE definitions and two
+B5-04 DESC definitions with `implementation_status: implemented` and
+`enabled: false`. All five remain outside enabled-source and generated
+orchestration policies and do not create an approved automatic request path.
+Other future and excluded
 vendors are recorded separately in the assessment documents.
 
 All ingestion and enrichment is manual-only and explicitly operator invoked.
@@ -551,23 +552,36 @@ from EPSS or KEV input.
   database activity. The caller must discard it. Rollback failure is never
   silently ignored and cannot advance progress, checkpoints, or success evidence.
 
+## Implemented but disabled DESC metadata collectors
+
+`desc-news` and `desc-published-research` are fixture-tested B5-04 metadata
+collectors. They use source type `html`, access method `public_publication`, and
+watermark progress, but remain `enabled: false`. Their only fixed listing URLs
+are `https://www.desc.gov.ae/media-hub/news/` and
+`https://www.desc.gov.ae/research-innovation/published-research/`. Approval is
+pending, no live request was made, and neither handler is bound or scheduled.
+Pagination, news articles, PDFs, attachments, images, and external publication
+pages are never requested. Allow-listed research landing links are stored as
+metadata identities only; direct PDF links are rejected. See
+[DESC Publication Metadata Collectors](desc-publications.md).
+
 ## Planned and assessed sources
 
-The five exact planned UAE registry identities are `ae-cert`,
-`uae-cyber-security-council`, `uae-cyber-security-council-nibras`, `desc-news`,
-and `desc-published-research`. All are `planned`, `enabled: false`, use
-`progress_contract: none`, and remain absent from enabled-source listings,
+The three planned UAE registry identities are `ae-cert`,
+`uae-cyber-security-council`, and `uae-cyber-security-council-nibras`. The two
+DESC identities are implemented but disabled as described above. All five
+remain absent from enabled-source listings,
 generated orchestration policies, `DEFAULT_SOURCE_HANDLERS`, and production
-STIX/TAXII policies. No UAE collector, adapter, flow, schedule, deployment, or
-live network request is implemented.
+STIX/TAXII policies. No UAE collector is activated; no UAE schedule, deployment,
+or live network request exists.
 
-| Planned identity | Exact assessed host | Evidence-derived assessed listing paths | Automation state |
+| UAE identity | Exact assessed host | Evidence-derived assessed listing paths | Automation state |
 | --- | --- | --- | --- |
 | `ae-cert` | `tdra.gov.ae` | None; no stable advisory/security-publication listing demonstrated | Approval pending; disabled; cadence unset |
 | `uae-cyber-security-council` | `csc.gov.ae` | `/en/stay-alert`, `/en/all-threats`, `/en/all-updates`; `/en/w/<safe-lowercase-publication-slug>` is a metadata-link family, not a request target | Approval required/pending; disabled; proposed minimum 6 hours only after approval |
 | `uae-cyber-security-council-nibras` | `csc.gov.ae` | None; navigation text did not demonstrate a stable path or extraction model | Manual/disabled only; cadence unset; B5-03 incomplete |
-| `desc-news` | `www.desc.gov.ae` | `/media-hub/news/`; no pagination or article-body path approved | Approval required/pending; disabled; proposed minimum 12 hours only after approval |
-| `desc-published-research` | `www.desc.gov.ae` | `/research-innovation/published-research/`; PDF, external-host, attachment, binary, and body requests prohibited | Approval required/pending; disabled; proposed minimum 6 hours only after approval |
+| `desc-news` | `www.desc.gov.ae` | `/media-hub/news/`; no pagination or article-body path approved | Implementation complete; fixture-tested; approval pending; disabled |
+| `desc-published-research` | `www.desc.gov.ae` | `/research-innovation/published-research/`; PDF, attachment, binary, body, and external-page requests prohibited | Implementation complete; fixture-tested; approval pending; disabled |
 
 The immutable evidence and approval boundary is documented in
 [UAE Source Governance](uae-source-governance.md). An assessed URL match is not
@@ -581,8 +595,9 @@ Future, Mandiant / Google Security, and IBM X-Force. The
 approval gate. Assessment is not implementation, and names in those documents
 must not be treated as enabled collection support.
 
-Only the eleven registry identities in the implemented-source table are
-implemented. No other Censys data, Anomali family, IBM/X-Force platform feature,
+Thirteen registry identities are implemented: the eleven enabled identities in
+the implemented-source table and the two disabled DESC identities. No other
+Censys data, Anomali family, IBM/X-Force platform feature,
 VirusTotal capability, Recorded Future source, STIX/TAXII endpoint, commercial
 API, or UAE live source is implemented. Controlled classifier slugs such as
 `ae-cert`, the legacy classification alias `uae-cert`, and

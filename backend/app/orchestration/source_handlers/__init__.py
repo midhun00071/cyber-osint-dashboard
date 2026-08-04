@@ -8,6 +8,12 @@ from types import MappingProxyType
 from app.orchestration.contracts import SourceHandler
 from app.orchestration.source_handlers.cisa_kev import CisaKevSourceHandler
 from app.orchestration.source_handlers.common import SessionFactory
+from app.orchestration.source_handlers.desc_publications import (
+    DESC_NEWS_SOURCE_SLUG,
+    DESC_PUBLICATION_SOURCE_SLUGS,
+    DESC_RESEARCH_SOURCE_SLUG,
+    DescPublicationSourceHandler,
+)
 from app.orchestration.source_handlers.epss import EpssSourceHandler
 from app.orchestration.source_handlers.nvd import NvdSourceHandler
 from app.orchestration.source_handlers.publications import (
@@ -66,6 +72,10 @@ def build_c02_source_handlers(
 
 __all__ = [
     "C02_BOUND_SOURCE_SLUGS",
+    "DESC_NEWS_SOURCE_SLUG",
+    "DESC_PUBLICATION_SOURCE_SLUGS",
+    "DESC_RESEARCH_SOURCE_SLUG",
+    "DescPublicationSourceHandler",
     "PRODUCTION_TAXII_LICENCE_REQUIRED",
     "StixTaxiiSourceHandler",
     "build_c02_source_handlers",

@@ -247,7 +247,7 @@ class PublicationPipeline:
         """Create or validate a registry-approved publication source."""
 
         try:
-            source_definition = require_publication_source(source_slug)
+            source_definition = require_implemented_publication_source(source_slug)
             source, failure = self._get_or_create_source(source_definition)
             if failure is not None:
                 raise PublicationPersistenceError(failure)
@@ -448,7 +448,7 @@ class PublicationPipeline:
                 name=source_definition.display_name,
                 source_type=source_definition.source_type,
                 base_url=expected_base_url,
-                is_enabled=True,
+                is_enabled=source_definition.enabled,
                 rate_limit_notes=source_definition.rate_limit_notes,
                 checkpoint_value=None,
             )
@@ -460,6 +460,7 @@ class PublicationPipeline:
             source.name == source_definition.display_name
             and source.source_type == source_definition.source_type
             and source.base_url == expected_base_url
+            and source.is_enabled is source_definition.enabled
         )
         if not expected:
             return (
@@ -574,7 +575,16 @@ class PublicationPipeline:
 
 
 def require_publication_source(source_slug: str) -> SourceDefinition:
-    """Return a source definition only when it is approved for publications."""
+    """Return an operationally enabled publication source definition."""
+
+    source = require_implemented_publication_source(source_slug)
+    if source.enabled is not True:
+        raise PublicationSourceError("The publication source is not enabled.")
+    return source
+
+
+def require_implemented_publication_source(source_slug: str) -> SourceDefinition:
+    """Return an implemented publication source, independent of activation."""
 
     try:
         source = get_source_definition(source_slug)
@@ -582,8 +592,6 @@ def require_publication_source(source_slug: str) -> SourceDefinition:
         raise PublicationSourceError("The publication source is not registered.") from exc
     if source.implementation_status is not ImplementationStatus.IMPLEMENTED:
         raise PublicationSourceError("The publication source is not implemented.")
-    if source.enabled is not True:
-        raise PublicationSourceError("The publication source is not enabled.")
     if source.access_method not in PUBLICATION_ACCESS_METHODS:
         raise PublicationSourceError("The source access method is not publication-compatible.")
     if source.content_family not in PUBLICATION_CONTENT_FAMILIES:
@@ -605,7 +613,7 @@ def publication_item_type_for_content_family(content_family: ContentFamily) -> s
 def normalize_publication_candidate(candidate: PublicationCandidate) -> NormalizedPublication:
     """Validate one already-parsed publication candidate."""
 
-    source = require_publication_source(candidate.source_slug)
+    source = require_implemented_publication_source(candidate.source_slug)
     item_type = publication_item_type_for_content_family(source.content_family)
     external_id = _required_text(
         candidate.source_external_id,
@@ -660,7 +668,7 @@ def normalize_publication_candidate(candidate: PublicationCandidate) -> Normaliz
 def canonicalize_publication_url(source_slug: str, value: object) -> str:
     """Canonicalize a publication URL using the exact source registry host allow-list."""
 
-    require_publication_source(source_slug)
+    require_implemented_publication_source(source_slug)
     if not isinstance(value, str):
         raise PublicationCandidateError("The publication URL is required.")
     raw_url = value.strip(" ")

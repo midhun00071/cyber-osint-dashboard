@@ -27,10 +27,12 @@ The immutable backend policy separates three facts:
 3. whether automated network access is approved.
 
 A boundary match is not permission to issue a request. All five sources have
-`automated_access_approved: false` and approval state `pending`. Every registry
-definition is `planned`, `enabled: false`, and absent from enabled-source,
-orchestration, handler, STIX, and TAXII production policies. B5-01 implements no
-collector, adapter, source handler, flow, schedule, deployment, or live request.
+`automated_access_approved: false` and approval state `pending`. At the B5-01
+checkpoint every definition was `planned` and `enabled: false`; B5-01 itself
+implemented no collector or live request. B5-04 now marks only the two DESC
+identities `implemented` while keeping them `enabled: false` and absent from
+enabled-source, orchestration, default-handler, STIX, TAXII, schedule, and
+deployment policies. No live request was made.
 
 ## Assessed source boundaries
 
@@ -60,7 +62,8 @@ collector, adapter, source handler, flow, schedule, deployment, or live request.
 - Published property-rights language requires explicit permission before
   automated copying or republication.
 - Proposed minimum cadence after approval: six hours.
-- Current state: planned, disabled, approval required and pending.
+- Current state: planned, disabled, approval required and pending. This does not
+  complete B5-02.
 
 ### `uae-cyber-security-council-nibras`
 
@@ -83,7 +86,8 @@ collector, adapter, source handler, flow, schedule, deployment, or live request.
 - DESC terms require project-owner review before automated staging collection
   or republication.
 - Proposed minimum cadence after approval: twelve hours.
-- Current state: planned, disabled, approval required and pending.
+- Current state: B5-04 implementation complete and fixture-tested; disabled,
+  approval required and pending; no live request or coverage claim.
 
 ### `desc-published-research`
 
@@ -96,15 +100,18 @@ collector, adapter, source handler, flow, schedule, deployment, or live request.
 - DESC terms require project-owner review before automated staging collection
   or republication.
 - Proposed minimum cadence after approval: six hours.
-- Current state: planned, disabled, approval required and pending.
+- Current state: B5-04 implementation complete and fixture-tested; disabled,
+  approval required and pending. Allow-listed research landing links are stored
+  as metadata identities only; direct PDF links are rejected and never
+  retrieved. No live request or coverage claim is made.
 
 ## Permitted future metadata and prohibited data
 
-After a separate approved implementation task, permitted fields may be limited
-to bounded plain-text title, publication date/time when present, safe summary
-when present in listing metadata, canonical same-host metadata URL, source slug,
-source attribution, and bounded safe listing categories or tags. Future link
-storage must preserve the distinction between a metadata identity and a request
+B5-04 permits the DESC collectors to retain bounded plain-text title,
+publication date/time when exactly present, safe listing summary, canonical
+news URL or allow-listed research landing-link identity, source slug, source
+attribution, and bounded safe categories. B5-02 and B5-03 remain deferred.
+Link storage preserves the distinction between metadata identity and request
 target.
 
 The following remain prohibited: article or report bodies, raw HTML or vendor
@@ -134,5 +141,6 @@ or page-structure change requires reassessment before activation.
 - No robots or terms finding is legal advice or project-specific permission.
 - No source has an approved automation path today.
 - No live source request was made by C04A / B5-01.
-- No data coverage, freshness, collector readiness, B5-02, B5-03, or B5-04
-  completion may be claimed from these governance definitions.
+- No live data coverage or freshness, and no B5-02 or B5-03 completion, may be
+  claimed. B5-04 readiness is limited to implemented, fixture-tested,
+  operationally disabled metadata collection.

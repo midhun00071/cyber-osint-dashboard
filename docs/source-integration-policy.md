@@ -8,9 +8,10 @@ This is planning documentation only. It does not approve new live ingestion, cre
 
 The five C04A UAE identities are governed by
 [UAE Source Governance](uae-source-governance.md). Their exact evidence-derived
-host/path boundaries are not network approvals: every UAE definition remains
-`planned`, `enabled: false`, automation approval remains `pending`, and all UAE
-collectors remain disabled.
+host/path boundaries are not network approvals: three definitions remain
+`planned`; the two B5-04 DESC collectors are `implemented`; every UAE source is
+`enabled: false`, automation approval remains `pending`, and all UAE collectors
+remain disabled.
 
 ## Approved Integration Classes
 
@@ -218,8 +219,8 @@ For `ae-cert`, `uae-cyber-security-council`,
 `uae-cyber-security-council-nibras`, `desc-news`, and
 `desc-published-research`, APR-05 requires an explicit source-specific decision
 before any automated request. Assessed listing paths may be used only as design
-evidence. CSC `/en/w/<safe-lowercase-publication-slug>` pages and future DESC
-article/research links are canonical metadata identities, not approved request
+evidence. CSC `/en/w/<safe-lowercase-publication-slug>` pages and DESC
+article links and allow-listed DESC research landing links are canonical metadata identities, not approved request
 targets. PDF, attachment, binary, report-body, article-body, external-host,
 arbitrary URL, API, form, search, and callback requests remain prohibited.
 

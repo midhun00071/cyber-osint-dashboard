@@ -80,7 +80,7 @@ class SourceDefinition:
 
 _SLUG_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _HOST_LABEL_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
-_SOURCE_TYPE_VALUES = {"api", "rss", "csv", "json"}
+_SOURCE_TYPE_VALUES = {"api", "rss", "csv", "json", "html"}
 
 
 def get_source_definition(slug: str) -> SourceDefinition:
@@ -580,7 +580,7 @@ _IMPLEMENTED_DEFINITIONS = (
     ),
 )
 
-_PLANNED_DEFINITIONS: tuple[SourceDefinition, ...] = (
+_DISABLED_DEFINITIONS: tuple[SourceDefinition, ...] = (
     SourceDefinition(
         slug="ae-cert",
         display_name="UAE Computer Emergency Response Team (aeCERT)",
@@ -646,13 +646,15 @@ _PLANNED_DEFINITIONS: tuple[SourceDefinition, ...] = (
         allowed_hosts=("www.desc.gov.ae",),
         authentication_required=False,
         structured=False,
-        implementation_status=ImplementationStatus.PLANNED,
+        implementation_status=ImplementationStatus.IMPLEMENTED,
         enabled=False,
-        progress_contract=ProgressContract.NONE,
+        progress_contract=ProgressContract.WATERMARK,
+        source_type="html",
         base_url="https://www.desc.gov.ae/media-hub/news/",
+        canonical_publication_hosts=("www.desc.gov.ae",),
         rate_limit_notes=(
-            "Automation requires project-owner terms review; proposed minimum "
-            "cadence after approval is twelve hours."
+            "Fixture-tested metadata collector implemented; automated access remains "
+            "disabled pending project-owner approval."
         ),
     ),
     SourceDefinition(
@@ -665,18 +667,24 @@ _PLANNED_DEFINITIONS: tuple[SourceDefinition, ...] = (
         allowed_hosts=("www.desc.gov.ae",),
         authentication_required=False,
         structured=False,
-        implementation_status=ImplementationStatus.PLANNED,
+        implementation_status=ImplementationStatus.IMPLEMENTED,
         enabled=False,
-        progress_contract=ProgressContract.NONE,
+        progress_contract=ProgressContract.WATERMARK,
+        source_type="html",
         base_url=(
             "https://www.desc.gov.ae/research-innovation/published-research/"
         ),
+        canonical_publication_hosts=(
+            "ieeexplore.ieee.org",
+            "www.sciencedirect.com",
+            "dl.acm.org",
+            "www.researchgate.net",
+        ),
         rate_limit_notes=(
-            "Metadata links only in future work; PDF, binary, attachment, body, "
-            "and external-host requests are prohibited. Proposed minimum cadence "
-            "after approval is six hours."
+            "Fixture-tested metadata collector implemented; external landing links are "
+            "metadata identities only and automated access remains disabled."
         ),
     ),
 )
 
-_REGISTRY = build_source_registry(_IMPLEMENTED_DEFINITIONS + _PLANNED_DEFINITIONS)
+_REGISTRY = build_source_registry(_IMPLEMENTED_DEFINITIONS + _DISABLED_DEFINITIONS)

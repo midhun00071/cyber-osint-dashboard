@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta, timezone, tzinfo
 from decimal import Decimal
+from hashlib import sha256
 import socket
 from typing import Any
 
@@ -31,6 +33,8 @@ from app.ingestion.publication_pipeline import (
     canonicalize_publication_url,
     normalize_publication_candidate,
     publication_item_type_for_content_family,
+    require_implemented_publication_source,
+    require_publication_source,
     safe_publication_external_id_for_error,
 )
 from app.ingestion.source_registry import (
@@ -39,6 +43,7 @@ from app.ingestion.source_registry import (
     ImplementationStatus,
     ProgressContract,
     SourceDefinition,
+    get_source_definition,
 )
 from app.ingestion.services.article_identity_service import (
     ARTICLE_TITLE_IDENTIFIER_NAMESPACE,
@@ -460,6 +465,79 @@ def test_similar_noncredential_query_keys_remain_allowed() -> None:
 def test_non_publication_or_unimplemented_sources_fail_closed(source_slug: str) -> None:
     with pytest.raises(PublicationSourceError):
         normalize_publication_candidate(candidate(source_slug=source_slug))
+
+
+@pytest.mark.parametrize(
+    ("source_slug", "external_id", "title", "url", "payload"),
+    [
+        (
+            "desc-news",
+            "desc-news:safe-news",
+            "Safe DESC News",
+            "https://www.desc.gov.ae/safe-news/",
+            {"category": "DESC News"},
+        ),
+        (
+            "desc-published-research",
+            "desc-published-research:"
+            + sha256(b"https://dl.acm.org/doi/10.1145/123").hexdigest(),
+            "Safe DESC Research",
+            "https://dl.acm.org/doi/10.1145/123",
+            {
+                "publication_statement": "Journal statement",
+                "publishers": "DESC",
+                "publication_host": "dl.acm.org",
+                "category": "DESC Published Research",
+            },
+        ),
+    ],
+)
+def test_implemented_disabled_desc_source_normalizes_and_persists(
+    source_slug: str,
+    external_id: str,
+    title: str,
+    url: str,
+    payload: dict[str, object],
+) -> None:
+    record = candidate(
+        source_slug=source_slug,
+        source_external_id=external_id,
+        title=title,
+        url=url,
+        payload=payload,
+    )
+
+    normalized = normalize_publication_candidate(record)
+    session = FakeSession()
+    result = PublicationPipeline(session).persist(record, observed_at=OBSERVED_AT)
+
+    assert normalized.source.enabled is False
+    assert result.outcome == "created"
+    assert session.sources[0].is_enabled is False
+    with pytest.raises(PublicationSourceError, match="not enabled"):
+        require_publication_source(source_slug)
+    assert require_implemented_publication_source(source_slug).slug == source_slug
+
+
+@pytest.mark.parametrize("source_slug", ["ae-cert", "uae-cyber-security-council", "missing-source"])
+def test_implemented_source_helper_rejects_planned_and_unknown_sources(source_slug: str) -> None:
+    with pytest.raises(PublicationSourceError):
+        require_implemented_publication_source(source_slug)
+
+
+def test_implemented_source_helper_rejects_excluded_source(monkeypatch: pytest.MonkeyPatch) -> None:
+    excluded = replace(
+        threat_source("excluded-source"),
+        implementation_status=ImplementationStatus.EXCLUDED,
+        enabled=False,
+    )
+    monkeypatch.setattr(
+        publication_pipeline,
+        "get_source_definition",
+        lambda slug: excluded if slug == "excluded-source" else get_source_definition(slug),
+    )
+    with pytest.raises(PublicationSourceError):
+        require_implemented_publication_source("excluded-source")
 
 
 def test_google_threat_publication_source_rejects_wrong_publication_host() -> None:
