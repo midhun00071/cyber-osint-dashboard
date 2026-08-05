@@ -1,4 +1,4 @@
-import { API_BASE_URL } from "@/services/apiClient";
+import { apiFetch } from "@/services/apiClient";
 import type {
   ArticleCategory,
   ArticleDetailResult,
@@ -134,7 +134,7 @@ function buildArticleUrl(filters: ArticleFilters): string {
   setTrimmedParam(params, "geographic_scope", filters.geographic_scope);
   setTrimmedParam(params, "uae_relevance_status", filters.uae_relevance_status);
 
-  return `${API_BASE_URL}/api/v1/articles?${params.toString()}`;
+  return `/api/v1/articles?${params.toString()}`;
 }
 
 export async function fetchArticles(
@@ -142,11 +142,7 @@ export async function fetchArticles(
   signal?: AbortSignal,
 ): Promise<ArticleListResult> {
   try {
-    const response = await fetch(buildArticleUrl(filters), {
-      cache: "no-store",
-      headers: { Accept: "application/json" },
-      signal,
-    });
+    const response = await apiFetch(buildArticleUrl(filters), { signal });
 
     if (!response.ok) {
       return { status: "error" };
@@ -173,13 +169,9 @@ export async function fetchArticleDetail(
   signal?: AbortSignal,
 ): Promise<ArticleDetailResult> {
   try {
-    const response = await fetch(
-      `${API_BASE_URL}/api/v1/articles/${encodeURIComponent(publicId)}`,
-      {
-        cache: "no-store",
-        headers: { Accept: "application/json" },
-        signal,
-      },
+    const response = await apiFetch(
+      `/api/v1/articles/${encodeURIComponent(publicId)}`,
+      { signal },
     );
 
     if (response.status === 404) {

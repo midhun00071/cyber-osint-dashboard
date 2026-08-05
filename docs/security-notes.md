@@ -160,3 +160,20 @@ future ingestion-control administration remain deferred.
 
 The four C05 public-source adapters remain disabled and unscheduled; the
 production `DEFAULT_SOURCE_HANDLERS` mapping remains empty.
+
+## C07 operations security boundary
+
+C07 extends the C06 opaque-session, exact-Origin, CSRF, and backend permission
+boundary to source and ingestion operations. Reads are allow-listed and
+non-cacheable. Mutations reject extra fields, never replay automatically, and
+commit state/evidence atomically. Manual acceptance uses the existing bounded
+idempotency-key derivation; retry uses deterministic nonbranching lineage.
+Audit actions, target types, outcomes, and safe-detail fields remain closed.
+Credential references, raw progress values, cookies, tokens, idempotency keys,
+provider data, SQL, exceptions, and stack traces are not exposed.
+
+Frontend 401 handling expires the session; 403 handling preserves the valid
+principal and presents access denied for the current route. Role-aware links
+and buttons are defense in depth only. The production handler registry remains
+empty and the four C05 sources remain disabled and unscheduled. See
+[C07 authenticated operations experience](c07-authenticated-operations-experience.md).

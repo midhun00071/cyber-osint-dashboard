@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 import "../styles/globals.css";
+import { AuthProvider } from "@/components/auth/AuthProvider";
 
 export const metadata: Metadata = {
   title: "Alpha Data | Cyber OSINT Dashboard",
@@ -16,7 +17,7 @@ type RootLayoutProps = Readonly<{
 export default function RootLayout({ children }: RootLayoutProps) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body><AuthProvider>{children}</AuthProvider></body>
     </html>
   );
 }

@@ -1140,3 +1140,13 @@ image, or external-reference retrieval exists. See
 [`docs/c05-official-public-sources.md`](docs/c05-official-public-sources.md) for
 the exact endpoints, bounds, progress contracts, security controls, and accepted
 limitations. Activation requires separate approval and bounded staging evidence.
+
+## C07 authenticated operations experience
+
+C07 adds the browser authentication bootstrap, protected and role-aware
+navigation, source/operations/run-history views, Administrator user view, and
+permission-gated source controls backed by durable acceptance evidence. It does
+not activate a handler or schedule, make a live source request, or add a model
+or migration. See [C07 authenticated operations experience](docs/c07-authenticated-operations-experience.md)
+for the exact routes, permission and transition matrices, idempotency, polling,
+audit, redaction, and accepted limitations.

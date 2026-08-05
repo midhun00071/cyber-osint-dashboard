@@ -408,6 +408,7 @@ def test_orm_updates_and_deletes_are_bounded_and_api_has_no_mutation_routes() ->
             "app/api/v1/routes/auth.py:post": 4,
             "app/api/v1/routes/admin_users.py:post": 2,
             "app/api/v1/routes/admin_users.py:patch": 3,
+            "app/api/v1/routes/operations.py:post": 6,
         }
     )
     assert not unsafe_writes, unsafe_writes

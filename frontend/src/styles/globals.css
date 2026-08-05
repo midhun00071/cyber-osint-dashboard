@@ -28,6 +28,146 @@
   --radius: 0.5rem;
 }
 
+/* C07 authenticated operations */
+.loginPage,
+.authStatePage {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+  background: radial-gradient(circle at top, #12233f, #07111f 65%);
+  color: #eaf2ff;
+}
+
+.loginCard {
+  width: min(100%, 28rem);
+  display: grid;
+  gap: 1rem;
+  padding: 2rem;
+  border: 1px solid rgba(122, 167, 255, 0.25);
+  border-radius: 1rem;
+  background: rgba(9, 23, 42, 0.96);
+  box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, 0.35);
+}
+
+.loginCard label,
+.loginCard label input {
+  display: block;
+  width: 100%;
+}
+
+.loginCard label input {
+  margin-top: 0.45rem;
+  padding: 0.75rem;
+  color: inherit;
+  border: 1px solid #334b6f;
+  border-radius: 0.5rem;
+  background: #0b1a2f;
+}
+
+.loginCard button,
+.tableActions button,
+.responsiveTable button,
+.identityControls button,
+.authStatePage button {
+  padding: 0.55rem 0.8rem;
+  border: 1px solid #4778bd;
+  border-radius: 0.45rem;
+  color: #eaf2ff;
+  background: #173b6d;
+  cursor: pointer;
+}
+
+.loginCard button:disabled,
+.tableActions button:disabled,
+.responsiveTable button:disabled,
+.identityControls button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.formError,
+.inlineAlert {
+  padding: 0.75rem;
+  border: 1px solid #a9505e;
+  border-radius: 0.5rem;
+  color: #ffd8dd;
+  background: rgba(119, 31, 47, 0.28);
+}
+
+.operationsPage {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.responsiveTable {
+  overflow-x: auto;
+  border: 1px solid var(--border-color, #243752);
+  border-radius: 0.75rem;
+}
+
+.responsiveTable table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 58rem;
+}
+
+.responsiveTable th,
+.responsiveTable td {
+  padding: 0.85rem;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border-color, #243752);
+}
+
+.responsiveTable td small,
+.environmentIndicator small {
+  display: block;
+  margin-top: 0.2rem;
+  opacity: 0.7;
+}
+
+.tableActions,
+.identityControls {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.summaryGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 1rem;
+}
+
+.summaryGrid article {
+  display: grid;
+  gap: 0.35rem;
+  padding: 1rem;
+  border: 1px solid var(--border-color, #243752);
+  border-radius: 0.75rem;
+  background: var(--panel-background, #0d1c31);
+}
+
+.summaryGrid strong {
+  font-size: 1.5rem;
+}
+
+.statusList {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0;
+  list-style: none;
+}
+
+.statusList li {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid var(--border-color, #243752);
+}
+
 * {
   box-sizing: border-box;
 }

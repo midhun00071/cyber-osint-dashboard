@@ -1,6 +1,6 @@
 # Architecture
 
-The C06 security boundary is documented in `c06-identity-auth-rbac-audit.md`: replaceable identity contracts, local Argon2id credentials, opaque session hashes, explicit permission dependencies, and append-only audit evidence. Backend authorization is authoritative while frontend authentication remains pending.
+The C06 security boundary is documented in `c06-identity-auth-rbac-audit.md`: replaceable identity contracts, local Argon2id credentials, opaque session hashes, explicit permission dependencies, and append-only audit evidence. Backend authorization is authoritative; C07 adds frontend authentication bootstrap, protected navigation, and role-aware operations views.
 
 C06 retains `GET /`, `GET /api/health`, and `GET /api/version`; protects `GET /api/v1/articles`, `GET /api/v1/articles/{public_id}`, `GET /api/v1/dashboard/summary`, `GET /api/v1/intelligence/items`, and `GET /api/v1/intelligence/items/{item_public_id}` with content permission; adds authenticated `GET /api/v1/auth/me`; and restricts `GET /api/v1/admin/users`, `GET /api/v1/admin/users/{user_public_id}`, and `GET /api/v1/audit/events` to Administrator permissions.
 
@@ -777,8 +777,9 @@ backup, retention, or recovery work has been executed or validated.
 
 Backend settings use environment variables and `SecretStr` for sensitive
 values. Production rejects debug mode and non-HTTPS/loopback CORS origins. CORS
-uses an exact environment-driven allow-list, grants GET only, disables browser
-credentials, and never uses a wildcard.
+uses an exact environment-driven allow-list, permits only `GET`, `POST`,
+`PATCH`, and `OPTIONS`, enables browser credentials for approved frontend
+origins, and never uses a wildcard.
 
 Security middleware applies `X-Content-Type-Options: nosniff`,
 `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, a restrictive
@@ -787,9 +788,10 @@ Security middleware applies `X-Content-Type-Options: nosniff`,
 because TLS termination is not implemented by the application stack; an
 approved external TLS boundary must own transport security.
 
-No user authentication, authorization, role-based access control, or audit of
-human API access is implemented. The public read-only API must not be treated as
-an authenticated analyst portal.
+Opaque database-backed browser sessions, role-based backend authorization, and
+append-only audit of human API access are implemented. The protected analyst
+portal still requires an approved TLS/reverse-proxy and staging boundary before
+public deployment.
 
 ## Logging, errors, and auditability
 
@@ -846,7 +848,6 @@ Manual cases remain `Not Run` until separately executed and recorded.
 
 The current repository does not implement:
 
-- user authentication, authorization, roles, or protected analyst sessions;
 - TLS termination, reverse proxy, or load balancer;
 - automated PostgreSQL backups, representative restore tests, or validated
   disaster recovery;
@@ -859,7 +860,8 @@ The current repository does not implement:
 - Prefect high availability, Redis, a Prefect-specific PostgreSQL database,
   Prefect authentication, active production deployments/schedules, monitoring,
   backup/restore proof, or staging activation;
-- a public ingestion API, frontend ingestion trigger, or arbitrary URL ingestion;
+- an unauthenticated ingestion API, arbitrary URL ingestion, or automatically
+  activated source execution;
 - active scanning/probing, active IOC validation, malware retrieval, file
   submission, or exploit execution;
 - complete historical analytics, relationship graphs, a configured production
@@ -873,11 +875,11 @@ required for source collection, migration, rollback, volume deletion, and other
 destructive deployment commands.
 
 C02 now owns reviewed source-specific flow-ready handlers but does not activate
-or production-bind them. C07 owns operator controls; C11 and
-deployment work own authentication, monitoring, backup, and controlled staging
-activation. The B2-01 private network boundary and C01 paused deployment
-contract must not be mistaken for completed authentication or public
-administration readiness.
+or production-bind them. C06 owns authentication/RBAC and C07 owns the
+authenticated operations experience; later deployment work owns monitoring,
+backup, and controlled staging activation. The B2-01 private network boundary,
+C01 paused deployment contract, and implemented browser login must not be
+mistaken for public deployment readiness.
 
 ## Canonical references
 
@@ -894,6 +896,7 @@ administration readiness.
 - [B2-01 self-hosted Prefect platform](b2-01-prefect-platform.md)
 - [C01 Prefect orchestration core](c01-prefect-orchestration-core.md)
 - [Deployment build validation](deployment-build-validation.md)
+- [C07 authenticated operations experience](c07-authenticated-operations-experience.md)
 ## C05 inactive official-source architecture
 
 C05 adds separate immutable, inactive registries for MITRE ATT&CK Enterprise
@@ -913,3 +916,31 @@ were validated only with local fixtures and mocked transports. No migration,
 article/PDF/attachment/enclosure retrieval, external-reference request, live
 source request, handler activation, or schedule activation is part of C05. See
 [C05 Official Public Sources](c05-official-public-sources.md).
+
+## C07 authenticated operations architecture
+
+C07 registers protected source and operations routes for source lists/details,
+operations summary, cycle/run/event history, durable manual/retry acceptance,
+and atomic source transitions. The implemented reads are `GET /api/v1/sources`,
+`GET /api/v1/sources/{source_slug}`,
+`GET /api/v1/ingestion/operations/summary`,
+`GET /api/v1/ingestion/cycles`, `GET /api/v1/ingestion/runs`,
+`GET /api/v1/ingestion/runs/{run_public_id}`, and
+`GET /api/v1/ingestion/runs/{run_public_id}/events`. Backend permission
+dependencies, not frontend visibility, are authoritative.
+
+Manual acceptance reuses the operational cycle/run persistence service and its
+PostgreSQL advisory locks. Retry reuses deterministic nonbranching ancestry.
+Transitions lock the source row and update `operator_state`, the compatibility
+`is_enabled` projection, and allow-listed audit evidence within caller-owned
+transaction boundaries. Read models expose Boolean credential readiness and a
+SHA-256 progress fingerprint instead of secret references or raw progress.
+
+The root frontend AuthProvider bootstraps the C06 session before protected data
+is displayed. `/sources`, `/operations`, and `/run-history` use cancellable,
+visibility-aware 15-second polling with a one-request-at-a-time guard;
+`/admin/users` is Administrator protected. See
+[C07 authenticated operations experience](c07-authenticated-operations-experience.md)
+for exact schemas, state transitions, role matrix, audit vocabulary, and
+accepted limitations. `DEFAULT_SOURCE_HANDLERS` remains empty, all four C05
+sources remain disabled and unscheduled, and C07 adds no model or migration.

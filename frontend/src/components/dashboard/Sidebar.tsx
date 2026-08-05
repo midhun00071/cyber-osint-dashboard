@@ -1,30 +1,36 @@
+"use client";
+
 import type { RefObject } from "react";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
+import { useAuth } from "@/components/auth/AuthProvider";
 import { NavigationItem } from "@/components/dashboard/NavigationItem";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 
 type SidebarNavigationItem = {
-  active?: boolean;
-  badge?: string;
+  href: string;
+  permission?: string;
   icon:
     | "overview"
     | "feed"
     | "vulnerabilities"
     | "uae"
     | "sources"
+    | "operations"
+    | "history"
+    | "users"
     | "methodology";
   label: string;
 };
 
 const navigationItems: readonly SidebarNavigationItem[] = [
-  { label: "Overview", icon: "overview", active: true },
-  { label: "Threat Feed", icon: "feed", badge: "Coming soon" },
-  { label: "Vulnerabilities", icon: "vulnerabilities", badge: "Coming soon" },
-  { label: "UAE Alerts", icon: "uae", badge: "Coming soon" },
-  { label: "Sources", icon: "sources", badge: "Coming soon" },
-  { label: "Methodology", icon: "methodology", badge: "Coming soon" },
+  { label: "Overview", icon: "overview", href: "/" },
+  { label: "Sources", icon: "sources", href: "/sources" },
+  { label: "Operations", icon: "operations", href: "/operations", permission: "ingestion.read" },
+  { label: "Run History", icon: "history", href: "/run-history", permission: "ingestion.read" },
+  { label: "User Access", icon: "users", href: "/admin/users", permission: "user.read" },
 ] as const;
 
 type SidebarProps = Readonly<{
@@ -40,6 +46,9 @@ export function Sidebar({
   onClose,
   showCloseButton,
 }: SidebarProps) {
+  const pathname = usePathname();
+  const { hasPermission } = useAuth();
+  const visibleItems = navigationItems.filter((item) => !item.permission || hasPermission(item.permission));
   return (
     <div className={`sidebar ${className}`}>
       <div className="sidebarHeader">
@@ -66,12 +75,10 @@ export function Sidebar({
       </div>
 
       <nav aria-label="Dashboard navigation" className="sidebarNav">
-        {navigationItems.map((item) => (
+        {visibleItems.map((item) => (
           <NavigationItem
-            active={item.active}
-            badge={item.badge}
-            disabled={!item.active}
-            href={item.active ? "/" : undefined}
+            active={pathname === item.href}
+            href={item.href}
             icon={item.icon}
             key={item.label}
             label={item.label}
@@ -84,17 +91,17 @@ export function Sidebar({
         <p className="panelEyebrow">Scope</p>
         <h2>Defensive OSINT only</h2>
         <p>
-          Public intelligence review shell. No exploit execution, scanning, or
-          live collection controls are implemented.
+          Approved public intelligence only. Operator controls create bounded,
+          audited evidence and never bypass source policy.
         </p>
       </div>
 
       <div className="sidebarStatus">
         <div>
           <p className="panelEyebrow">Project status</p>
-          <h2>Phase 1 shell</h2>
+          <h2>Authenticated operations</h2>
         </div>
-        <StatusBadge label="Synthetic preview" tone="info" />
+        <StatusBadge label="Defensive OSINT" tone="info" />
       </div>
     </div>
   );

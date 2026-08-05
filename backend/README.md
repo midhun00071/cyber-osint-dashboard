@@ -240,3 +240,13 @@ Both production policy registries remain empty, and all HTTP tests use
 execution has occurred. No
 CLI, API route, frontend control, scheduler, startup hook, background worker,
 malware/file retrieval, or P9-11 entity model is included.
+
+## C07 Authenticated Operations API
+
+The backend now exposes authenticated, permission-gated source metadata,
+operations summary, cycle/run/event history, durable manual/retry acceptance,
+and atomic pause/resume/disable/enable controls. Mutations use exact-Origin,
+CSRF, strict JSON, caller-owned transactions, closed audit details, and existing
+PostgreSQL idempotency/concurrency controls. Production handler bindings remain
+empty, so acceptance cannot fabricate execution. See
+[C07 authenticated operations experience](../docs/c07-authenticated-operations-experience.md).

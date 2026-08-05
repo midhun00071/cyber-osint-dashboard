@@ -7,6 +7,9 @@ type NavigationIcon =
   | "vulnerabilities"
   | "uae"
   | "sources"
+  | "operations"
+  | "history"
+  | "users"
   | "methodology";
 
 type NavigationItemProps = Readonly<{
@@ -57,6 +60,15 @@ function Icon({ icon }: Readonly<{ icon: NavigationIcon }>) {
         <path d="M9 13h6" />
         <path d="M9 17h4" />
       </>
+    ),
+    operations: (
+      <><path d="M4 7h16" /><path d="M4 12h16" /><path d="M4 17h16" /><circle cx="8" cy="7" r="1" /><circle cx="15" cy="12" r="1" /><circle cx="11" cy="17" r="1" /></>
+    ),
+    history: (
+      <><circle cx="12" cy="12" r="8" /><path d="M12 7v5l3 2" /></>
+    ),
+    users: (
+      <><circle cx="9" cy="8" r="3" /><path d="M4 19c0-3 2-5 5-5s5 2 5 5" /><path d="M16 7h4M18 5v4" /></>
     ),
     methodology: (
       <>

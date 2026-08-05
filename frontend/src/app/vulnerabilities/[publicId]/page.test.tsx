@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import VulnerabilityDetailPage from "@/app/vulnerabilities/[publicId]/page";
@@ -9,6 +10,7 @@ import type { VulnerabilityDetailResult } from "@/types/vulnerability";
 const { useParamsMock } = vi.hoisted(() => ({ useParamsMock: vi.fn() }));
 
 vi.mock("next/navigation", () => ({ useParams: useParamsMock }));
+vi.mock("@/components/auth/ProtectedRoute", () => ({ ProtectedRoute: ({ children }: { children: ReactNode }) => children }));
 vi.mock("@/services/vulnerabilityApi", () => ({
   fetchVulnerabilityDetail: vi.fn(),
 }));

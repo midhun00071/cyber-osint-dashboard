@@ -24,3 +24,30 @@ def test_security_audit_is_closed_correlated_and_secret_free() -> None:
 def test_audit_rejects_free_form_actions_and_details() -> None:
     with pytest.raises(ValueError):
         SecurityAuditService(FakeSession()).append(action="custom.action", actor_type="system", actor_ref="system", target_type="system", target_ref="system", outcome="success", correlation_id=uuid4())
+
+
+def test_c07_operator_audit_vocabulary_is_closed_and_safe() -> None:
+    session = FakeSession()
+    event = SecurityAuditService(session).append(
+        action=SecurityAuditAction.SOURCE_PAUSED,
+        actor_type="user",
+        actor_ref=str(uuid4()),
+        target_type="intelligence_source",
+        target_ref="cisa-kev",
+        outcome="success",
+        correlation_id=uuid4(),
+        safe_detail={"prior_state": "enabled", "new_state": "paused"},
+    )
+    assert event.action == "source.paused"
+    assert event.safe_detail == '{"new_state":"paused","prior_state":"enabled"}'
+    with pytest.raises(ValueError):
+        SecurityAuditService(FakeSession()).append(
+            action=SecurityAuditAction.INGESTION_MANUAL_REQUESTED,
+            actor_type="user",
+            actor_ref=str(uuid4()),
+            target_type="ingestion_run",
+            target_ref=str(uuid4()),
+            outcome="success",
+            correlation_id=uuid4(),
+            safe_detail={"idempotency_key": "must-not-be-accepted"},
+        )

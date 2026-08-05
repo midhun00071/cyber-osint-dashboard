@@ -39,7 +39,9 @@ describe("API client public configuration", () => {
 
     const apiClient = await import("@/services/apiClient");
 
-    expect(Object.keys(apiClient)).toEqual(["API_BASE_URL"]);
+    expect(Object.keys(apiClient).sort()).toEqual([
+      "ACCESS_DENIED_EVENT", "API_BASE_URL", "AUTH_EXPIRED_EVENT", "apiFetch",
+    ].sort());
     expect(JSON.stringify(apiClient)).not.toContain("synthetic-test-secret");
   });
 

@@ -17,7 +17,13 @@ _SAFE_REFERENCE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$")
 _SAFE_SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _SAFE_ACTION = re.compile(r"^[a-z][a-z0-9_.-]{0,79}$")
 _LOCK_NAMESPACES = frozenset(
-    {"cycle-idempotency", "source-no-overlap", "progress-identity", "rate-state-identity"}
+    {
+        "cycle-idempotency",
+        "scheduled-cycle-acquisition",
+        "source-no-overlap",
+        "progress-identity",
+        "rate-state-identity",
+    }
 )
 _MAX_MANUAL_KEY_BYTES = 512
 

@@ -1,4 +1,8 @@
+"use client";
+
 import type { RefObject } from "react";
+
+import { useAuth } from "@/components/auth/AuthProvider";
 
 type TopHeaderProps = Readonly<{
   drawerId: string;
@@ -13,6 +17,7 @@ export function TopHeader({
   onOpenDrawer,
   openButtonRef,
 }: TopHeaderProps) {
+  const { logout, principal, state } = useAuth();
   return (
     <header className="topHeader">
       <div className="topHeaderTitleGroup">
@@ -58,9 +63,14 @@ export function TopHeader({
         <span id="search-shell-note">Visual placeholder</span>
       </div>
 
-      <div className="environmentIndicator">
-        <span className="previewDot" aria-hidden="true" />
-        Synthetic preview
+      <div className="identityControls">
+        <div className="environmentIndicator">
+          <span className="previewDot" aria-hidden="true" />
+          <span><strong>{principal?.display_name ?? "Authenticated user"}</strong><small>{principal?.role.replace("_", " ")}</small></span>
+        </div>
+        <button disabled={state === "logging_out"} onClick={() => void logout()} type="button">
+          {state === "logging_out" ? "Signing out…" : "Sign out"}
+        </button>
       </div>
     </header>
   );

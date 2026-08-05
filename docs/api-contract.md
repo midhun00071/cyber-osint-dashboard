@@ -1461,3 +1461,22 @@ Approved defaults:
 - High EPSS threshold defaults to `0.7`.
 - Public freshness metadata is sufficient for the MVP demo.
 - Convenience vulnerability endpoints remain deferred.
+
+## 23. C07 authenticated operations extension
+
+The P1-03 material above remains the historical read-only API baseline. C06
+implemented authentication and authorization, and C07 now implements the
+protected source/operations extension; the earlier deferred statements do not
+describe current repository state.
+
+C07 provides authenticated `GET /api/v1/sources`,
+`GET /api/v1/sources/{source_slug}`,
+`GET /api/v1/ingestion/operations/summary`,
+`GET /api/v1/ingestion/cycles`, `GET /api/v1/ingestion/runs`,
+`GET /api/v1/ingestion/runs/{run_public_id}`, and
+`GET /api/v1/ingestion/runs/{run_public_id}/events`. It also provides strict,
+CSRF-protected POST routes for manual-run acceptance, deterministic retry, and
+source pause/resume/disable/enable. See
+[C07 authenticated operations experience](c07-authenticated-operations-experience.md)
+for the authoritative schemas, limits, permissions, safe errors, transaction
+ownership, idempotency, and redaction contract.

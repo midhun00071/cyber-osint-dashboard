@@ -39,6 +39,7 @@ ALEMBIC_INI = BACKEND_ROOT / "alembic.ini"
 GRANTS_SQL = REPOSITORY_ROOT / "database" / "init" / "11-apply-database-grants.sql"
 VERSIONS_DIR = BACKEND_ROOT / "alembic" / "versions"
 HEAD = "f4a1c2d3e5b6"
+CURRENT_REPOSITORY_HEAD = "c07a01b02c03"
 PREDECESSOR = "e91f4c2a7b60"
 AUTH_TABLES = (
     "auth_users",
@@ -295,7 +296,7 @@ def test_migration_upgrade_downgrade_cycle_and_single_head(pg_engine) -> None:
         with engine.connect() as connection:
             assert connection.scalar(sa.text("SELECT version_num FROM alembic_version")) == HEAD
         script = ScriptDirectory.from_config(_alembic_config(url))
-        assert script.get_heads() == [HEAD]
+        assert script.get_heads() == [CURRENT_REPOSITORY_HEAD]
         assert script.get_revision(HEAD).down_revision == PREDECESSOR
     finally:
         with engine.connect() as connection:

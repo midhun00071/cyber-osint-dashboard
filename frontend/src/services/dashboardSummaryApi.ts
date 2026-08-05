@@ -1,4 +1,4 @@
-import { API_BASE_URL } from "@/services/apiClient";
+import { apiFetch } from "@/services/apiClient";
 import type {
   DashboardSummary,
   DashboardSummaryMetrics,
@@ -41,11 +41,7 @@ export async function fetchDashboardSummary(
   signal?: AbortSignal,
 ): Promise<DashboardSummaryResult> {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/dashboard/summary`, {
-      cache: "no-store",
-      headers: { Accept: "application/json" },
-      signal,
-    });
+    const response = await apiFetch("/api/v1/dashboard/summary", { signal });
 
     if (!response.ok) {
       return { status: "error" };

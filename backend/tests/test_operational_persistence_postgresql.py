@@ -13,6 +13,7 @@ from uuid import uuid4
 from alembic import command
 from alembic.config import Config
 import pytest
+import sqlalchemy as sa
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.exc import OperationalError
@@ -20,9 +21,8 @@ from sqlalchemy.pool import NullPool
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.db.base import Base
 import app.models  # noqa: F401
-from app.ingestion.source_registry import list_source_definitions
+from app.ingestion.source_registry import get_source_definition
 from app.ingestion.services.operational_idempotency import build_scheduled_cycle_key
 from app.ingestion.services.operational_persistence_service import (
     DeferReason,
@@ -47,7 +47,23 @@ from app.models import (
 
 BACKEND = Path(__file__).resolve().parents[1]
 TEST_URL_ENV = "B104_POSTGRESQL_TEST_DATABASE_URL"
-HEAD = "b103a71d2e4f"
+HISTORICAL_HEAD = "b103a71d2e4f"
+CURRENT_HEAD = "c07a01b02c03"
+TEST_SOURCE_SLUGS = ("censys-arc-research", "cisa-kev", "nvd")
+HISTORICAL_OPERATIONAL_TABLES = frozenset(
+    {
+        "audit_events",
+        "ingestion_cycles",
+        "ingestion_errors",
+        "ingestion_run_events",
+        "ingestion_runs",
+        "source_checkpoints",
+        "source_rate_limit_states",
+        "source_watermarks",
+    }
+)
+_historical_tables_observed: frozenset[str] = frozenset()
+_historical_source_columns_observed: frozenset[str] = frozenset()
 NOW = datetime.now(UTC).replace(microsecond=0)
 ZERO = RunCounters(0, 0, 0, 0, 0, 0, 0)
 CREATED = RunCounters(1, 1, 0, 0, 0, 0, 0)
@@ -166,6 +182,7 @@ def test_database_url_guard_accepts_clean_loopback_url() -> None:
 
 @pytest.fixture(scope="session")
 def pg_engine():
+    global _historical_source_columns_observed, _historical_tables_observed
     url = _database_url()
 
     prior = os.environ.get("DATABASE_URL")
@@ -184,9 +201,23 @@ def pg_engine():
     probe.dispose()
     if not ready:
         pytest.fail("The disposable PostgreSQL database did not become ready.")
+    reset_engine = create_engine(url, poolclass=NullPool)
+    try:
+        with reset_engine.begin() as connection:
+            connection.exec_driver_sql("DROP SCHEMA public CASCADE")
+            connection.exec_driver_sql("CREATE SCHEMA public")
+    finally:
+        reset_engine.dispose()
     config = Config(str(BACKEND / "alembic.ini"))
     command.upgrade(config, "base")
-    command.upgrade(config, HEAD)
+    command.upgrade(config, HISTORICAL_HEAD)
+    historical_inspector = sa.inspect(probe)
+    _historical_tables_observed = frozenset(historical_inspector.get_table_names())
+    _historical_source_columns_observed = frozenset(
+        column["name"]
+        for column in historical_inspector.get_columns("intelligence_sources")
+    )
+    command.upgrade(config, CURRENT_HEAD)
     engine = create_engine(url, poolclass=NullPool)
     try:
         yield engine
@@ -205,9 +236,12 @@ def isolated_rows(request: pytest.FixtureRequest):
         return
     pg_engine = request.getfixturevalue("pg_engine")
     with pg_engine.begin() as connection:
-        for table in reversed(Base.metadata.sorted_tables):
+        existing_metadata = sa.MetaData()
+        existing_metadata.reflect(bind=connection)
+        for table in reversed(existing_metadata.sorted_tables):
             connection.execute(table.delete())
-        for definition in list_source_definitions():
+        for source_slug in TEST_SOURCE_SLUGS:
+            definition = get_source_definition(source_slug)
             connection.execute(
                 IntelligenceSource.__table__.insert().values(
                     name=definition.display_name,
@@ -215,6 +249,7 @@ def isolated_rows(request: pytest.FixtureRequest):
                     source_type=definition.source_type,
                     base_url=definition.base_url,
                     is_enabled=definition.enabled,
+                    operator_state=("enabled" if definition.enabled else "disabled"),
                     rate_limit_notes=definition.rate_limit_notes,
                     last_successful_fetch_at=None,
                     checkpoint_value=None,
@@ -324,6 +359,14 @@ def test_conflicting_duplicate_cycle_inputs_are_rejected(pg_engine) -> None:
             OperationalPersistenceService(session).acquire_cycle(
                 trigger_type="manual", manual_request_key=request, sources_expected=2
             )
+
+
+def test_historical_b103_revision_remains_explicitly_verified(pg_engine) -> None:
+    """Preserve B1-03 schema evidence before current service tests use C07A."""
+
+    assert HISTORICAL_OPERATIONAL_TABLES.issubset(_historical_tables_observed)
+    assert "operator_state" not in _historical_source_columns_observed
+    assert sa.inspect(pg_engine).get_table_names()
 
 
 def test_cycle_finalization_is_evidence_backed_and_exactly_idempotent(pg_engine) -> None:

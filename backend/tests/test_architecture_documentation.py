@@ -179,14 +179,21 @@ def test_documented_read_only_routes_come_from_current_fastapi_application() -> 
         "/api/version",
         "/api/v1/articles",
         "/api/v1/articles/{public_id}",
+        "/api/v1/auth/me",
+        "/api/v1/admin/users",
+        "/api/v1/admin/users/{user_public_id}",
+        "/api/v1/audit/events",
         "/api/v1/dashboard/summary",
+        "/api/v1/ingestion/cycles",
+        "/api/v1/ingestion/operations/summary",
+        "/api/v1/ingestion/runs",
+        "/api/v1/ingestion/runs/{run_public_id}",
+        "/api/v1/ingestion/runs/{run_public_id}/events",
         "/api/v1/intelligence/items",
-            "/api/v1/intelligence/items/{item_public_id}",
-            "/api/v1/auth/me",
-            "/api/v1/admin/users",
-            "/api/v1/admin/users/{user_public_id}",
-            "/api/v1/audit/events",
-        }
+        "/api/v1/intelligence/items/{item_public_id}",
+        "/api/v1/sources",
+        "/api/v1/sources/{source_slug}",
+    }
     for route in implemented_get_routes:
         assert f"`GET {route}`" in document
 
@@ -212,7 +219,7 @@ def test_frontend_data_rendering_and_link_boundaries_are_documented() -> None:
         "`NEXT_PUBLIC_API_BASE_URL`",
         "`dangerouslySetInnerHTML` is not used",
         "`rel=\"noopener noreferrer\"`",
-        "frontend authentication remains pending",
+        "C07 adds frontend authentication bootstrap",
     ):
         assert phrase in document
 

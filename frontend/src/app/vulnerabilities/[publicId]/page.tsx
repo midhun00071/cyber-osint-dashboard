@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 
 import { SafeExternalLink } from "@/components/SafeExternalLink";
+import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { fetchVulnerabilityDetail } from "@/services/vulnerabilityApi";
 import type {
@@ -148,7 +149,7 @@ function getPublicIdParam(value: string | string[] | undefined): string | null {
   return trimmed || null;
 }
 
-export default function VulnerabilityDetailPage() {
+function VulnerabilityDetailContent() {
   const params = useParams<{ publicId?: string | string[] }>();
   const publicId = useMemo(() => getPublicIdParam(params.publicId), [params]);
   const [state, setState] = useState<DetailState>({ status: "loading" });
@@ -344,4 +345,8 @@ export default function VulnerabilityDetailPage() {
       </article>
     </main>
   );
+}
+
+export default function VulnerabilityDetailPage() {
+  return <ProtectedRoute><VulnerabilityDetailContent /></ProtectedRoute>;
 }

@@ -13,7 +13,7 @@ from app.api.v1.schemas.admin_users import AdminUserListResponse, AdminUserRespo
 from app.core.config import Settings, get_settings
 from app.db.session import get_db_session
 from app.security.contracts import AuthenticatedPrincipal
-from app.security.dependencies import prevent_auth_caching, require_csrf, require_csrf_json, require_user_manage, require_user_read
+from app.security.dependencies import prevent_auth_caching, require_csrf, require_csrf_json, require_session_revoke, require_user_manage, require_user_read
 from app.services.user_admin_service import AdministratorSafetyError, UserAdminService, UserAdminServiceError, UserConflictError, UserInputError, UserNotFoundError
 
 
@@ -104,7 +104,7 @@ def change_expiry(user_public_id: UUID, payload: UserExpiryRequest, request: Req
     return _update_user(lambda: service.change_expiry(actor=principal, public_id=user_public_id, account_expires_at=payload.account_expires_at, correlation_id=request.state.request_id), db_session)
 
 
-@router.post("/{user_public_id}/sessions/revoke", status_code=204, dependencies=[Depends(validate_no_query_parameters), Depends(require_user_manage)])
+@router.post("/{user_public_id}/sessions/revoke", status_code=204, dependencies=[Depends(validate_no_query_parameters), Depends(require_session_revoke)])
 def revoke_sessions(user_public_id: UUID, request: Request, response: Response, principal: AuthenticatedPrincipal = Depends(require_csrf), db_session: Session = Depends(get_db_session), settings: Settings = Depends(get_settings)) -> Response:
     prevent_auth_caching(response)
     try:

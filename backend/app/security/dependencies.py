@@ -120,8 +120,15 @@ def require_permission(permission: Permission) -> Callable[..., AuthenticatedPri
 
 
 require_content_read = require_permission(Permission.CONTENT_READ)
+require_source_read = require_permission(Permission.SOURCE_READ)
+require_ingestion_read = require_permission(Permission.INGESTION_READ)
+require_ingestion_run = require_permission(Permission.INGESTION_RUN)
+require_ingestion_retry = require_permission(Permission.INGESTION_RETRY)
+require_ingestion_pause = require_permission(Permission.INGESTION_PAUSE)
+require_source_manage = require_permission(Permission.SOURCE_MANAGE)
 require_user_read = require_permission(Permission.USER_READ)
 require_user_manage = require_permission(Permission.USER_MANAGE)
+require_session_revoke = require_permission(Permission.SESSION_REVOKE)
 require_audit_read = require_permission(Permission.AUDIT_READ)
 
 

@@ -31,6 +31,12 @@ class SecurityAuditAction(StrEnum):
     ADMIN_USER_SESSIONS_REVOKED = "admin.user.sessions_revoked"
     SYSTEM_BOOTSTRAP_ADMIN = "system.bootstrap_admin"
     INGESTION_MANUAL_REQUESTED = "ingestion.manual.requested"
+    INGESTION_RETRY_REQUESTED = "ingestion.retry.requested"
+    INGESTION_RUN_EXECUTION_FAILED = "ingestion.run.execution_failed"
+    SOURCE_PAUSED = "source.paused"
+    SOURCE_RESUMED = "source.resumed"
+    SOURCE_DISABLED = "source.disabled"
+    SOURCE_ENABLED = "source.enabled"
     SOURCE_STATE_CHANGED = "source.state.changed"
     REPORT_EXPORT_REQUESTED = "report.export.requested"
 
@@ -41,8 +47,19 @@ class SecurityAuditError(RuntimeError):
 
 _ACTOR_TYPES = frozenset({"user", "system", "service"})
 _OUTCOMES = frozenset({"success", "denied", "failed", "no_change"})
-_TARGET_TYPES = frozenset({"authentication", "auth_user", "auth_session", "system"})
-_DETAIL_FIELDS = frozenset({"reason", "prior_role", "new_role", "prior_status", "new_status", "expiry_state", "revoked_scope"})
+_TARGET_TYPES = frozenset(
+    {
+        "authentication", "auth_user", "auth_session", "system",
+        "intelligence_source", "ingestion_cycle", "ingestion_run",
+    }
+)
+_DETAIL_FIELDS = frozenset(
+    {
+        "reason", "prior_role", "new_role", "prior_status", "new_status",
+        "expiry_state", "revoked_scope", "prior_state", "new_state",
+        "trigger_type", "run_status", "operation",
+    }
+)
 _SAFE_DETAIL_VALUE = re.compile(r"^[a-z0-9_.:-]{1,80}$", flags=re.ASCII)
 ANONYMOUS_AUTH_ACTOR_REF = "security-service"
 
