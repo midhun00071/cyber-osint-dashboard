@@ -16,12 +16,30 @@ VALID_DATABASE = {
 PROTECTED_NETWORK = {
     "BACKEND_CORS_ALLOWED_ORIGINS": "https://dashboard.example.invalid",
     "BACKEND_TRUSTED_HOSTS": "api.example.invalid",
+    "AUTH_COOKIE_SECURE": True,
 }
 
 
 def make_settings(**values: object) -> Settings:
     get_settings.cache_clear()
+    if str(values.get("APP_ENV", "local")).strip().lower() in {"staging", "production"}:
+        values.setdefault("AUTH_COOKIE_SECURE", True)
     return Settings(_env_file=None, **values)
+
+
+def test_c06_auth_defaults_and_protected_cookie_requirement() -> None:
+    local = make_settings(APP_ENV="test")
+    assert (local.auth_cookie_secure, local.auth_session_ttl_minutes, local.auth_session_absolute_ttl_minutes, local.auth_max_active_sessions) == (False, 60, 480, 5)
+    assert (local.auth_login_failure_limit, local.auth_login_failure_window_seconds, local.auth_login_block_seconds) == (5, 900, 900)
+    protected = Settings(
+        _env_file=None,
+        APP_ENV="production",
+        BACKEND_CORS_ALLOWED_ORIGINS="https://dashboard.example.invalid",
+        BACKEND_TRUSTED_HOSTS="api.example.invalid",
+        AUTH_COOKIE_SECURE=False,
+    )
+    with pytest.raises(ValueError, match="AUTH_COOKIE_SECURE"):
+        protected.validate_startup()
 
 
 @pytest.mark.parametrize("environment", ["local", "test", "staging", "production"])

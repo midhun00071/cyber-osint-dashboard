@@ -138,6 +138,23 @@ def test_runtime_role_has_no_delete_truncate_ddl_or_append_only_update() -> None
     assert "GRANT CREATE ON SCHEMA %I TO %I', schema_name, app_login" not in sql
 
 
+def test_c06_auth_tables_have_exact_runtime_grant_shape() -> None:
+    sql = source(GRANTS_SCRIPT)
+    application_block = sql.split("application_tables constant text[] := ARRAY[", 1)[1].split("];", 1)[0]
+    update_block = sql.split("runtime_update_tables constant text[] := ARRAY[", 1)[1].split("];", 1)[0]
+    for table_name in ("auth_users", "auth_identities", "auth_local_credentials", "auth_user_roles", "auth_sessions", "auth_login_throttles"):
+        assert f"'{table_name}'" in application_block
+    for table_name in ("auth_users", "auth_local_credentials", "auth_user_roles", "auth_sessions", "auth_login_throttles"):
+        assert f"'{table_name}'" in update_block
+    assert "'auth_identities'" not in update_block
+    retention_block = sql.split("retention_read_tables constant text[] := ARRAY[", 1)[1].split("];", 1)[0]
+    for table_name in ("auth_local_credentials", "auth_sessions", "auth_login_throttles"):
+        assert f"'{table_name}'" not in retention_block
+    assert "'audit_events'" not in update_block
+    assert "GRANT DELETE" not in sql
+    assert "GRANT TRUNCATE" not in sql
+
+
 def test_readonly_backup_and_retention_roles_are_narrow() -> None:
     sql = source(GRANTS_SCRIPT)
 

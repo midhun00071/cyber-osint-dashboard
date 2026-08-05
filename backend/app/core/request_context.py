@@ -128,6 +128,16 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
             )
 
         response.headers[REQUEST_ID_HEADER] = request_id
+        if (
+            response.status_code in {
+                status.HTTP_401_UNAUTHORIZED,
+                status.HTTP_403_FORBIDDEN,
+            }
+            or request.url.path.startswith("/api/v1/auth")
+            or request.url.path.startswith("/api/v1/admin")
+            or request.url.path.startswith("/api/v1/audit")
+        ):
+            response.headers["Cache-Control"] = "no-store"
         _log_request(
             request,
             request_id=request_id,

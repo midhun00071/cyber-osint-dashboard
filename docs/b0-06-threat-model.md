@@ -1,5 +1,28 @@
 # B0-06 Threat Model
 
+## C06 current-state reconciliation — 5 August 2026
+
+C06 closes the earlier missing-authentication implementation gap with local
+Argon2id credentials, opaque database-backed browser sessions, exact Origin and
+CSRF enforcement, and backend-authoritative RBAC. Only SHA-256 hashes of session
+and CSRF tokens are stored. Content routes require `content.read`; user
+management and audit search are Administrator-only. Frontend hiding never
+substitutes for backend authorization.
+
+Credentialed exact-origin CORS permits only `GET`, `POST`, `PATCH`, and
+`OPTIONS`, with `Content-Type` and `X-CSRF-Token`; `Authorization` is excluded.
+Frontend login/protected navigation remain pending. No real account exists,
+APR-13 remains pending, bootstrap has not run, and SSO is absent and
+approval-gated. C05 sources remain disabled and unscheduled.
+
+## Historical B0 threat baseline
+
+The numbered threat register below is retained as dated pre-C06 risk evidence.
+Rows saying authentication, RBAC, account/session code, cookies, or protected
+routes were absent describe the earlier B0 checkpoint and are superseded by the
+current-state reconciliation above. Residual risks and controls not addressed by
+C06 remain applicable.
+
 ## 1. Document control
 
 | Field | Value |

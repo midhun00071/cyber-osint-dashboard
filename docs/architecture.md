@@ -1,5 +1,9 @@
 # Architecture
 
+The C06 security boundary is documented in `c06-identity-auth-rbac-audit.md`: replaceable identity contracts, local Argon2id credentials, opaque session hashes, explicit permission dependencies, and append-only audit evidence. Backend authorization is authoritative while frontend authentication remains pending.
+
+C06 retains `GET /`, `GET /api/health`, and `GET /api/version`; protects `GET /api/v1/articles`, `GET /api/v1/articles/{public_id}`, `GET /api/v1/dashboard/summary`, `GET /api/v1/intelligence/items`, and `GET /api/v1/intelligence/items/{item_public_id}` with content permission; adds authenticated `GET /api/v1/auth/me`; and restricts `GET /api/v1/admin/users`, `GET /api/v1/admin/users/{user_public_id}`, and `GET /api/v1/audit/events` to Administrator permissions.
+
 ## C03A threat-knowledge boundary
 
 The implemented design includes metadata-only `threat_entities`,

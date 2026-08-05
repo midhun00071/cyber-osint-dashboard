@@ -248,3 +248,30 @@ def test_readme_documents_c05_disabled_fixture_only_contract() -> None:
     assert "made no live request" in document
     assert "No database migration was added" in document
     assert "c05-official-public-sources.md" in document
+
+
+def test_readme_documents_current_c06_authentication_and_pending_frontend() -> None:
+    readme = normalized_readme()
+    for phrase in (
+        "opaque database-backed browser sessions",
+        "sha-256 session-token and csrf-token hashes",
+        "passwords use argon2id",
+        "content routes require `content.read`",
+        "user-management and audit-search routes are administrator-only",
+        "hiding a frontend button is not authorization",
+        "frontend login and protected-navigation integration remain pending",
+        "no real account has been provisioned",
+        "apr-13 remains pending",
+        "manual bootstrap cli has not been executed",
+        "sso is absent and remains approval-gated",
+        "`get`, `post`, `patch`, and `options`",
+        "`content-type` and `x-csrf-token`",
+        "`authorization`",
+    ):
+        assert phrase in readme
+    for obsolete in (
+        "credentials are disabled",
+        "method policy allows only `get`",
+        "current application does not use browser cookies",
+    ):
+        assert obsolete not in readme

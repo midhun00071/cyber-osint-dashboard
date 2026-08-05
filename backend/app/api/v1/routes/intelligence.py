@@ -26,6 +26,7 @@ from app.api.v1.schemas.intelligence import (
     IntelligenceItemSummary,
 )
 from app.db.session import get_db_session
+from app.security.dependencies import require_content_read
 from app.services.intelligence_query_service import (
     IntelligenceNotFoundError,
     IntelligenceQueryError,
@@ -34,7 +35,11 @@ from app.services.intelligence_query_service import (
 )
 
 
-router = APIRouter(prefix="/intelligence/items", tags=["intelligence"])
+router = APIRouter(
+    prefix="/intelligence/items",
+    tags=["intelligence"],
+    dependencies=[Depends(require_content_read)],
+)
 validate_intelligence_list_query = validate_query_parameters(
     {
         "limit",
@@ -150,4 +155,3 @@ def get_intelligence_item(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Unable to load the requested intelligence item.",
         ) from exc
-

@@ -13,6 +13,9 @@ from app.api.v1.query_validation import (
     validate_query_parameters,
 )
 from app.api.v1.routes.articles import router as articles_router
+from app.api.v1.routes.admin_users import router as admin_users_router
+from app.api.v1.routes.audit import router as audit_router
+from app.api.v1.routes.auth import router as auth_router
 from app.api.v1.routes.dashboard import router as dashboard_router
 from app.api.v1.routes.health import router as health_router
 from app.api.v1.routes.intelligence import router as intelligence_router
@@ -105,9 +108,9 @@ app.add_middleware(UnexpectedExceptionMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
-    allow_credentials=False,
-    allow_methods=["GET"],
-    allow_headers=[],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
+    allow_headers=["Content-Type", "X-CSRF-Token"],
 )
 # Exact Host validation is independent of CORS and protects non-browser clients.
 app.add_middleware(
@@ -124,6 +127,9 @@ app.include_router(version_router, prefix="/api")
 app.include_router(articles_router, prefix="/api/v1")
 app.include_router(dashboard_router, prefix="/api/v1")
 app.include_router(intelligence_router, prefix="/api/v1")
+app.include_router(auth_router, prefix="/api/v1")
+app.include_router(admin_users_router, prefix="/api/v1")
+app.include_router(audit_router, prefix="/api/v1")
 validate_no_query_parameters = validate_query_parameters(set())
 
 

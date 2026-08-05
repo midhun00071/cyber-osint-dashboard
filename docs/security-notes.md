@@ -1,5 +1,18 @@
 # Security Notes
 
+C06 uses Argon2id, opaque database-backed browser sessions, exact Origin and
+CSRF validation, a closed role-to-permission map, account-wide session
+versioning, generic login failures, and immutable audit events. Only SHA-256
+session-token and CSRF-token hashes are stored. It does not implement JWT,
+bearer authentication, SSO, self-registration, or a frontend bypass.
+
+Backend authorization is authoritative. Content routes require `content.read`;
+user-management routes and audit search are Administrator-only. Hiding a
+frontend button is not authorization. Frontend login and protected-navigation
+integration remain pending. No real account has been provisioned, APR-13 is
+pending, and the manual bootstrap CLI has not been executed. SSO remains absent
+and approval-gated.
+
 ## Purpose
 
 This document tracks security decisions and safeguards for the Cyber OSINT Dashboard / Alpha Data project.
@@ -58,13 +71,17 @@ parsing; configuration never falls back to allow-all. Default HTTP port `80`
 and HTTPS port `443` are removed during normalization, non-default ports are
 preserved, and IP addresses use canonical representation.
 
-The browser method policy permits only `GET`, configures no additional
-non-safelisted request headers, and keeps credentials disabled. Starlette's
-standard CORS safelist advertises `Accept`, `Accept-Language`, `Content-Language`,
-and `Content-Type`; wildcard, authorization, and unsupported custom headers are
-not granted. `Content-Type` does not enable write endpoints because only `GET`
-is allowed. The middleware does not reflect request origins. Requests without
-an `Origin` header remain ordinary API requests.
+The credentialed browser policy permits only `GET`, `POST`, `PATCH`, and
+`OPTIONS`. Configured request headers are `Content-Type` and `X-CSRF-Token`;
+Starlette also advertises its standard safelisted headers. `Authorization`,
+wildcard origins, wildcard methods, and wildcard request headers are not
+granted. The middleware returns the exact configured origin and
+`Access-Control-Allow-Credentials: true` only for an approved origin.
+
+Unsafe authenticated requests require exact Origin validation and a matching
+CSRF cookie/header token. Session cookies are HttpOnly; the separate CSRF cookie
+is non-HttpOnly. Both are `SameSite=Strict`, and staging/production require
+`Secure` cookies.
 
 The backend adds these headers to successful API responses, CORS preflight,
 and handled `404`, `422`, and `500` responses:
@@ -135,8 +152,11 @@ separate response-layer control.
 
 ## Current Status
 
-P5-02 CORS validation and HTTP response-header hardening, P5-03 frontend
-content-rendering hardening, and P5-04 safe logging, request correlation, and
-unexpected-error handling are implemented. A broader structured error envelope,
-remote telemetry, rate limiting, and protected administrative workflows remain
-deferred.
+P5-02/C06 credentialed CORS and HTTP response-header hardening, P5-03 frontend
+content-rendering hardening, P5-04 safe logging/request correlation, and C06
+authentication, RBAC, user administration, and audit search are implemented.
+A broader structured error envelope, remote telemetry, edge rate limiting, and
+future ingestion-control administration remain deferred.
+
+The four C05 public-source adapters remain disabled and unscheduled; the
+production `DEFAULT_SOURCE_HANDLERS` mapping remains empty.

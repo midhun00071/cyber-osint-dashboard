@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.v1.query_validation import validate_query_parameters
 from app.api.v1.schemas.dashboard import DashboardSummaryResponse
 from app.db.session import get_db_session
+from app.security.dependencies import require_content_read
 from app.services.dashboard_summary_service import (
     DashboardSummaryFilters,
     DashboardSummaryQueryError,
@@ -15,7 +16,11 @@ from app.services.dashboard_summary_service import (
 )
 
 
-router = APIRouter(prefix="/dashboard", tags=["dashboard"])
+router = APIRouter(
+    prefix="/dashboard",
+    tags=["dashboard"],
+    dependencies=[Depends(require_content_read)],
+)
 validate_dashboard_summary_query = validate_query_parameters({"window_days"})
 
 

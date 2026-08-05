@@ -1,5 +1,7 @@
 # Backend - Cyber OSINT Dashboard
 
+C06 authentication uses Argon2id local credentials and opaque database-backed browser sessions; no JWT, bearer token, default user, startup bootstrap, or SSO provider is present. See `../docs/c06-identity-auth-rbac-audit.md`.
+
 ## Purpose
 
 The backend provides the API, database access, ingestion services, processing logic, and scheduled data-fetching foundation for the Cyber OSINT Dashboard.

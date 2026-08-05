@@ -5,6 +5,7 @@ pydantic-settings
 sqlalchemy
 psycopg[binary]
 alembic
+argon2-cffi
 python-dotenv
 httpx
 idna

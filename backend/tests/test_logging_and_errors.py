@@ -21,6 +21,7 @@ from app.core.request_context import REQUEST_ID_HEADER, UNEXPECTED_ERROR_DETAIL
 from app.core.security_headers import API_CONTENT_SECURITY_POLICY, SECURITY_HEADERS
 from app.db.session import get_db_session
 from app.main import app
+from app.security.dependencies import require_content_read
 
 
 ALLOWED_ORIGIN = "http://localhost:3000"
@@ -62,6 +63,7 @@ class FailingSession:
 @pytest.fixture
 def client() -> Iterator[TestClient]:
     app.dependency_overrides[get_db_session] = lambda: EmptySession()
+    app.dependency_overrides[require_content_read] = lambda: None
     with TestClient(app, raise_server_exceptions=False) as test_client:
         yield test_client
     app.dependency_overrides.clear()
@@ -189,7 +191,7 @@ def test_allowed_preflight_receives_request_id_and_preserves_cors(
     assert_request_id(response)
     assert response.headers[REQUEST_ID_HEADER] != ATTACKER_REQUEST_ID
     assert response.headers["Access-Control-Allow-Origin"] == ALLOWED_ORIGIN
-    assert response.headers["Access-Control-Allow-Methods"] == "GET"
+    assert response.headers["Access-Control-Allow-Methods"] == "GET, POST, PATCH, OPTIONS"
     assert_api_security_headers(response)
 
 
@@ -321,6 +323,7 @@ def test_log_level_defaults_and_supported_values_are_normalized(
         APP_ENV="production",
         BACKEND_CORS_ALLOWED_ORIGINS="https://dashboard.example.com",
         BACKEND_TRUSTED_HOSTS="api.example.invalid",
+        AUTH_COOKIE_SECURE=True,
     )
     assert production.log_level == "INFO"
     assert production.debug is False
@@ -346,6 +349,7 @@ def test_production_rejects_debug_error_pages() -> None:
             DEBUG=True,
             BACKEND_CORS_ALLOWED_ORIGINS="https://dashboard.example.com",
             BACKEND_TRUSTED_HOSTS="api.example.invalid",
+            AUTH_COOKIE_SECURE=True,
         )
 
 

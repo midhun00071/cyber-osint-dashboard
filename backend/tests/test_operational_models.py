@@ -27,6 +27,12 @@ from app.db.base import Base
 
 TARGET_TABLES = {
     "audit_events",
+    "auth_identities",
+    "auth_local_credentials",
+    "auth_login_throttles",
+    "auth_sessions",
+    "auth_user_roles",
+    "auth_users",
     "indicator_provenances",
     "indicators",
     "ingestion_cycles",
@@ -53,6 +59,12 @@ TARGET_TABLES = {
 }
 MODEL_EXPORTS = {
     "AuditEvent",
+    "AuthIdentity",
+    "AuthLocalCredential",
+    "AuthLoginThrottle",
+    "AuthSession",
+    "AuthUser",
+    "AuthUserRole",
     "Indicator",
     "IndicatorProvenance",
     "IngestionCycle",
@@ -132,9 +144,9 @@ def test_exact_registration_exports_and_mapper_configuration_are_database_free(
         lambda: pytest.fail("model registration must not open a database connection"),
     )
     assert set(Base.metadata.tables) == TARGET_TABLES
-    assert len(Base.metadata.tables) == 24
+    assert len(Base.metadata.tables) == 30
     assert set(models.__all__) == MODEL_EXPORTS
-    assert len(models.__all__) == 24
+    assert len(models.__all__) == 30
     configure_mappers()
 
 

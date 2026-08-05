@@ -181,16 +181,21 @@ def test_documented_read_only_routes_come_from_current_fastapi_application() -> 
         "/api/v1/articles/{public_id}",
         "/api/v1/dashboard/summary",
         "/api/v1/intelligence/items",
-        "/api/v1/intelligence/items/{item_public_id}",
-    }
+            "/api/v1/intelligence/items/{item_public_id}",
+            "/api/v1/auth/me",
+            "/api/v1/admin/users",
+            "/api/v1/admin/users/{user_public_id}",
+            "/api/v1/audit/events",
+        }
     for route in implemented_get_routes:
         assert f"`GET {route}`" in document
 
     for phrase in (
         "Unknown or repeated query parameters are rejected",
         "Pydantic response fields",
-        "no write, ingestion, administration, login, authentication, or authorization endpoint",
-        "unauthenticated read-only interface",
+        "C06 security boundary",
+        "Backend authorization is authoritative",
+        "protects `GET /api/v1/articles`",
     ):
         assert phrase in document
 
@@ -207,7 +212,7 @@ def test_frontend_data_rendering_and_link_boundaries_are_documented() -> None:
         "`NEXT_PUBLIC_API_BASE_URL`",
         "`dangerouslySetInnerHTML` is not used",
         "`rel=\"noopener noreferrer\"`",
-        "No authentication session or login state exists",
+        "frontend authentication remains pending",
     ):
         assert phrase in document
 
@@ -410,7 +415,7 @@ def test_trust_security_logging_and_error_boundaries_are_documented() -> None:
         "Uvicorn access logging is disabled",
         "Raw source payloads and internal exception details",
         "React escapes text",
-        "No user authentication, authorization",
+        "Backend authorization is authoritative",
         "centralized log aggregation, monitoring, alerting",
     ):
         assert phrase in document

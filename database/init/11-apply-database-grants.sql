@@ -58,7 +58,9 @@ DECLARE
         app_login, readonly_role, backup_role, retention_role
     ];
     application_tables constant text[] := ARRAY[
-        'audit_events', 'indicator_provenances', 'indicators',
+        'audit_events', 'auth_identities', 'auth_local_credentials',
+        'auth_login_throttles', 'auth_sessions', 'auth_user_roles',
+        'auth_users', 'indicator_provenances', 'indicators',
         'ingestion_cycles', 'ingestion_errors', 'ingestion_run_records',
         'ingestion_run_events', 'ingestion_runs',
         'intelligence_item_identifiers', 'intelligence_item_indicators',
@@ -68,7 +70,8 @@ DECLARE
         'source_records', 'source_watermarks', 'tags', 'vulnerabilities'
     ];
     runtime_update_tables constant text[] := ARRAY[
-        'indicators', 'ingestion_cycles', 'ingestion_runs',
+        'auth_local_credentials', 'auth_login_throttles', 'auth_sessions',
+        'auth_user_roles', 'auth_users', 'indicators', 'ingestion_cycles', 'ingestion_runs',
         'intelligence_items', 'intelligence_sources', 'quarantined_records',
         'source_credential_references', 'source_rate_limit_states',
         'source_records', 'vulnerabilities'

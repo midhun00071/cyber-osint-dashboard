@@ -14,6 +14,7 @@ from sqlalchemy import (
     Index,
     String,
     UniqueConstraint,
+    event,
     text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -131,3 +132,13 @@ class AuditEvent(BigIntPrimaryKeyMixin, PublicIdMixin, Base):
         foreign_keys="[AuditEvent.ingestion_run_id, AuditEvent.cycle_id]",
         overlaps="cycle,audit_events",
     )
+
+
+@event.listens_for(AuditEvent, "before_update", propagate=True)
+def _reject_audit_event_update(_mapper, _connection, _target) -> None:
+    raise RuntimeError("Audit events are immutable.")
+
+
+@event.listens_for(AuditEvent, "before_delete", propagate=True)
+def _reject_audit_event_delete(_mapper, _connection, _target) -> None:
+    raise RuntimeError("Audit events are immutable.")

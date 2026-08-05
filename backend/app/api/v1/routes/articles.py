@@ -21,6 +21,7 @@ from app.api.v1.query_validation import (
 )
 from app.api.v1.schemas.articles import ArticleListResponse, ArticleSummary
 from app.db.session import get_db_session
+from app.security.dependencies import require_content_read
 from app.services.article_query_service import (
     ArticleNotFoundError,
     ArticleQueryError,
@@ -29,7 +30,11 @@ from app.services.article_query_service import (
 )
 
 
-router = APIRouter(prefix="/articles", tags=["articles"])
+router = APIRouter(
+    prefix="/articles",
+    tags=["articles"],
+    dependencies=[Depends(require_content_read)],
+)
 validate_article_list_query = validate_query_parameters(
     {
         "limit",

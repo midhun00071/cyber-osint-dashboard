@@ -13,6 +13,7 @@ from app.api.v1.query_validation import MAX_PAGINATION_OFFSET, VALIDATION_ERROR_
 from app.core.request_context import REQUEST_ID_HEADER
 from app.core.security_headers import API_CONTENT_SECURITY_POLICY, SECURITY_HEADERS
 from app.db.session import get_db_session
+from app.security.dependencies import require_content_read
 from app.main import app
 from app.models import (
     IntelligenceItem,
@@ -69,6 +70,7 @@ def client():
 
     def factory(session: FakeSession) -> TestClient:
         app.dependency_overrides[get_db_session] = lambda: session
+        app.dependency_overrides[require_content_read] = lambda: None
         test_client = TestClient(app)
         created_clients.append(test_client)
         return test_client

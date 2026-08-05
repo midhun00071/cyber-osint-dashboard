@@ -23,6 +23,12 @@ from app.db.base import Base
 
 IMPLEMENTED_TABLES = {
     "audit_events",
+    "auth_identities",
+    "auth_local_credentials",
+    "auth_login_throttles",
+    "auth_sessions",
+    "auth_user_roles",
+    "auth_users",
     "indicator_provenances",
     "indicators",
     "ingestion_cycles",
@@ -104,6 +110,12 @@ def test_importing_models_registers_only_implemented_tables_without_engine(monke
     assert IMPLEMENTED_TABLES == set(Base.metadata.tables)
     assert set(app.models.__all__) == {
         "AuditEvent",
+        "AuthIdentity",
+        "AuthLocalCredential",
+        "AuthLoginThrottle",
+        "AuthSession",
+        "AuthUser",
+        "AuthUserRole",
         "IngestionCycle",
         "IngestionError",
         "IngestionRun",

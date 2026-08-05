@@ -1,5 +1,32 @@
 # B0-06 Production Architecture
 
+## C06 current-state reconciliation — 5 August 2026
+
+C06 now implements local Argon2id authentication, opaque database-backed
+browser sessions, backend RBAC, Administrator-only user management, and
+Administrator-only audit search. Only SHA-256 session-token and CSRF-token
+hashes are stored. Content routes require `content.read`; backend authorization
+is authoritative, and hiding a frontend control is not authorization.
+
+Exact-origin credentialed CORS permits `GET`, `POST`, `PATCH`, and `OPTIONS`
+with `Content-Type` and `X-CSRF-Token`; `Authorization` is excluded. Unsafe
+authenticated requests require exact Origin and CSRF cookie/header validation.
+Session cookies are HttpOnly, CSRF cookies are separate and non-HttpOnly, both
+are `SameSite=Strict`, and protected environments require `Secure`.
+
+Frontend login and protected-navigation integration remain pending. No real
+account has been provisioned; APR-13 remains pending; manual bootstrap has not
+been executed. SSO is absent and approval-gated. C05 sources remain disabled
+and unscheduled, with no production source-handler binding.
+
+## Historical B0 planning baseline
+
+The numbered B0 sections below preserve the pre-C06 architecture and gap
+analysis as historical planning evidence. Statements there that authentication,
+RBAC, sessions, cookies, or protected routes were absent describe that earlier
+checkpoint and are superseded by the current-state reconciliation above. They
+must not be read as the active C06 contract.
+
 ## 1. Document control
 
 | Field | Value |

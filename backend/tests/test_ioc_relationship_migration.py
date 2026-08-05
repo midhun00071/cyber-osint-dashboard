@@ -15,6 +15,7 @@ RELATIONSHIP_REVISION_ID = "c4e8b2a91d30"
 OPERATIONAL_REVISION_ID = "b103a71d2e4f"
 DATABASE_OPERATIONS_REVISION_ID = "d7a9e51c2f40"
 THREAT_KNOWLEDGE_REVISION_ID = "e91f4c2a7b60"
+C06_REVISION_ID = "f4a1c2d3e5b6"
 PREVIOUS_MIGRATION_HASHES = {
     "f8d739439ed0_create_initial_schema.py": (
         "711ec7cb341f46c1dcef543e51c489e244653cd20aa350535b17362152a3f1fd"
@@ -72,8 +73,9 @@ def test_revision_chain_is_linear_and_database_operations_follows_operational():
     directory = _directory()
     revisions = list(directory.walk_revisions())
 
-    assert directory.get_heads() == [THREAT_KNOWLEDGE_REVISION_ID]
+    assert directory.get_heads() == [C06_REVISION_ID]
     assert [revision.revision for revision in revisions] == [
+        C06_REVISION_ID,
         THREAT_KNOWLEDGE_REVISION_ID,
         DATABASE_OPERATIONS_REVISION_ID,
         OPERATIONAL_REVISION_ID,
@@ -81,12 +83,13 @@ def test_revision_chain_is_linear_and_database_operations_follows_operational():
         INDICATOR_REVISION_ID,
         BASE_REVISION_ID,
     ]
-    assert revisions[0].down_revision == DATABASE_OPERATIONS_REVISION_ID
-    assert revisions[1].down_revision == OPERATIONAL_REVISION_ID
-    assert revisions[2].down_revision == RELATIONSHIP_REVISION_ID
-    assert revisions[3].down_revision == INDICATOR_REVISION_ID
-    assert revisions[4].down_revision == BASE_REVISION_ID
-    assert revisions[5].down_revision is None
+    assert revisions[0].down_revision == THREAT_KNOWLEDGE_REVISION_ID
+    assert revisions[1].down_revision == DATABASE_OPERATIONS_REVISION_ID
+    assert revisions[2].down_revision == OPERATIONAL_REVISION_ID
+    assert revisions[3].down_revision == RELATIONSHIP_REVISION_ID
+    assert revisions[4].down_revision == INDICATOR_REVISION_ID
+    assert revisions[5].down_revision == BASE_REVISION_ID
+    assert revisions[6].down_revision is None
     assert all(not revision.is_branch_point for revision in revisions)
     assert all(not revision.is_merge_point for revision in revisions)
     assert all(Path(revision.path).parent.resolve() == VERSIONS_DIR for revision in revisions)

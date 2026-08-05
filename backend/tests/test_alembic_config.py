@@ -14,6 +14,12 @@ from app.db.base import Base
 
 APPROVED_TABLES = {
     "audit_events",
+    "auth_identities",
+    "auth_local_credentials",
+    "auth_login_throttles",
+    "auth_sessions",
+    "auth_user_roles",
+    "auth_users",
     "indicator_provenances",
     "indicators",
     "ingestion_cycles",
@@ -322,9 +328,10 @@ def test_migration_chain_is_linear_with_one_head_and_known_base():
     script_directory = ScriptDirectory.from_config(config)
     revisions = list(script_directory.walk_revisions())
 
-    assert len(revisions) == 6
-    assert script_directory.get_heads() == ["e91f4c2a7b60"]
+    assert len(revisions) == 7
+    assert script_directory.get_heads() == ["f4a1c2d3e5b6"]
     assert [revision.revision for revision in revisions] == [
+        "f4a1c2d3e5b6",
         "e91f4c2a7b60",
         "d7a9e51c2f40",
         "b103a71d2e4f",
@@ -332,12 +339,13 @@ def test_migration_chain_is_linear_with_one_head_and_known_base():
         "a6c9d4e2f107",
         "f8d739439ed0",
     ]
-    assert revisions[0].down_revision == "d7a9e51c2f40"
-    assert revisions[1].down_revision == "b103a71d2e4f"
-    assert revisions[2].down_revision == "c4e8b2a91d30"
-    assert revisions[3].down_revision == "a6c9d4e2f107"
-    assert revisions[4].down_revision == "f8d739439ed0"
-    assert revisions[5].down_revision is None
+    assert revisions[0].down_revision == "e91f4c2a7b60"
+    assert revisions[1].down_revision == "d7a9e51c2f40"
+    assert revisions[2].down_revision == "b103a71d2e4f"
+    assert revisions[3].down_revision == "c4e8b2a91d30"
+    assert revisions[4].down_revision == "a6c9d4e2f107"
+    assert revisions[5].down_revision == "f8d739439ed0"
+    assert revisions[6].down_revision is None
     for revision in revisions:
         assert revision.is_branch_point is False
         assert revision.is_merge_point is False

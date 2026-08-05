@@ -1,5 +1,18 @@
 # P7-03 Production Docker Deployment Guide
 
+## C06 current authentication state
+
+C06 uses local Argon2id credentials and opaque database-backed browser
+sessions. Only SHA-256 hashes of session and CSRF tokens are stored. Content
+routes require `content.read`; user management and audit search are
+Administrator-only, and backend authorization is authoritative. Frontend
+button visibility is never authorization.
+
+Frontend login and protected-navigation integration remain pending. No real
+account has been provisioned, APR-13 remains pending, and the manual bootstrap
+CLI has not been executed. SSO is absent and approval-gated. C05 sources remain
+disabled and unscheduled.
+
 ## Purpose and audience
 
 This is the production-oriented Docker deployment guide for the Alpha Data
@@ -390,7 +403,8 @@ $ApprovedPreflight = Invoke-WebRequest `
     -Headers @{
         Host = $BackendHostHeader
         Origin = $ApprovedOrigin
-        "Access-Control-Request-Method" = "GET"
+        "Access-Control-Request-Method" = "POST"
+        "Access-Control-Request-Headers" = "Content-Type,X-CSRF-Token"
     }
 
 if ($ApprovedPreflight.Headers["Access-Control-Allow-Origin"] -ne $ApprovedOrigin) {
@@ -399,8 +413,18 @@ if ($ApprovedPreflight.Headers["Access-Control-Allow-Origin"] -ne $ApprovedOrigi
 if ($ApprovedPreflight.Headers["Access-Control-Allow-Origin"] -eq "*") {
     throw "Wildcard production CORS is prohibited."
 }
-if ($ApprovedPreflight.Headers["Access-Control-Allow-Credentials"]) {
-    throw "Browser credentials were unexpectedly enabled."
+if ($ApprovedPreflight.Headers["Access-Control-Allow-Credentials"] -ne "true") {
+    throw "Credentialed CORS was not enabled for the approved origin."
+}
+if ($ApprovedPreflight.Headers["Access-Control-Allow-Methods"] -ne "GET, POST, PATCH, OPTIONS") {
+    throw "The bounded C06 method policy was not returned."
+}
+$AllowedHeaders = $ApprovedPreflight.Headers["Access-Control-Allow-Headers"].ToLowerInvariant()
+if (-not $AllowedHeaders.Contains("content-type") -or -not $AllowedHeaders.Contains("x-csrf-token")) {
+    throw "The bounded C06 request-header policy was not returned."
+}
+if ($AllowedHeaders.Contains("authorization") -or $AllowedHeaders.Contains("*")) {
+    throw "An unapproved CORS request header was enabled."
 }
 
 $UnapprovedResponse = Invoke-WebRequest `
@@ -457,8 +481,13 @@ by contacting the unapproved domain.
 - The local Docker log driver is bounded to three 10 MB files per service.
 - Backend and frontend images define local health checks and contain no reload
   server, Next.js development server, or startup ingestion command.
-- Production requires exact HTTPS CORS origins; wildcard origins and browser
-  credentials are disabled.
+- Production requires exact HTTPS CORS origins with credential support. Only
+  `GET`, `POST`, `PATCH`, and `OPTIONS` plus `Content-Type` and
+  `X-CSRF-Token` are permitted; wildcard values and `Authorization` are
+  excluded.
+- Unsafe authenticated requests require exact Origin and CSRF cookie/header
+  validation. Session cookies are HttpOnly, CSRF cookies are separate and
+  non-HttpOnly, both are `SameSite=Strict`, and production requires `Secure`.
 - Runtime Host enforcement requires one syntactically valid header and compares
   its normalized host exactly against `BACKEND_TRUSTED_HOSTS`; ports do not
   widen the allow-list and unlisted hosts are never redirected.
@@ -567,7 +596,7 @@ restarts.
 | Port conflict | Use `Get-NetTCPConnection` to identify the listener; stop only an approved process or use a reviewed host-port override. |
 | Production build fails | Review the bounded build error, disk capacity, dependency retrieval, and checked-out source; do not add secrets as build arguments. |
 | Frontend calls the wrong backend | Confirm `NEXT_PUBLIC_API_BASE_URL`, rebuild the frontend image, and redeploy it; restarting a stale image is insufficient. |
-| CORS mismatch | Compare the browser origin exactly with `BACKEND_CORS_ALLOWED_ORIGINS`; do not add a wildcard or enable credentials. |
+| CORS mismatch | Compare the browser origin exactly with `BACKEND_CORS_ALLOWED_ORIGINS`; do not add a wildcard, disable credentials, or permit `Authorization`. |
 | PostgreSQL is unhealthy | Review `ps` and bounded `db` logs, then check storage availability and protected database settings without printing values. |
 | Backend cannot resolve the database | Confirm the service is attached to the `database` network and uses service hostname `db`; do not publish PostgreSQL or replace the internal boundary. |
 | Migration not applied | Run the manual `heads` and `current` checks, then the approved `migrate` service; do not generate or casually downgrade migrations. |

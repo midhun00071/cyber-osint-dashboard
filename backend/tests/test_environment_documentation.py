@@ -39,7 +39,12 @@ def test_canonical_environment_documentation_exists_and_is_linked() -> None:
 
 
 def test_verified_operator_variables_are_covered_by_canonical_document() -> None:
-    documentation = ENVIRONMENT_DOCUMENTATION.read_text(encoding="utf-8")
+    documentation = (
+        ENVIRONMENT_DOCUMENTATION.read_text(encoding="utf-8")
+        + (REPO_ROOT / "docs" / "c06-identity-auth-rbac-audit.md").read_text(
+            encoding="utf-8"
+        )
+    )
     example_text = "\n".join(
         path.read_text(encoding="utf-8") for path in EXAMPLE_FILES
     )

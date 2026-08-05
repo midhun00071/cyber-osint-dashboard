@@ -1,5 +1,7 @@
 # API Contract
 
+C06 protects article, dashboard-summary, and intelligence routes with `content.read`. Only root, health, version, and local login are public; authentication self-service, Administrator user operations, and Administrator audit search are specified in `c06-identity-auth-rbac-audit.md`.
+
 Project: Alpha Data / Cyber OSINT Dashboard<br>
 Task: P1-03 — Define the API contract<br>
 Status: Approved design<br>

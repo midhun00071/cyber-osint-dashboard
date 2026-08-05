@@ -23,6 +23,12 @@ from app.db.base import Base
 
 IMPLEMENTED_TABLES = {
     "audit_events",
+    "auth_identities",
+    "auth_local_credentials",
+    "auth_login_throttles",
+    "auth_sessions",
+    "auth_user_roles",
+    "auth_users",
     "indicator_provenances",
     "indicators",
     "ingestion_cycles",
@@ -49,6 +55,12 @@ IMPLEMENTED_TABLES = {
 }
 EXPECTED_MODEL_EXPORTS = {
     "AuditEvent",
+    "AuthIdentity",
+    "AuthLocalCredential",
+    "AuthLoginThrottle",
+    "AuthSession",
+    "AuthUser",
+    "AuthUserRole",
     "IngestionCycle",
     "IngestionError",
     "IngestionRun",

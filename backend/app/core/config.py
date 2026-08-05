@@ -44,15 +44,22 @@ _HOSTNAME_PATTERN = re.compile(
 _POSTGRES_IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,62}$")
 _MAX_PASSWORD_FILE_BYTES = 4096
 MAX_HTTP_HOST_HEADER_BYTES = 259
-_STRICT_POOL_FIELD_NAMES = frozenset(
+_STRICT_INTEGER_FIELD_NAMES = frozenset(
     {
         "database_pool_size",
         "database_max_overflow",
         "database_pool_timeout_seconds",
         "database_pool_recycle_seconds",
         "database_connect_timeout_seconds",
+        "auth_session_ttl_minutes",
+        "auth_session_absolute_ttl_minutes",
+        "auth_max_active_sessions",
+        "auth_login_failure_limit",
+        "auth_login_failure_window_seconds",
+        "auth_login_block_seconds",
     }
 )
+_STRICT_BOOLEAN_FIELD_NAMES = frozenset({"auth_cookie_secure"})
 
 
 class _StrictPoolIntegerSourceMixin:
@@ -66,11 +73,16 @@ class _StrictPoolIntegerSourceMixin:
             value_is_complex,
         )
         if (
-            field_name in _STRICT_POOL_FIELD_NAMES
+            field_name in _STRICT_INTEGER_FIELD_NAMES
             and isinstance(prepared, str)
             and re.fullmatch(r"[0-9]+", prepared, flags=re.ASCII)
         ):
             return int(prepared)
+        if field_name in _STRICT_BOOLEAN_FIELD_NAMES and isinstance(prepared, str):
+            if prepared == "true":
+                return True
+            if prepared == "false":
+                return False
         return prepared
 
 
@@ -168,6 +180,54 @@ class Settings(BaseSettings):
     backend_trusted_hosts: str = Field(
         default=",".join(DEFAULT_LOCAL_TRUSTED_HOSTS),
         alias="BACKEND_TRUSTED_HOSTS",
+    )
+
+    auth_cookie_secure: bool = Field(
+        default=False,
+        alias="AUTH_COOKIE_SECURE",
+        strict=True,
+    )
+    auth_session_ttl_minutes: int = Field(
+        default=60,
+        alias="AUTH_SESSION_TTL_MINUTES",
+        strict=True,
+        ge=5,
+        le=480,
+    )
+    auth_session_absolute_ttl_minutes: int = Field(
+        default=480,
+        alias="AUTH_SESSION_ABSOLUTE_TTL_MINUTES",
+        strict=True,
+        ge=30,
+        le=1440,
+    )
+    auth_max_active_sessions: int = Field(
+        default=5,
+        alias="AUTH_MAX_ACTIVE_SESSIONS",
+        strict=True,
+        ge=1,
+        le=20,
+    )
+    auth_login_failure_limit: int = Field(
+        default=5,
+        alias="AUTH_LOGIN_FAILURE_LIMIT",
+        strict=True,
+        ge=3,
+        le=20,
+    )
+    auth_login_failure_window_seconds: int = Field(
+        default=900,
+        alias="AUTH_LOGIN_FAILURE_WINDOW_SECONDS",
+        strict=True,
+        ge=60,
+        le=3600,
+    )
+    auth_login_block_seconds: int = Field(
+        default=900,
+        alias="AUTH_LOGIN_BLOCK_SECONDS",
+        strict=True,
+        ge=60,
+        le=86400,
     )
 
     nvd_api_key: SecretStr | None = Field(default=None, alias="NVD_API_KEY")
@@ -386,6 +446,11 @@ class Settings(BaseSettings):
         if self.database_pool_size + self.database_max_overflow > 30:
             raise ValueError(
                 "DATABASE_POOL_SIZE plus DATABASE_MAX_OVERFLOW must not exceed 30."
+            )
+
+        if self.auth_session_ttl_minutes > self.auth_session_absolute_ttl_minutes:
+            raise ValueError(
+                "AUTH_SESSION_TTL_MINUTES must not exceed the absolute lifetime."
             )
 
         if self.postgres_password is not None and self.postgres_password_file:
@@ -821,6 +886,13 @@ class Settings(BaseSettings):
     def validate_startup(self) -> None:
         """Eagerly validate settings required before service availability."""
 
+        if (
+            self.effective_environment in PROTECTED_ENVIRONMENTS
+            and not self.auth_cookie_secure
+        ):
+            raise ValueError(
+                "AUTH_COOKIE_SECURE must be true in staging and production."
+            )
         _ = self.sqlalchemy_database_url
 
 

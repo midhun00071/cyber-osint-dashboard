@@ -2,11 +2,39 @@ import pytest
 from pydantic import ValidationError
 
 from app.core.config import Settings, get_settings
+from app.main import app
+from fastapi.testclient import TestClient
 
 
 def make_settings(**values: object) -> Settings:
     get_settings.cache_clear()
+    if str(values.get("APP_ENV", "local")).strip().lower() in {"staging", "production"}:
+        values.setdefault("AUTH_COOKIE_SECURE", True)
     return Settings(_env_file=None, **values)
+
+
+def test_c06_cors_allows_only_required_credentialed_browser_headers() -> None:
+    with TestClient(app) as client:
+        response = client.options(
+            "/api/v1/auth/login",
+            headers={
+                "Origin": "http://localhost:3000",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "Content-Type,X-CSRF-Token",
+            },
+        )
+        denied = client.options(
+            "/api/v1/auth/login",
+            headers={
+                "Origin": "http://localhost:3000",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "Authorization",
+            },
+        )
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-credentials"] == "true"
+    assert "authorization" not in response.headers["access-control-allow-headers"].lower()
+    assert denied.status_code == 400
 
 
 def test_single_https_origin_is_accepted() -> None:

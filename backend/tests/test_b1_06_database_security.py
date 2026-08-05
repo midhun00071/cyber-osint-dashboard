@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 import subprocess
@@ -20,6 +21,12 @@ AUDIT_ROOTS = (BACKEND_ROOT / "app", BACKEND_ROOT / "alembic")
 MODEL_NAMES = frozenset(
     {
         "AuditEvent",
+        "AuthIdentity",
+        "AuthLocalCredential",
+        "AuthLoginThrottle",
+        "AuthSession",
+        "AuthUser",
+        "AuthUserRole",
         "Indicator",
         "IndicatorProvenance",
         "IngestionCycle",
@@ -373,7 +380,7 @@ def test_orm_updates_and_deletes_are_bounded_and_api_has_no_mutation_routes() ->
             if name in {"post", "put", "patch", "delete"} and isinstance(
                 node.func, ast.Attribute
             ):
-                mutation_routes.append(f"{_relative(path)}:{node.lineno}:{name}")
+                    mutation_routes.append(f"{_relative(path)}:{name}")
             orm_write = (
                 isinstance(node.func, ast.Name) and name in {"update", "delete"}
             ) or (
@@ -396,7 +403,13 @@ def test_orm_updates_and_deletes_are_bounded_and_api_has_no_mutation_routes() ->
                         break
                 if not bounded:
                     unsafe_writes.append(f"{_relative(path)}:{node.lineno}:{name}")
-    assert not mutation_routes, mutation_routes
+    assert Counter(mutation_routes) == Counter(
+        {
+            "app/api/v1/routes/auth.py:post": 4,
+            "app/api/v1/routes/admin_users.py:post": 2,
+            "app/api/v1/routes/admin_users.py:patch": 3,
+        }
+    )
     assert not unsafe_writes, unsafe_writes
 
 
@@ -423,7 +436,7 @@ def test_article_search_payloads_are_bound_and_wildcards_are_literal(payload: st
 def test_schema_and_migrations_remain_exactly_at_the_frozen_boundary() -> None:
     import app.models  # noqa: F401
 
-    assert len(Base.metadata.tables) == 24
+    assert len(Base.metadata.tables) == 30
     versions = BACKEND_ROOT / "alembic" / "versions"
     revision_pairs: dict[str, str | None] = {}
     for path in sorted(versions.glob("*.py")):
@@ -453,13 +466,13 @@ def test_schema_and_migrations_remain_exactly_at_the_frozen_boundary() -> None:
             check=False,
         )
         assert comparison.returncode == 0
-    assert len(revision_pairs) == 6
+    assert len(revision_pairs) == 7
     head = next(revision for revision in revision_pairs if revision not in revision_pairs.values())
-    assert head == "e91f4c2a7b60"
-    assert revision_pairs[head] == "d7a9e51c2f40"
+    assert head == "f4a1c2d3e5b6"
+    assert revision_pairs[head] == "e91f4c2a7b60"
     traversed: list[str] = []
     revision: str | None = head
     while revision is not None:
         traversed.append(revision)
         revision = revision_pairs[revision]
-    assert len(traversed) == 6
+    assert len(traversed) == 7

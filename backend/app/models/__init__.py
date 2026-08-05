@@ -1,6 +1,10 @@
 """ORM model registration for implemented domain tables."""
 
 from app.models.audit_event import AuditEvent
+from app.models.auth_identity import AuthIdentity, AuthLocalCredential
+from app.models.auth_role import AuthUserRole
+from app.models.auth_session import AuthLoginThrottle, AuthSession
+from app.models.auth_user import AuthUser
 from app.models.ingestion_cycle import IngestionCycle
 
 from app.models.ingestion_error import IngestionError
@@ -28,6 +32,12 @@ from app.models.vulnerability import Vulnerability
 
 __all__ = [
     "AuditEvent",
+    "AuthIdentity",
+    "AuthLocalCredential",
+    "AuthLoginThrottle",
+    "AuthSession",
+    "AuthUser",
+    "AuthUserRole",
     "IngestionError",
     "IngestionCycle",
     "IngestionRun",

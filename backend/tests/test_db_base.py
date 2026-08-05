@@ -23,6 +23,12 @@ def test_naming_convention_includes_required_entries():
 def test_base_metadata_has_all_implemented_tables_after_model_registration():
     assert set(Base.metadata.tables) == {
         "audit_events",
+        "auth_identities",
+        "auth_local_credentials",
+        "auth_login_throttles",
+        "auth_sessions",
+        "auth_user_roles",
+        "auth_users",
         "indicator_provenances",
         "indicators",
         "ingestion_cycles",
@@ -52,6 +58,12 @@ def test_base_metadata_has_all_implemented_tables_after_model_registration():
 def test_implemented_domain_models_are_registered():
     assert {mapper.class_ for mapper in Base.registry.mappers} >= {
         app.models.AuditEvent,
+        app.models.AuthIdentity,
+        app.models.AuthLocalCredential,
+        app.models.AuthLoginThrottle,
+        app.models.AuthSession,
+        app.models.AuthUser,
+        app.models.AuthUserRole,
         app.models.IngestionCycle,
         app.models.IngestionError,
         app.models.IngestionRun,

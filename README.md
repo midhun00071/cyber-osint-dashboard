@@ -1,5 +1,18 @@
 # Alpha Data / Cyber OSINT Dashboard
 
+C06 adds backend local identity, opaque database-backed browser sessions, closed
+RBAC, and immutable security auditing. Only SHA-256 session-token and CSRF-token
+hashes are stored; passwords use Argon2id. Backend authorization is
+authoritative: content routes require `content.read`, and user-management and
+audit-search routes are Administrator-only. Hiding a frontend button is not
+authorization.
+
+Frontend login and protected-navigation integration remain pending, so
+unauthenticated frontend data requests correctly receive `401`. No real account
+has been provisioned, APR-13 remains pending, and the manual bootstrap CLI has
+not been executed. SSO is absent and remains approval-gated. See
+`docs/c06-identity-auth-rbac-audit.md`.
+
 ## Project overview
 
 Alpha Data is a full-stack defensive cybersecurity OSINT dashboard for
@@ -338,14 +351,18 @@ rejected. A valid production example is
 `https://dashboard.example.com`. Set `NEXT_PUBLIC_API_BASE_URL` to the backend
 URL visible to that frontend, and never commit a real `.env` file or secrets.
 
-The browser CORS method policy allows only `GET` and configures no additional
-non-safelisted request headers. Starlette advertises the standard CORS-safelisted
-`Accept`, `Accept-Language`, `Content-Language`, and `Content-Type` names during
-preflight; this does not add write endpoints because the method allow-list
-remains `GET`. Wildcard, authorization, and custom headers are not granted.
-Credentials are disabled; the current application does not use browser cookies,
-sessions, or authorization headers. Requests without an `Origin` header remain
-available to ordinary API clients.
+The credentialed browser CORS policy permits only `GET`, `POST`, `PATCH`, and
+`OPTIONS`. Configured request headers are `Content-Type` and `X-CSRF-Token`;
+Starlette also advertises its standard safelisted headers. `Authorization`,
+wildcard origins, wildcard methods, and wildcard request headers are not
+permitted. Permitted origins receive their exact matching origin and
+`Access-Control-Allow-Credentials: true`.
+
+Unsafe authenticated requests require exact Origin validation and matching
+CSRF cookie/header validation. The opaque session cookie is HttpOnly; the
+separate CSRF cookie is non-HttpOnly. Both use `SameSite=Strict`, and protected
+environments require `Secure`. Requests without an `Origin` remain available
+only where the route contract permits them, including public utility GETs.
 
 API and non-documentation responses include these exact headers:
 
