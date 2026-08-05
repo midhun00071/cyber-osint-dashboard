@@ -466,13 +466,14 @@ def test_schema_and_migrations_remain_exactly_at_the_frozen_boundary() -> None:
             check=False,
         )
         assert comparison.returncode == 0
-    assert len(revision_pairs) == 7
+    assert len(revision_pairs) == 8
     head = next(revision for revision in revision_pairs if revision not in revision_pairs.values())
-    assert head == "f4a1c2d3e5b6"
-    assert revision_pairs[head] == "e91f4c2a7b60"
+    assert head == "c07a01b02c03"
+    assert revision_pairs[head] == "f4a1c2d3e5b6"
+    assert revision_pairs["f4a1c2d3e5b6"] == "e91f4c2a7b60"
     traversed: list[str] = []
     revision: str | None = head
     while revision is not None:
         traversed.append(revision)
         revision = revision_pairs[revision]
-    assert len(traversed) == 7
+    assert len(traversed) == 8

@@ -203,6 +203,7 @@ def test_intelligence_sources_columns_match_approved_design(source_table):
         "source_type",
         "base_url",
         "is_enabled",
+        "operator_state",
         "rate_limit_notes",
         "last_successful_fetch_at",
         "checkpoint_value",
@@ -219,6 +220,7 @@ def test_intelligence_sources_lengths_nullability_and_defaults(source_table):
         "slug": (80, False),
         "source_type": (40, False),
         "base_url": (2048, True),
+        "operator_state": (16, False),
         "rate_limit_notes": (500, True),
         "checkpoint_value": (500, True),
     }
@@ -231,6 +233,8 @@ def test_intelligence_sources_lengths_nullability_and_defaults(source_table):
     assert isinstance(source_table.c.is_enabled.type, Boolean)
     assert source_table.c.is_enabled.nullable is False
     assert source_table.c.is_enabled.default.arg is True
+    assert source_table.c.operator_state.default is None
+    assert source_table.c.operator_state.server_default is None
     assert isinstance(source_table.c.last_successful_fetch_at.type, DateTime)
     assert source_table.c.last_successful_fetch_at.type.timezone is True
     assert source_table.c.last_successful_fetch_at.nullable is True
@@ -238,10 +242,25 @@ def test_intelligence_sources_lengths_nullability_and_defaults(source_table):
 
 def test_intelligence_sources_uniques_checks_and_no_credentials(source_table):
     assert {"public_id", "name", "slug"} <= unique_column_names(source_table)
-    assert "ck_intelligence_sources_source_type_allowed" in constraint_names(
+    assert {
+        "ck_intelligence_sources_source_type_allowed",
+        "ck_intelligence_sources_operator_state",
+        "ck_intelligence_sources_operator_state_enabled_consistency",
+    } <= constraint_names(
         source_table,
         CheckConstraint,
     )
+    checks = check_constraint_sql(source_table)
+    assert "'enabled', 'paused', 'disabled'" in checks[
+        "ck_intelligence_sources_operator_state"
+    ]
+    consistency = checks[
+        "ck_intelligence_sources_operator_state_enabled_consistency"
+    ]
+    assert "operator_state = 'enabled'" in consistency
+    assert "is_enabled = true" in consistency
+    assert "operator_state IN ('paused', 'disabled')" in consistency
+    assert "is_enabled = false" in consistency
 
     forbidden_fragments = ("api_key", "token", "authorization", "cookie", "secret")
     for column_name in source_table.c.keys():

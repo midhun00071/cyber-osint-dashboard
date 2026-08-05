@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from logging.config import fileConfig
 from pathlib import Path
 import sys
@@ -21,8 +22,25 @@ import app.models  # noqa: E402, F401
 
 config = getattr(context, "config", None)
 
-if config is not None and config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+
+def configure_alembic_logging() -> None:
+    """Configure Alembic without disabling existing application loggers."""
+
+    if config is not None and config.config_file_name is not None:
+        previously_disabled_loggers = tuple(
+            logger
+            for logger in logging.root.manager.loggerDict.values()
+            if isinstance(logger, logging.Logger) and logger.disabled
+        )
+        fileConfig(
+            config.config_file_name,
+            disable_existing_loggers=False,
+        )
+        for logger in previously_disabled_loggers:
+            logger.disabled = True
+
+
+configure_alembic_logging()
 
 target_metadata = Base.metadata
 

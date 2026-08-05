@@ -1,5 +1,8 @@
 import importlib.util
+import logging
 from pathlib import Path
+import subprocess
+import sys
 from unittest.mock import MagicMock
 
 import pytest
@@ -222,6 +225,92 @@ def test_alembic_target_metadata_uses_application_base_metadata():
     assert set(module.target_metadata.tables) == APPROVED_TABLES
 
 
+def test_alembic_logging_preserves_existing_application_logger() -> None:
+    env_path = str(ALEMBIC_DIR / "env.py")
+    ini_path = str(ALEMBIC_INI)
+    script = f"""
+import importlib.util
+import logging
+
+from alembic.config import Config
+
+spec = importlib.util.spec_from_file_location("logger_preservation_env", {env_path!r})
+assert spec is not None
+assert spec.loader is not None
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+module.config = Config({ini_path!r})
+
+application_logger = logging.getLogger("app")
+access_logger = logging.getLogger("uvicorn.access")
+original_state = (
+    application_logger.disabled,
+    list(application_logger.handlers),
+    application_logger.level,
+    application_logger.propagate,
+    list(application_logger.filters),
+)
+original_access_disabled = access_logger.disabled
+sentinel_handler = logging.NullHandler()
+sentinel_filter = logging.Filter("app")
+
+try:
+    application_logger.disabled = False
+    application_logger.handlers[:] = [sentinel_handler]
+    application_logger.setLevel(logging.WARNING)
+    application_logger.propagate = False
+    application_logger.filters[:] = [sentinel_filter]
+    access_logger.disabled = True
+
+    assert application_logger.disabled is False
+    assert application_logger.handlers == [sentinel_handler]
+    assert application_logger.propagate is False
+
+    for _ in range(2):
+        module.configure_alembic_logging()
+        assert application_logger.disabled is False
+        assert application_logger.handlers == [sentinel_handler]
+        assert sum(
+            handler is sentinel_handler
+            for handler in application_logger.handlers
+        ) == 1
+        assert application_logger.level == logging.WARNING
+        assert application_logger.propagate is False
+        assert application_logger.filters == [sentinel_filter]
+        assert access_logger.disabled is True
+
+    alembic_logger = logging.getLogger("alembic")
+    assert not alembic_logger.disabled
+    assert alembic_logger.level == logging.INFO
+    assert alembic_logger.propagate
+finally:
+    (
+        application_logger.disabled,
+        original_handlers,
+        application_logger.level,
+        application_logger.propagate,
+        original_filters,
+    ) = original_state
+    application_logger.handlers[:] = original_handlers
+    application_logger.filters[:] = original_filters
+    access_logger.disabled = original_access_disabled
+
+print("Alembic logger preservation passed.")
+"""
+
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=BACKEND_DIR,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == "Alembic logger preservation passed."
+
+
 def test_offline_database_url_preserves_percent_password_without_logging(
     monkeypatch,
     capsys,
@@ -328,9 +417,10 @@ def test_migration_chain_is_linear_with_one_head_and_known_base():
     script_directory = ScriptDirectory.from_config(config)
     revisions = list(script_directory.walk_revisions())
 
-    assert len(revisions) == 7
-    assert script_directory.get_heads() == ["f4a1c2d3e5b6"]
+    assert len(revisions) == 8
+    assert script_directory.get_heads() == ["c07a01b02c03"]
     assert [revision.revision for revision in revisions] == [
+        "c07a01b02c03",
         "f4a1c2d3e5b6",
         "e91f4c2a7b60",
         "d7a9e51c2f40",
@@ -339,13 +429,14 @@ def test_migration_chain_is_linear_with_one_head_and_known_base():
         "a6c9d4e2f107",
         "f8d739439ed0",
     ]
-    assert revisions[0].down_revision == "e91f4c2a7b60"
-    assert revisions[1].down_revision == "d7a9e51c2f40"
-    assert revisions[2].down_revision == "b103a71d2e4f"
-    assert revisions[3].down_revision == "c4e8b2a91d30"
-    assert revisions[4].down_revision == "a6c9d4e2f107"
-    assert revisions[5].down_revision == "f8d739439ed0"
-    assert revisions[6].down_revision is None
+    assert revisions[0].down_revision == "f4a1c2d3e5b6"
+    assert revisions[1].down_revision == "e91f4c2a7b60"
+    assert revisions[2].down_revision == "d7a9e51c2f40"
+    assert revisions[3].down_revision == "b103a71d2e4f"
+    assert revisions[4].down_revision == "c4e8b2a91d30"
+    assert revisions[5].down_revision == "a6c9d4e2f107"
+    assert revisions[6].down_revision == "f8d739439ed0"
+    assert revisions[7].down_revision is None
     for revision in revisions:
         assert revision.is_branch_point is False
         assert revision.is_merge_point is False

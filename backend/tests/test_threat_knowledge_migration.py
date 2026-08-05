@@ -13,7 +13,7 @@ def test_revision_is_one_linear_head_with_exact_parent():
     revision = scripts.get_revision("e91f4c2a7b60")
     assert revision is not None
     assert revision.down_revision == "d7a9e51c2f40"
-    assert scripts.get_heads() == ["f4a1c2d3e5b6"]
+    assert scripts.get_heads() == ["c07a01b02c03"]
 
 
 def test_migration_creates_only_three_tables_and_reverses_dependencies():

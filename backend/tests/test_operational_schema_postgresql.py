@@ -25,7 +25,8 @@ from app.models import IngestionCycle, IngestionRun, IntelligenceSource
 DATABASE_ENV = "B103_POSTGRESQL_TEST_DATABASE_URL"
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 ALEMBIC_INI = BACKEND_DIR / "alembic.ini"
-HEAD = "b103a71d2e4f"
+HISTORICAL_OPERATIONAL_REVISION = "b103a71d2e4f"
+CURRENT_HEAD_REVISION = "c07a01b02c03"
 BASELINE_HEAD = "c4e8b2a91d30"
 EXPECTED_TABLES = set(Base.metadata.tables)
 QUERY_OVERRIDE_NAMES = (
@@ -124,17 +125,45 @@ def _configure_database(url: URL) -> Config:
 
 
 @pytest.fixture(scope="module")
-def pg():
+def pg_database():
     url = _database_url()
+    previous_database_url = os.environ.get("DATABASE_URL")
     config = _configure_database(url)
     engine = sa.create_engine(url, poolclass=NullPool)
     try:
-        command.upgrade(config, "base")
-        command.upgrade(config, HEAD)
         yield engine, config
     finally:
-        engine.dispose()
-        get_settings.cache_clear()
+        try:
+            _reset_disposable_database(engine)
+        finally:
+            engine.dispose()
+            if previous_database_url is None:
+                os.environ.pop("DATABASE_URL", None)
+            else:
+                os.environ["DATABASE_URL"] = previous_database_url
+            get_settings.cache_clear()
+
+
+@pytest.fixture
+def current_pg(pg_database):
+    engine, config = pg_database
+    _reset_disposable_database(engine)
+    command.upgrade(config, CURRENT_HEAD_REVISION)
+    try:
+        yield engine, config
+    finally:
+        _reset_disposable_database(engine)
+
+
+@pytest.fixture
+def historical_pg(pg_database):
+    engine, config = pg_database
+    _reset_disposable_database(engine)
+    command.upgrade(config, HISTORICAL_OPERATIONAL_REVISION)
+    try:
+        yield engine, config
+    finally:
+        _reset_disposable_database(engine)
 
 
 def _reflect(engine, *names):
@@ -237,18 +266,18 @@ def _compatibility_run_values(index, source_id, now, **overrides):
     return values
 
 
-def test_fresh_upgrade_has_one_head_and_exact_tables(pg):
-    engine, _ = pg
+def test_fresh_upgrade_has_one_head_and_exact_tables(current_pg):
+    engine, _ = current_pg
     inspector = sa.inspect(engine)
     tables = set(inspector.get_table_names()) - {"alembic_version"}
     assert tables == EXPECTED_TABLES
     with engine.connect() as connection:
-        assert connection.execute(sa.text("SELECT version_num FROM alembic_version")).scalar_one() == HEAD
-    assert len(EXPECTED_TABLES) == 21
+        assert connection.execute(sa.text("SELECT version_num FROM alembic_version")).scalar_one() == CURRENT_HEAD_REVISION
+    assert len(EXPECTED_TABLES) == 30
 
 
-def test_model_metadata_reconciles_columns_constraints_indexes_and_deletes(pg):
-    engine, _ = pg
+def test_model_metadata_reconciles_columns_constraints_indexes_and_deletes(current_pg):
+    engine, _ = current_pg
     inspector = sa.inspect(engine)
     for table_name in EXPECTED_TABLES:
         assert {column["name"] for column in inspector.get_columns(table_name)} == set(Base.metadata.tables[table_name].c.keys())
@@ -278,8 +307,8 @@ def test_model_metadata_reconciles_columns_constraints_indexes_and_deletes(pg):
         assert all(indexes[name]["dialect_options"]["postgresql_where"] for name in names)
 
 
-def test_current_writer_orm_shape_remains_compatible_without_fabrication(pg):
-    engine, _ = pg
+def test_current_writer_orm_shape_remains_compatible_without_fabrication(current_pg):
+    engine, _ = current_pg
     now = datetime.now(UTC).replace(microsecond=0)
     completed = now + timedelta(seconds=1)
     with Session(engine) as session:
@@ -328,8 +357,8 @@ def test_current_writer_orm_shape_remains_compatible_without_fabrication(pg):
         assert session.scalar(sa.select(sa.func.count()).select_from(IngestionCycle)) == 0
 
 
-def test_compatibility_shape_rejects_mixed_and_target_only_rows(pg):
-    engine, _ = pg
+def test_compatibility_shape_rejects_mixed_and_target_only_rows(historical_pg):
+    engine, _ = historical_pg
     sources, cycles, runs = _reflect(
         engine, "intelligence_sources", "ingestion_cycles", "ingestion_runs"
     )
@@ -382,8 +411,8 @@ def test_compatibility_shape_rejects_mixed_and_target_only_rows(pg):
     )
 
 
-def test_postgresql_constraints_and_null_semantics(pg):
-    engine, _ = pg
+def test_postgresql_constraints_and_null_semantics(historical_pg):
+    engine, _ = historical_pg
     (
         sources, cycles, runs, events, checkpoints, watermarks, rate_states,
         quarantines, audits, credentials,
@@ -442,8 +471,8 @@ def test_postgresql_constraints_and_null_semantics(pg):
     _expect_rejected(engine, credentials, dict(source_id=source_one, reference_name="auth", purpose="source_auth", external_reference_id=None, configuration_state="configured", owner_ref=None, last_rotated_at=None, expires_at=None, created_at=now, updated_at=now))
 
 
-def test_existing_head_backfill_controlled_downgrade_fail_closed_and_reupgrade(pg):
-    engine, config = pg
+def test_existing_head_backfill_controlled_downgrade_fail_closed_and_reupgrade(historical_pg):
+    engine, config = historical_pg
     _reset_disposable_database(engine)
     command.upgrade(config, BASELINE_HEAD)
     sources, runs = _reflect(engine, "intelligence_sources", "ingestion_runs")
@@ -455,7 +484,7 @@ def test_existing_head_backfill_controlled_downgrade_fail_closed_and_reupgrade(p
         success_public_id = uuid4()
         connection.execute(sa.insert(runs).values(**{key: value for key, value in _run_values(200, source_id, 0, now, public_id=running_public_id, trigger_type="manual").items() if key not in {"cycle_id", "idempotency_key", "attempt_number", "retry_of_run_id", "state_version", "defer_reason"}}))
         connection.execute(sa.insert(runs).values(**{key: value for key, value in _run_values(201, source_id, 0, now, public_id=success_public_id, trigger_type="scheduled", status="succeeded", completed_at=completed, checkpoint_after="cursor-1").items() if key not in {"cycle_id", "idempotency_key", "attempt_number", "retry_of_run_id", "state_version", "defer_reason"}}))
-    command.upgrade(config, HEAD)
+    command.upgrade(config, HISTORICAL_OPERATIONAL_REVISION)
     runs, cycles, events, checkpoints, watermarks = _reflect(engine, "ingestion_runs", "ingestion_cycles", "ingestion_run_events", "source_checkpoints", "source_watermarks")
     with engine.connect() as connection:
         run_rows = connection.execute(sa.select(runs.c.public_id, runs.c.trigger_type, runs.c.status, runs.c.attempt_number, runs.c.retry_of_run_id, runs.c.idempotency_key)).mappings().all()
@@ -481,7 +510,7 @@ def test_existing_head_backfill_controlled_downgrade_fail_closed_and_reupgrade(p
         source = connection.execute(sa.select(sources.c.checkpoint_value, sources.c.last_successful_fetch_at)).one()
         assert source.checkpoint_value == "cursor-1"
         assert source.last_successful_fetch_at == completed
-    command.upgrade(config, HEAD)
+    command.upgrade(config, HISTORICAL_OPERATIONAL_REVISION)
     runs = _reflect(engine, "ingestion_runs")[0]
     with engine.begin() as connection:
         success_run = connection.execute(sa.select(runs.c.id).where(runs.c.status == "success")).scalar_one()
@@ -517,15 +546,26 @@ def test_existing_head_backfill_controlled_downgrade_fail_closed_and_reupgrade(p
             sa.select(runs.c.status).where(runs.c.public_id == transitional_public_id)
         ).one()
         assert transitional.status == "succeeded"
-    command.upgrade(config, HEAD)
+    command.upgrade(config, HISTORICAL_OPERATIONAL_REVISION)
 
 
-def test_downgrade_preserves_ingestion_error_extension_evidence(pg):
-    engine, config = pg
-    runs, errors = _reflect(engine, "ingestion_runs", "ingestion_errors")
+def test_downgrade_preserves_ingestion_error_extension_evidence(historical_pg):
+    engine, config = historical_pg
+    sources, runs, errors = _reflect(
+        engine, "intelligence_sources", "ingestion_runs", "ingestion_errors"
+    )
     now = datetime.now(UTC).replace(microsecond=0)
-    with engine.connect() as connection:
-        run_id = connection.execute(sa.select(runs.c.id).limit(1)).scalar_one()
+    with engine.begin() as connection:
+        source_id = connection.execute(
+            sa.insert(sources)
+            .values(**_source_values(300, now))
+            .returning(sources.c.id)
+        ).scalar_one()
+        run_id = connection.execute(
+            sa.insert(runs)
+            .values(**_compatibility_run_values(300, source_id, now))
+            .returning(runs.c.id)
+        ).scalar_one()
 
     base_error = {
         "ingestion_run_id": run_id,
@@ -556,7 +596,7 @@ def test_downgrade_preserves_ingestion_error_extension_evidence(pg):
         with engine.connect() as connection:
             assert connection.execute(
                 sa.text("SELECT version_num FROM alembic_version")
-            ).scalar_one() == HEAD
+            ).scalar_one() == HISTORICAL_OPERATIONAL_REVISION
             assert connection.execute(
                 sa.select(errors.c[field_name]).where(errors.c.id == error_id)
             ).scalar_one() == field_value
@@ -578,7 +618,7 @@ def test_downgrade_preserves_ingestion_error_extension_evidence(pg):
                 baseline_errors.c.id == retained_error_id
             )
         ).scalar_one() == retained_error_id
-    command.upgrade(config, HEAD)
+    command.upgrade(config, HISTORICAL_OPERATIONAL_REVISION)
     upgraded_errors = _reflect(engine, "ingestion_errors")[0]
     with engine.connect() as connection:
         row = connection.execute(

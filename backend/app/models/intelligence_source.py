@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 
 
 SOURCE_TYPE_VALUES = ("api", "rss", "csv", "json")
+SOURCE_OPERATOR_STATE_VALUES = ("enabled", "paused", "disabled")
 
 
 class IntelligenceSource(
@@ -41,6 +42,17 @@ class IntelligenceSource(
             "source_type IN ('api', 'rss', 'csv', 'json')",
             name="ck_intelligence_sources_source_type_allowed",
         ),
+        CheckConstraint(
+            "operator_state IN ('enabled', 'paused', 'disabled')",
+            name="ck_intelligence_sources_operator_state",
+        ),
+        CheckConstraint(
+            "(operator_state = 'enabled' AND is_enabled = true) OR "
+            "(operator_state IN ('paused', 'disabled') AND is_enabled = false)",
+            name=(
+                "ck_intelligence_sources_operator_state_enabled_consistency"
+            ),
+        ),
     )
 
     name: Mapped[str] = mapped_column(String(160), nullable=False, unique=True)
@@ -52,12 +64,22 @@ class IntelligenceSource(
         nullable=False,
         default=True,
     )
+    operator_state: Mapped[str] = mapped_column(String(16), nullable=False)
     rate_limit_notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
     last_successful_fetch_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )
     checkpoint_value: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    def __init__(self, **kwargs: object) -> None:
+        """Derive a missing operator projection from the compatibility flag."""
+
+        if "operator_state" not in kwargs:
+            kwargs["operator_state"] = (
+                "enabled" if kwargs.get("is_enabled", True) else "disabled"
+            )
+        super().__init__(**kwargs)
 
     identifiers: Mapped[list[IntelligenceItemIdentifier]] = relationship(
         "IntelligenceItemIdentifier",

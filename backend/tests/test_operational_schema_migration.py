@@ -12,7 +12,8 @@ VERSIONS_DIR = BACKEND_DIR / "alembic" / "versions"
 REVISION_ID = "b103a71d2e4f"
 PARENT_ID = "c4e8b2a91d30"
 DATABASE_OPERATIONS_REVISION_ID = "d7a9e51c2f40"
-HEAD_REVISION_ID = "f4a1c2d3e5b6"
+HEAD_REVISION_ID = "c07a01b02c03"
+C06_REVISION_ID = "f4a1c2d3e5b6"
 THREAT_KNOWLEDGE_REVISION_ID = "e91f4c2a7b60"
 MIGRATION_PATH = VERSIONS_DIR / "b103a71d2e4f_add_operational_ingestion_audit_schema.py"
 NEW_TABLES = [
@@ -151,12 +152,13 @@ def _literal_first_args(method):
     return values
 
 
-def test_revision_identity_and_linear_seven_revision_chain():
+def test_revision_identity_and_linear_eight_revision_chain():
     directory = _directory()
     revisions = list(directory.walk_revisions())
     assert directory.get_heads() == [HEAD_REVISION_ID]
     assert [revision.revision for revision in revisions] == [
         HEAD_REVISION_ID,
+        C06_REVISION_ID,
         THREAT_KNOWLEDGE_REVISION_ID,
         DATABASE_OPERATIONS_REVISION_ID,
         REVISION_ID,
@@ -165,6 +167,7 @@ def test_revision_identity_and_linear_seven_revision_chain():
         "f8d739439ed0",
     ]
     assert [revision.down_revision for revision in revisions] == [
+        C06_REVISION_ID,
         THREAT_KNOWLEDGE_REVISION_ID,
         DATABASE_OPERATIONS_REVISION_ID,
         REVISION_ID,
