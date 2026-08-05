@@ -214,8 +214,9 @@ def test_assessed_sources_are_separated_from_implemented_support() -> None:
 
     assert "## Planned and assessed sources" in document
     assert "Assessment is not implementation" in document
-    assert "Thirteen registry identities are implemented" in document
-    assert "No other Censys data" in document
+    assert "Seventeen registry identities are implemented" in document
+    assert "four disabled C05 identities" in document
+    assert "No Censys Platform data" in document
     assert "Recorded Future source" in document
     assert "Scheduling remains out of scope" in document
 
@@ -392,3 +393,18 @@ def test_apr_05_remains_pending_with_exact_evidence_references() -> None:
     ):
         assert expected in evidence
     assert not re.search(r"(?i)[a-z]:\\users\\", evidence)
+
+
+def test_data_sources_documents_c05_exact_disabled_source_set() -> None:
+    document = DATA_SOURCES_PATH.read_text(encoding="utf-8")
+    for slug in (
+        "mitre-attack-enterprise",
+        "cert-fr-security-alerts",
+        "cert-fr-security-advisories",
+        "uk-ncsc-threat-reports",
+    ):
+        assert slug in document
+    assert "disabled, credential-free" in document
+    assert "made no live request" in document
+    assert "No article" in document
+    assert "paid-source plan is retired" in document

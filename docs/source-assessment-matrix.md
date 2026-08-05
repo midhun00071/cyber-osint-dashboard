@@ -1,10 +1,21 @@
 # Source Assessment Matrix
 
+> **C05 supersession notice (5 August 2026):** Every Censys Platform/API,
+> VirusTotal premium/business, Recorded Future, commercial free-tier, paid
+> credential, subscription, `future_api`, or `manual_catalogue` proposal for
+> those commercial capabilities in this historical assessment is retired and
+> no longer part of the production plan. Such rows are retained only as
+> superseded assessment history; they do not represent pending approval,
+> credentials, licensing, implementation, or later activation. The public
+> Censys ARC and Rapid Response publication-metadata implementation remains
+> permitted and distinct from Censys Platform/API functionality. Current C05
+> authority is [C05 Official Public Sources](c05-official-public-sources.md).
+
 ## Purpose
 
-This document began as planning documentation for multi-vendor cybersecurity intelligence expansion and now also records implementation decisions completed under P9-04, P9-05, P9-06, P9-07, and the subsequent bounded Censys and Anomali live-publication integrations. The matrix does not by itself authorize any additional future integration, credentials, collectors, APIs, or scheduler behavior.
+This document began as planning documentation for multi-vendor cybersecurity intelligence expansion and now retains superseded commercial rows as historical evidence. It does not authorize future integration, credentials, collectors, APIs, or scheduler behavior.
 
-Implemented sources include NVD, FIRST EPSS, CISA KEV, CERT-EU Security Advisories, the two Censys publication sources with bounded manual live collection and reviewed local-catalogue fallback, Anomali Cyber Watch with bounded manual live collection and reviewed local-catalogue fallback, the Google TI/Mandiant shared RSS publication sources, and the two exact IBM X-Force local publication-metadata families. Other Anomali families, Censys platform/exposure capabilities, IBM Exchange surfaces, reports, collections, APIs, IOCs, reputation data, and other future vendor integrations remain unapproved; future source work must follow [source-integration-policy.md](source-integration-policy.md), preserve defensive scope, and complete current access/licensing verification before implementation.
+The repository retains two Censys publication sources with bounded manual live metadata collection, which remain distinct from Platform/API functionality. Censys Platform/exposure, VirusTotal premium/business, Recorded Future, paid credentials, subscription mocks, and commercial free-tier workarounds are retired rather than pending or unapproved future work. Other unrelated source proposals require a separately frozen task.
 
 ## Decision Values
 
@@ -123,7 +134,7 @@ remain disabled.
 
 - The dashboard must not perform active scanning.
 - The dashboard must not trigger Censys rescans.
-- Future structured Censys use should use authorized official APIs only after current access/licensing verification.
+- Structured Censys Platform/API use is retired by C05 and has no later approval or implementation path in the current plan.
 - Exposure intelligence is conceptually enrichment for existing indicators or approved defensive assets, not a reason to probe arbitrary targets.
 - Clean canonical URLs must be used if Censys publication links are catalogued; tracking parameters such as `utm_*`, `gclid`, and ad campaign parameters must not be stored.
 
@@ -255,7 +266,8 @@ use `requires current access/licensing verification`.
 | Decision | Source families |
 |---|---|
 | `implement_now` | Censys ARC and Rapid Response metadata from fixed approved discovery pages, Anomali Cyber Watch metadata from its fixed official discovery page, and Google Threat Intelligence and Mandiant public publication metadata from the official shared Google Cloud Threat Intelligence RSS feed. All collection is bounded and manual-only. |
-| `future_api` | Censys platform/host/web/certificate/history/Active DNS/threat-data/enrichment capabilities; Anomali ThreatStream, feeds, STIX/TAXII; VirusTotal/Google TI observable indicator/API families; Recorded Future structured commercial/API families; Mandiant/Google TI structured threat-object API families; IBM X-Force structured exchange/reputation/indicator/API families. |
+| `future_api` | Historical label only. Censys Platform/API, VirusTotal premium/business, and Recorded Future rows carrying this label are retired by C05; unrelated vendor concepts require a new frozen task. |
+| `retired_commercial` | All historical Censys Platform/API, VirusTotal premium/business, Recorded Future, commercial free-tier, paid-credential, and subscription-mock proposals. No implementation or approval is pending. |
 | `manual_catalogue` | Retained reviewed Censys local-file fallback and the reviewed Anomali Cyber Watch local-file fallback, the two exact P9-07 IBM X-Force local publication-metadata families, plus other public or gated resources that remain manual candidates where automatic ingestion is not approved. IBM reports, the Threat Intelligence Index, and public collections remain candidates and are not implemented by P9-07. |
 | `developer_reference_only` | Developer documentation, API guides, case studies, webinars/events, high-level integration references, GTI Threat Profiles as analyst monitoring/filtering design concepts, and non-feed educational resources. |
 | `exclude` | Unsupported STAXX dependency, malware sample retrieval, malware detonation, automated VirusTotal file submission/uploading, active Internet scanning, Censys rescans, arbitrary target probing, Recorded Future scraping, arbitrary URL ingestion, and offensive tooling. |

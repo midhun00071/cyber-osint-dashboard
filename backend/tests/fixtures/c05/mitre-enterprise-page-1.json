@@ -1,0 +1,49 @@
+{
+  "more": true,
+  "next": "c05-enterprise-page-2",
+  "objects": [
+    {
+      "type": "identity",
+      "spec_version": "2.1",
+      "id": "identity--11111111-1111-4111-8111-111111111111",
+      "created": "2026-08-01T00:00:00Z",
+      "modified": "2026-08-01T00:00:00Z",
+      "name": "Synthetic MITRE fixture producer",
+      "identity_class": "organization"
+    },
+    {
+      "type": "marking-definition",
+      "spec_version": "2.1",
+      "id": "marking-definition--22222222-2222-4222-8222-222222222222",
+      "created": "2026-08-01T00:00:00Z",
+      "definition_type": "statement",
+      "definition": {
+        "statement": "Synthetic fixture marking for offline tests only."
+      }
+    },
+    {
+      "type": "intrusion-set",
+      "spec_version": "2.1",
+      "id": "intrusion-set--33333333-3333-4333-8333-333333333333",
+      "created": "2026-08-01T00:00:00Z",
+      "modified": "2026-08-02T00:00:00Z",
+      "created_by_ref": "identity--11111111-1111-4111-8111-111111111111",
+      "name": "Synthetic Enterprise Group",
+      "aliases": ["SEG"],
+      "x_mitre_aliases": ["Synthetic Group"],
+      "x_mitre_deprecated": false,
+      "x_mitre_domains": ["enterprise-attack"]
+    },
+    {
+      "type": "malware",
+      "spec_version": "2.1",
+      "id": "malware--44444444-4444-4444-8444-444444444444",
+      "created": "2026-08-01T00:00:00Z",
+      "modified": "2026-08-02T00:00:00Z",
+      "created_by_ref": "identity--11111111-1111-4111-8111-111111111111",
+      "name": "Synthetic Fixture Malware",
+      "is_family": true,
+      "x_mitre_domains": ["enterprise-attack"]
+    }
+  ]
+}

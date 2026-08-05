@@ -15,6 +15,7 @@ from app.ingestion.stix_taxii.bounded_json import (
 )
 from app.ingestion.stix_taxii.policy import (
     ApprovedStixSourcePolicy,
+    MITRE_ATTACK_ENTERPRISE_STIX_POLICY,
     StixInputTransport,
     validate_stix_source_policy,
 )
@@ -1224,3 +1225,127 @@ def test_safe_content_hash_is_deterministic_and_raw_fields_are_not_retained():
     assert "contact_information" not in first.safe_payload
     assert "description" not in first.safe_payload
     assert "description_summary" not in first.safe_payload
+
+
+def _mitre_object(stix_type, stix_id, **changes):
+    value = {
+        "type": stix_type,
+        "spec_version": "2.1",
+        "id": stix_id,
+        "created": CREATED,
+        "modified": MODIFIED,
+        "name": f"Synthetic {stix_type}",
+        "x_mitre_domains": ["enterprise-attack"],
+    }
+    value.update(changes)
+    return value
+
+
+def _validate_mitre(objects):
+    raw = json.dumps({"objects": objects, "more": False}).encode()
+    bounded = parse_stix_json_bytes(
+        raw,
+        MITRE_ATTACK_ENTERPRISE_STIX_POLICY,
+        StixDocumentFormat.TAXII_ENVELOPE,
+    )
+    return validate_stix_document(
+        bounded,
+        MITRE_ATTACK_ENTERPRISE_STIX_POLICY,
+        allow_unresolved_relationships=True,
+    )
+
+
+def test_mitre_custom_allow_list_domain_and_deprecated_lifecycle():
+    intrusion_id = "intrusion-set--dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+    document = _validate_mitre(
+        [
+            _mitre_object(
+                "intrusion-set",
+                intrusion_id,
+                aliases=["One"],
+                x_mitre_aliases=["Two"],
+                revoked=False,
+                x_mitre_deprecated=True,
+                x_mitre_version="1.0",
+            )
+        ],
+    )
+    payload = document.objects[0].safe_payload
+    assert payload["type"] == "intrusion-set"
+    assert payload["aliases"] == ("One", "Two")
+    assert payload["revoked"] is True
+    assert payload["source_revoked"] is False
+    assert payload["x_mitre_deprecated"] is True
+    assert "x_mitre_version" not in payload
+    validate_canonical_safe_payload(
+        intrusion_id,
+        payload,
+        MITRE_ATTACK_ENTERPRISE_STIX_POLICY,
+    )
+
+
+def test_mitre_unknown_custom_property_and_non_enterprise_domain_are_rejected():
+    attack_id = "attack-pattern--eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+    with pytest.raises(StixValidationError, match="custom property"):
+        _validate_mitre(
+            [
+                _mitre_object(
+                    "attack-pattern",
+                    attack_id,
+                    x_mitre_unreviewed="unsafe",
+                )
+            ],
+        )
+    with pytest.raises(StixValidationError, match="Enterprise domain"):
+        _validate_mitre(
+            [
+                _mitre_object(
+                    "attack-pattern",
+                    attack_id,
+                    x_mitre_domains=["mobile-attack"],
+                )
+            ],
+        )
+
+
+def test_mitre_custom_object_type_is_rejected_even_with_x_mitre_prefix():
+    with pytest.raises(StixValidationError, match="type is not approved"):
+        _validate_mitre(
+            [
+                {
+                    "type": "x-mitre-data-source",
+                    "spec_version": "2.1",
+                    "id": "x-mitre-data-source--ffffffff-ffff-4fff-8fff-ffffffffffff",
+                    "created": CREATED,
+                    "modified": MODIFIED,
+                    "name": "Synthetic",
+                }
+            ],
+        )
+
+
+def test_mitre_unsupported_relationship_combination_is_counted_and_excluded():
+    intrusion_id = "intrusion-set--dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+    campaign_id = "campaign--eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+    relationship = {
+        "type": "relationship",
+        "spec_version": "2.1",
+        "id": "relationship--ffffffff-ffff-4fff-8fff-ffffffffffff",
+        "created": CREATED,
+        "modified": MODIFIED,
+        "relationship_type": "uses",
+        "source_ref": intrusion_id,
+        "target_ref": campaign_id,
+        "x_mitre_domains": ["enterprise-attack"],
+    }
+    document = _validate_mitre(
+        [
+            _mitre_object("intrusion-set", intrusion_id),
+            _mitre_object("campaign", campaign_id),
+            relationship,
+        ],
+    )
+    assert document.objects_received == 3
+    assert document.objects_validated == 2
+    assert document.relationships_validated == 0
+    assert document.relationships_excluded == 1

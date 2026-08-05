@@ -97,6 +97,7 @@ class StixImportResult:
     objects_stale: int = 0
     objects_rejected: int = 0
     relationships_validated: int = 0
+    relationships_excluded: int = 0
     indicators_created: int = 0
     indicators_existing: int = 0
     provenances_created: int = 0
@@ -228,6 +229,7 @@ class StixBundleImportService:
             for staged_record in staged_records.values():
                 if staged_record.staged.stix_type in {
                     "threat-actor",
+                    "intrusion-set",
                     "campaign",
                     "malware",
                     "attack-pattern",
@@ -294,6 +296,7 @@ class StixBundleImportService:
                 objects_unchanged=counts.objects_unchanged,
                 objects_stale=counts.objects_stale,
                 relationships_validated=canonical_document.relationships_validated,
+                relationships_excluded=canonical_document.relationships_excluded,
                 indicators_created=counts.indicators_created,
                 indicators_existing=counts.indicators_existing,
                 provenances_created=counts.provenances_created,
@@ -348,9 +351,10 @@ class StixBundleImportService:
             raise StixImportServiceError("Approved STIX source does not exist.")
         if (
             source.slug != policy.source_slug
-            or source.is_enabled is not True
+            or source.is_enabled is not policy.expected_source_enabled
             or source.source_type != "json"
-            or source.base_url != policy.policy_base_url
+            or not isinstance(source.base_url, str)
+            or source.base_url.rstrip("/") != policy.policy_base_url.rstrip("/")
         ):
             raise StixImportServiceError("Approved STIX source identity does not match.")
 

@@ -9,6 +9,11 @@ from app.ingestion.stix_taxii.import_service import StixBundleImportService
 from app.ingestion.stix_taxii.policy import (
     ApprovedStixSourcePolicy,
     ApprovedTaxiiCollectionPolicy,
+    C05_IMPLEMENTED_STIX_SOURCE_POLICIES,
+    C05_IMPLEMENTED_TAXII_COLLECTION_POLICIES,
+    MITRE_ATTACK_CUSTOM_PROPERTIES,
+    MITRE_ATTACK_ENTERPRISE_STIX_POLICY,
+    MITRE_ATTACK_ENTERPRISE_TAXII_POLICY,
     PRODUCTION_STIX_SOURCE_POLICIES,
     PRODUCTION_TAXII_COLLECTION_POLICIES,
     SUPPORTED_RELATIONSHIP_TYPES,
@@ -23,6 +28,41 @@ from app.ingestion.stix_taxii.policy import (
     validate_stix_source_policy,
     validate_taxii_collection_policy,
 )
+
+
+def test_c05_mitre_policy_is_fixed_immutable_and_separate_from_production():
+    stix = MITRE_ATTACK_ENTERPRISE_STIX_POLICY
+    taxii = MITRE_ATTACK_ENTERPRISE_TAXII_POLICY
+    assert C05_IMPLEMENTED_STIX_SOURCE_POLICIES[stix.source_slug] is not None
+    assert C05_IMPLEMENTED_TAXII_COLLECTION_POLICIES[stix.source_slug] is not None
+    assert stix.allowed_custom_properties == MITRE_ATTACK_CUSTOM_PROPERTIES
+    assert stix.allowed_stix_types == {
+        "attack-pattern",
+        "campaign",
+        "intrusion-set",
+        "malware",
+        "relationship",
+        "identity",
+        "marking-definition",
+    }
+    assert stix.allowed_relationship_types == {"uses", "attributed-to"}
+    assert stix.expected_source_enabled is False
+    assert taxii.objects_endpoint == (
+        "https://attack-taxii.mitre.org/api/v21/collections/"
+        "x-mitre-collection--1f5f1533-f617-4ca8-9ab4-6a02367fa019/objects/"
+    )
+    assert taxii.fixed_query_parameters == (
+        ("limit", "1000"),
+        ("match[spec_version]", "2.1"),
+        (
+            "match[type]",
+            "attack-pattern,campaign,intrusion-set,malware,relationship,"
+            "identity,marking-definition",
+        ),
+    )
+    assert taxii.authentication_allowed is False
+    assert dict(PRODUCTION_STIX_SOURCE_POLICIES) == {}
+    assert dict(PRODUCTION_TAXII_COLLECTION_POLICIES) == {}
 
 
 def policy(**changes):

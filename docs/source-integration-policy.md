@@ -1,8 +1,17 @@
 # Source Integration Policy
 
+> **C05 supersession notice (5 August 2026):** Paid-source implementation work
+> is retired. Historical references in this policy to Censys Platform/API,
+> VirusTotal premium/business, Recorded Future, commercial free tiers, paid
+> credentials, subscriptions, or future commercial implementation are retained
+> only as excluded/superseded governance context and do not describe pending
+> work. Public Censys ARC and Rapid Response publication metadata remains a
+> separate permitted public implementation. See
+> [C05 Official Public Sources](c05-official-public-sources.md).
+
 ## Purpose
 
-This policy defines approved integration classes, onboarding requirements, and excluded capabilities for future cybersecurity intelligence source expansion. It applies to proposed vendors such as Censys, Anomali, VirusTotal / Google Threat Intelligence, Recorded Future, Mandiant / Google Security, and IBM X-Force.
+This policy defines generic integration classes, onboarding requirements, and excluded capabilities. Commercial-vendor examples are retained as historical governance only; C05 retires all paid Censys Platform, VirusTotal premium/business, and Recorded Future implementation work.
 
 This is planning documentation only. It does not approve new live ingestion, credentials, scheduler behavior, background workers, API routes, frontend behavior, packages, migrations, or database schema changes.
 

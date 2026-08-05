@@ -890,3 +890,22 @@ administration readiness.
 - [B2-01 self-hosted Prefect platform](b2-01-prefect-platform.md)
 - [C01 Prefect orchestration core](c01-prefect-orchestration-core.md)
 - [Deployment build validation](deployment-build-validation.md)
+## C05 inactive official-source architecture
+
+C05 adds separate immutable, inactive registries for MITRE ATT&CK Enterprise
+TAXII/STIX 2.1 and three strict official RSS metadata feeds. These registries are
+not production handler bindings and do not activate a Prefect schedule. All
+network clients use exact HTTPS endpoints, GET only, no redirects, no
+environment proxies, identity encoding, no credentials or cookies, bounded
+timeouts/bytes/counts, and sanitized failures. Collection finishes before a
+caller-owned database transaction; validated source records, relationships, and
+publication metadata commit atomically, and progress is proposed only after the
+transaction exits successfully.
+
+Paid commercial-source implementation is retired. Public Censys ARC and Rapid
+Response publication metadata remains a distinct public workflow. MITRE,
+CERT-FR alerts/advisories, and UK NCSC reports are implemented but disabled and
+were validated only with local fixtures and mocked transports. No migration,
+article/PDF/attachment/enclosure retrieval, external-reference request, live
+source request, handler activation, or schedule activation is part of C05. See
+[C05 Official Public Sources](c05-official-public-sources.md).

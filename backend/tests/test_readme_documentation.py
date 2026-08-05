@@ -236,3 +236,15 @@ def test_readme_does_not_describe_unfinished_p8_tasks_as_complete() -> None:
         r"(?is)\bP8-0[2-6]\b.{0,80}\b(?:complete|completed|implemented|passed)\b",
         readme,
     )
+
+
+def test_readme_documents_c05_disabled_fixture_only_contract() -> None:
+    document = readme_text()
+    assert "C05 official public sources" in document
+    assert "MITRE ATT&CK Enterprise TAXII/STIX 2.1" in document
+    assert "CERT-FR alerts" in document
+    assert "UK NCSC Threat Reports" in document
+    assert "implemented but disabled" in document
+    assert "made no live request" in document
+    assert "No database migration was added" in document
+    assert "c05-official-public-sources.md" in document

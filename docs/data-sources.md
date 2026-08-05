@@ -588,18 +588,17 @@ The immutable evidence and approval boundary is documented in
 network approval. APR-05 remains `Need Approval`; its decision and decision date
 remain `Pending`; all UAE collectors remain disabled.
 
-The [Source Assessment Matrix](source-assessment-matrix.md) evaluates additional
-families from Censys, Anomali, VirusTotal / Google Threat Intelligence, Recorded
-Future, Mandiant / Google Security, and IBM X-Force. The
+The [Source Assessment Matrix](source-assessment-matrix.md) retains historical
+commercial-family assessment for traceability. Its Censys Platform, VirusTotal,
+and Recorded Future proposals are explicitly retired by C05. The
 [Source Integration Policy](source-integration-policy.md) defines the review and
 approval gate. Assessment is not implementation, and names in those documents
 must not be treated as enabled collection support.
 
-Thirteen registry identities are implemented: the eleven enabled identities in
-the implemented-source table and the two disabled DESC identities. No other
-Censys data, Anomali family, IBM/X-Force platform feature,
-VirusTotal capability, Recorded Future source, STIX/TAXII endpoint, commercial
-API, or UAE live source is implemented. Controlled classifier slugs such as
+Seventeen registry identities are implemented: the eleven enabled identities,
+the two disabled DESC identities, and the four disabled C05 identities. No
+Censys Platform data, VirusTotal capability, Recorded Future source, other
+commercial API, or UAE live source is implemented. Controlled classifier slugs such as
 `ae-cert`, the legacy classification alias `uae-cert`, and
 `uae-cyber-security-council` form a classification trust boundary only and do
 not authorize live collection. `uae-cert` is not a network source, and adding a
@@ -636,3 +635,20 @@ Related repository guidance:
 - [Manual Test Cases](manual-test-cases.md)
 - [Environment and Secrets](environment-and-secrets.md)
 - [Production Docker Deployment](production-docker-deployment.md)
+## C05 official public-source status
+
+C05 implements four disabled, credential-free source identities:
+`mitre-attack-enterprise`, `cert-fr-security-alerts`,
+`cert-fr-security-advisories`, and `uk-ncsc-threat-reports`. They are absent
+from production handler mappings and schedules, and C05 made no live request.
+MITRE uses its fixed Enterprise ATT&CK TAXII 2.1 collection; the other three use
+strict fixed official RSS feeds and retain publication metadata only. No article,
+PDF, attachment, enclosure, image, or external-reference URL is fetched.
+
+The former paid-source plan is retired and superseded. There is no pending
+Censys Platform/Search API, VirusTotal premium/business, Recorded Future,
+commercial free-tier workaround, paid credential, or paid subscription mock.
+Public Censys ARC and Rapid Response publication metadata remains implemented as
+a separate public workflow and must not be represented as Platform enrichment.
+Exact policies, limits, cursor behavior, transaction rules, and limitations are
+documented in [C05 Official Public Sources](c05-official-public-sources.md).

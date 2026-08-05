@@ -582,6 +582,102 @@ _IMPLEMENTED_DEFINITIONS = (
 
 _DISABLED_DEFINITIONS: tuple[SourceDefinition, ...] = (
     SourceDefinition(
+        slug="mitre-attack-enterprise",
+        display_name="MITRE ATT&CK Enterprise",
+        vendor="MITRE",
+        source_family="Enterprise ATT&CK TAXII/STIX 2.1",
+        content_family=ContentFamily.THREAT_RESEARCH,
+        access_method=AccessMethod.STIX_TAXII,
+        allowed_hosts=("attack-taxii.mitre.org",),
+        authentication_required=False,
+        structured=True,
+        implementation_status=ImplementationStatus.IMPLEMENTED,
+        enabled=False,
+        progress_contract=ProgressContract.CHECKPOINT,
+        source_type="json",
+        base_url=(
+            "https://attack-taxii.mitre.org/api/v21/collections/"
+            "x-mitre-collection--1f5f1533-f617-4ca8-9ab4-6a02367fa019/"
+            "objects/"
+        ),
+        rate_limit_notes=(
+            "Fixture-tested fixed Enterprise ATT&CK TAXII 2.1 collection; disabled "
+            "pending separate activation approval. Maximum 40 requests per run "
+            "preserves headroom below the documented service limit."
+        ),
+    ),
+    SourceDefinition(
+        slug="cert-fr-security-alerts",
+        display_name="CERT-FR Security Alerts",
+        vendor="CERT-FR / ANSSI",
+        source_family="Official security alerts RSS metadata",
+        content_family=ContentFamily.SECURITY_ADVISORY,
+        access_method=AccessMethod.PUBLIC_FEED,
+        allowed_hosts=("www.cert.ssi.gouv.fr",),
+        authentication_required=False,
+        structured=True,
+        implementation_status=ImplementationStatus.IMPLEMENTED,
+        enabled=False,
+        progress_contract=ProgressContract.CHECKPOINT,
+        source_type="rss",
+        base_url="https://www.cert.ssi.gouv.fr/alerte/feed/",
+        canonical_publication_hosts=(
+            "www.cert.ssi.gouv.fr",
+            "cert.ssi.gouv.fr",
+        ),
+        rate_limit_notes=(
+            "Fixture-tested strict official RSS metadata collector; disabled pending "
+            "separate activation approval."
+        ),
+    ),
+    SourceDefinition(
+        slug="cert-fr-security-advisories",
+        display_name="CERT-FR Security Advisories",
+        vendor="CERT-FR / ANSSI",
+        source_family="Official security advisories RSS metadata",
+        content_family=ContentFamily.SECURITY_ADVISORY,
+        access_method=AccessMethod.PUBLIC_FEED,
+        allowed_hosts=("cert.ssi.gouv.fr",),
+        authentication_required=False,
+        structured=True,
+        implementation_status=ImplementationStatus.IMPLEMENTED,
+        enabled=False,
+        progress_contract=ProgressContract.CHECKPOINT,
+        source_type="rss",
+        base_url="https://cert.ssi.gouv.fr/avis/feed/",
+        canonical_publication_hosts=(
+            "www.cert.ssi.gouv.fr",
+            "cert.ssi.gouv.fr",
+        ),
+        rate_limit_notes=(
+            "Fixture-tested strict official RSS metadata collector; disabled pending "
+            "separate activation approval."
+        ),
+    ),
+    SourceDefinition(
+        slug="uk-ncsc-threat-reports",
+        display_name="UK NCSC Threat Reports",
+        vendor="UK National Cyber Security Centre",
+        source_family="Official Threat Reports RSS metadata",
+        content_family=ContentFamily.THREAT_RESEARCH,
+        access_method=AccessMethod.PUBLIC_FEED,
+        allowed_hosts=("www.ncsc.gov.uk",),
+        authentication_required=False,
+        structured=True,
+        implementation_status=ImplementationStatus.IMPLEMENTED,
+        enabled=False,
+        progress_contract=ProgressContract.CHECKPOINT,
+        source_type="rss",
+        base_url=(
+            "https://www.ncsc.gov.uk/api/1/services/v1/report-rss-feed.xml"
+        ),
+        canonical_publication_hosts=("www.ncsc.gov.uk",),
+        rate_limit_notes=(
+            "Fixture-tested strict official RSS metadata collector; disabled pending "
+            "separate activation approval."
+        ),
+    ),
+    SourceDefinition(
         slug="ae-cert",
         display_name="UAE Computer Emergency Response Team (aeCERT)",
         vendor="TDRA / aeCERT",

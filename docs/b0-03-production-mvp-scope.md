@@ -1,5 +1,13 @@
 # B0-03 Production MVP Definition of Done
 
+> **C05 supersession (5 August 2026):** Former Censys Platform/API,
+> VirusTotal premium/business, Recorded Future, commercial free-tier, paid
+> credential, and subscription-mock work is retired. Historical mentions below
+> are not pending tasks or approval gates. Public Censys ARC/Rapid Response
+> publication metadata remains. Current C05 scope is the disabled,
+> credential-free MITRE/CERT-FR/UK NCSC implementation documented in
+> [C05 Official Public Sources](c05-official-public-sources.md).
+
 ## 1. Document control
 
 | Field | Frozen value |
@@ -354,7 +362,7 @@ file without a successful representative restore does not pass this gate.
 | Machine-learning predictions | Removed | No prediction output or claim; deterministic rules remain accurately described. | B8-01 |
 | Automated blocking or SOAR | Removed | No action endpoint, control, claim, or demonstration promise. | B8-01 |
 | Malware sample processing | Prohibited and Removed | No upload, retrieval, storage, detonation, or binary processing. | B8-01 |
-| VirusTotal file upload | Prohibited and Removed | No file submission, upload, or sample retrieval even if API access is approved. | B6-05 |
+| VirusTotal integration | Prohibited and Removed | Premium, business, free-tier workaround, metadata, file submission, upload, and sample retrieval are retired; no later API approval is pending. | B6-01 |
 | Intelligence chatbot | Post-Submission Backlog | Entirely absent; no Coming Soon representation. | B8-01 |
 | Slack, Teams, or email alerts | Post-Submission Backlog | No product alerting feature; APR-12 operational monitoring is separate and does not authorize Slack, Teams, or email product alerts. | B8-01 |
 | Mobile application | Removed | No native application claim; responsive web is Required. | B8-01 |
@@ -375,17 +383,17 @@ mappings in the table identify the later implementation or final release tasks
 affected by that decision; they do not replace B0-05 as the approval-record
 owner.
 
-No decision below has been made during B0-03; every owner is
-`Pending assignment`. APR-01 through APR-14 target 4 August 2026, and APR-15
+APR-01 through APR-04 are retired historical records under C05 and require no
+decision. Other records retain their individual states. APR-05 through APR-14 target 4 August 2026, and APR-15
 targets 11 August 2026. Approval records must be attributable and dated but must
 not expose credentials or protected access details.
 
 | ID | Decision and why required | Later implementation area | Required evidence | Release-safe fallback and ability to proceed |
 | --- | --- | --- | --- | --- |
-| APR-01 | Commercial API budget and existing accounts establish whether gated integrations are affordable and available. | B6-01 through B6-08 | Decision owner, budget/account scope, and explicit enabled/disabled matrix. | Disable dependent commercial APIs and make no live claim; release may proceed with them disabled. |
-| APR-02 | Censys entitlement, token owner, exact endpoints, capabilities, and credit budget bound authorized use. | B6-02 through B6-04 | Entitlement record, fixed policy, quota, custody, and zero-transport disabled evidence. | Retain approved public publication workflows only; gated Censys enrichment stays disabled and release may proceed. |
-| APR-03 | VirusTotal permitted business use and API tier determine allowed metadata enrichment, storage, display, and quota. | B6-05 through B6-06 | Licence/tier record, permitted fields, quota, retention, and disabled-state evidence. | Disable API enrichment; file upload and malware retrieval remain prohibited; release may proceed. |
-| APR-04 | Recorded Future subscription and licensed modules determine lawful structured access. | B6-07 through B6-08 | Subscription/module record, automation/storage/redistribution terms, policy, and quota. | Disable the integration and make no coverage claim; release may proceed. |
+| APR-01 | Retired historical commercial budget/account record. | None | C05 retirement evidence. | No commercial integration is planned. |
+| APR-02 | Retired historical Censys Platform entitlement record. | None | C05 retirement evidence and public-Censys distinction test. | Public Censys publication metadata remains; Platform API work is retired. |
+| APR-03 | Retired historical VirusTotal commercial-tier record. | None | C05 retirement evidence. | No VirusTotal integration or fallback is planned. |
+| APR-04 | Retired historical Recorded Future subscription record. | None | C05 retirement evidence. | No Recorded Future integration or fallback is planned. |
 | APR-05 | UAE source automation approval establishes permitted official hosts, terms, cadence, ownership, and retention. | B5-01 through B5-04 | Approved-source register, fixed policies, limits, owner, and zero-request tests for disabled sources. | Use approved manual/offline evidence with accurate freshness; unapproved automation remains disabled. |
 | APR-06 | Two-hour schedule and timezone establish the single cadence, staging timezone, maintenance, and operational owner. | B2-03 | Decision record, one Prefect schedule, owner, and observed cycle or approved rehearsal. | Controlled staging only after a timezone decision; no production claim. This is blocking for the scheduled-cycle gate. |
 | APR-07 | Hosting provider and access method establish where and how the mentor reaches staging. | B9-03 | Host/environment identity, access method, owner, and successful mentor-path check. | A local fallback is valid only with explicit mentor acceptance; otherwise release is blocked. |

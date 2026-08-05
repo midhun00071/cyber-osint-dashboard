@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Synthetic UK NCSC threat reports fixture</title>
+    <item>
+      <title>Synthetic weekly threat report</title>
+      <link>https://www.ncsc.gov.uk/report/synthetic-weekly-threat-report</link>
+      <guid>synthetic-weekly-threat-report</guid>
+      <description>&lt;p&gt;Bounded &lt;b&gt;public metadata&lt;/b&gt; only.&lt;script&gt;discarded()&lt;/script&gt;&lt;/p&gt;</description>
+      <pubDate>Mon, 03 Aug 2026 12:00:00 +0000</pubDate>
+      <author>UK NCSC</author>
+      <category>Threat report</category>
+      <enclosure url="https://www.ncsc.gov.uk/files/synthetic.pdf" type="application/pdf" />
+    </item>
+  </channel>
+</rss>

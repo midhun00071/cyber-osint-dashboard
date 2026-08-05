@@ -10,6 +10,7 @@ import re
 from types import MappingProxyType
 from typing import Mapping
 import unicodedata
+from urllib.parse import urlsplit
 from uuid import UUID
 
 from stix2 import parse as parse_stix
@@ -53,6 +54,7 @@ _VERSIONED_TYPES = frozenset(
         "attack-pattern",
         "campaign",
         "malware",
+        "intrusion-set",
         "threat-actor",
     }
 )
@@ -62,6 +64,8 @@ _VERSIONED_SAFE_KEYS = frozenset(
         "created",
         "modified",
         "revoked",
+        "source_revoked",
+        "x_mitre_deprecated",
         "confidence",
         "created_by_ref",
         "object_marking_refs",
@@ -94,6 +98,7 @@ _SAFE_KEYS_BY_TYPE = {
     "attack-pattern": _BASE_SAFE_KEYS | _VERSIONED_SAFE_KEYS | {"name", "aliases"},
     "campaign": _BASE_SAFE_KEYS | _VERSIONED_SAFE_KEYS | {"name", "aliases"},
     "malware": _BASE_SAFE_KEYS | _VERSIONED_SAFE_KEYS | {"name", "aliases"},
+    "intrusion-set": _BASE_SAFE_KEYS | _VERSIONED_SAFE_KEYS | {"name", "aliases"},
     "threat-actor": _BASE_SAFE_KEYS | _VERSIONED_SAFE_KEYS | {"name", "aliases"},
     "ipv4-addr": _BASE_SAFE_KEYS | {"object_marking_refs", "observable", "mapped_observables"},
     "ipv6-addr": _BASE_SAFE_KEYS | {"object_marking_refs", "observable", "mapped_observables"},
@@ -111,6 +116,7 @@ _REQUIRED_SAFE_KEYS_BY_TYPE = {
     "attack-pattern": _BASE_SAFE_KEYS | {"created", "modified", "name"},
     "campaign": _BASE_SAFE_KEYS | {"created", "modified", "name"},
     "malware": _BASE_SAFE_KEYS | {"created", "modified", "name"},
+    "intrusion-set": _BASE_SAFE_KEYS | {"created", "modified", "name"},
     "threat-actor": _BASE_SAFE_KEYS | {"created", "modified", "name"},
     "ipv4-addr": _BASE_SAFE_KEYS | {"observable", "mapped_observables"},
     "ipv6-addr": _BASE_SAFE_KEYS | {"observable", "mapped_observables"},
@@ -141,6 +147,7 @@ class ValidatedStixDocument:
     objects_validated: int
     relationships_validated: int
     markings_validated: int
+    relationships_excluded: int = 0
 
 
 def validate_existing_safe_payload(
@@ -249,6 +256,7 @@ def validate_persistable_stix_document(
         document.objects_validated,
         document.relationships_validated,
         document.markings_validated,
+        document.relationships_excluded,
     ):
         if type(count) is not int or count < 0:
             raise StixValidationError("Validated STIX document counters are invalid.")
@@ -267,7 +275,7 @@ def validate_persistable_stix_document(
         item.stix_type == "marking-definition" for item in canonical_versions
     )
     if (
-        document.objects_received != actual_count
+        document.objects_received != actual_count + document.relationships_excluded
         or document.objects_validated != actual_count
         or document.relationships_validated != relationship_count
         or document.markings_validated != marking_count
@@ -323,6 +331,7 @@ def validate_persistable_stix_document(
         objects_validated=actual_count,
         relationships_validated=relationship_count,
         markings_validated=marking_count,
+        relationships_excluded=document.relationships_excluded,
     )
 
 
@@ -403,12 +412,15 @@ def validate_stix_document(
     policy: ApprovedStixSourcePolicy,
     *,
     existing_objects: Mapping[str, Mapping[str, object]] | None = None,
+    allow_unresolved_relationships: bool = False,
 ) -> ValidatedStixDocument:
     """Validate all objects and reject the complete document on any unsafe item."""
 
     if not isinstance(document, BoundedStixDocument):
         raise StixValidationError("A bounded STIX document is required.")
     approved = validate_stix_source_policy(policy)
+    if type(allow_unresolved_relationships) is not bool:
+        raise StixValidationError("STIX relationship-resolution policy is invalid.")
     if len(document.objects) > approved.maximum_objects:
         raise StixValidationError("STIX object count exceeds policy.")
     existing = existing_objects or MappingProxyType({})
@@ -421,6 +433,18 @@ def validate_stix_document(
             raise
         raise StixValidationError("STIX object validation failed.") from exc
 
+    relationships_excluded = 0
+    accepted_versions: list[StagedStixObject] = []
+    for item in staged_versions:
+        if (
+            item.stix_type == "relationship"
+            and approved.allowed_custom_properties
+            and not _supported_relationship_combination(item.safe_payload)
+        ):
+            relationships_excluded += 1
+            continue
+        accepted_versions.append(item)
+    staged_versions = accepted_versions
     relationship_count = sum(
         item.stix_type == "relationship" for item in staged_versions
     )
@@ -429,8 +453,20 @@ def validate_stix_document(
     latest = _latest_strict_versions(staged_versions)
     validated_versions = _canonical_version_lineage(staged_versions)
     by_id = {item.stix_id: item for item in latest}
-    _validate_marking_references(latest, by_id, existing, approved)
-    _validate_relationships(latest, by_id, existing, approved)
+    _validate_marking_references(
+        latest,
+        by_id,
+        existing,
+        approved,
+        allow_unresolved=allow_unresolved_relationships,
+    )
+    _validate_relationships(
+        latest,
+        by_id,
+        existing,
+        approved,
+        allow_unresolved=allow_unresolved_relationships,
+    )
     ordered = tuple(
         [item for item in latest if item.stix_type != "relationship"]
         + [item for item in latest if item.stix_type == "relationship"]
@@ -444,6 +480,7 @@ def validate_stix_document(
         markings_validated=sum(
             item.stix_type == "marking-definition" for item in staged_versions
         ),
+        relationships_excluded=relationships_excluded,
     )
 
 
@@ -462,8 +499,12 @@ def _validate_and_stage_object(
     if "extensions" in obj or "granular_markings" in obj:
         raise StixValidationError("STIX extensions or granular markings are unsupported.")
     _reject_control_strings(obj)
+    custom_values = _validate_source_custom_properties(obj, policy)
+    standards_object = thaw_json(obj)
+    for custom_name in custom_values:
+        standards_object.pop(custom_name, None)
     try:
-        parse_stix(thaw_json(obj), allow_custom=False, version="2.1")
+        parse_stix(standards_object, allow_custom=False, version="2.1")
     except Exception as exc:
         raise StixValidationError("STIX standards validation failed.") from exc
 
@@ -484,9 +525,11 @@ def _validate_and_stage_object(
             obj["start_time"], "start_time"
         ):
             raise StixValidationError("STIX relationship timestamp order is invalid.")
-    revoked = obj.get("revoked")
-    if revoked is not None and type(revoked) is not bool:
+    source_revoked = obj.get("revoked")
+    if source_revoked is not None and type(source_revoked) is not bool:
         raise StixValidationError("STIX revoked value must be a boolean.")
+    deprecated = custom_values.get("x_mitre_deprecated")
+    inactive = source_revoked is True or deprecated is True
     confidence_value = obj.get("confidence")
     if confidence_value is not None and (
         type(confidence_value) is not int or not 0 <= confidence_value <= 100
@@ -512,6 +555,12 @@ def _validate_and_stage_object(
         policy.maximum_aliases,
         "aliases",
     )
+    mitre_aliases = custom_values.get("x_mitre_aliases", ())
+    if not isinstance(mitre_aliases, tuple):
+        raise StixValidationError("ATT&CK alias metadata is invalid.")
+    aliases = tuple(dict.fromkeys((*aliases, *mitre_aliases)))
+    if len(aliases) > policy.maximum_aliases:
+        raise StixValidationError("STIX aliases are invalid.")
     external_references = _safe_external_references(obj, policy)
 
     safe: dict[str, object] = {
@@ -521,8 +570,14 @@ def _validate_and_stage_object(
     }
     _put_timestamp(safe, "created", created)
     _put_timestamp(safe, "modified", modified)
-    if revoked is not None:
-        safe["revoked"] = revoked
+    if policy.allowed_custom_properties and (
+        source_revoked is not None or deprecated is not None
+    ):
+        safe["revoked"] = inactive
+        safe["source_revoked"] = source_revoked is True
+        safe["x_mitre_deprecated"] = deprecated is True
+    elif source_revoked is not None:
+        safe["revoked"] = source_revoked
     if confidence_value is not None:
         safe["confidence"] = confidence_value
     for name in ("created_by_ref", "name"):
@@ -644,6 +699,8 @@ def _map_object_specific(
     elif stix_type == "relationship":
         for name in ("relationship_type", "source_ref", "target_ref"):
             safe[name] = _bounded_text(obj.get(name), 300, name)
+        if safe["relationship_type"] not in policy.allowed_relationship_types:
+            raise StixValidationError("STIX relationship type is not approved.")
         _put_timestamp(
             safe, "start_time", _optional_timestamp(obj.get("start_time"), "start_time")
         )
@@ -754,6 +811,8 @@ def _validate_marking_references(
     by_id: Mapping[str, StagedStixObject],
     existing: Mapping[str, Mapping[str, object]],
     policy: ApprovedStixSourcePolicy,
+    *,
+    allow_unresolved: bool,
 ) -> None:
     for item in objects:
         refs = item.safe_payload.get("object_marking_refs", ())
@@ -761,6 +820,8 @@ def _validate_marking_references(
             target = by_id.get(reference)
             payload = target.safe_payload if target is not None else existing.get(reference)
             if payload is None:
+                if allow_unresolved:
+                    continue
                 raise StixValidationError("STIX marking reference is unresolved.")
             validate_existing_safe_payload(
                 reference,
@@ -775,6 +836,8 @@ def _validate_relationships(
     by_id: Mapping[str, StagedStixObject],
     existing: Mapping[str, Mapping[str, object]],
     policy: ApprovedStixSourcePolicy,
+    *,
+    allow_unresolved: bool,
 ) -> None:
     for item in objects:
         if item.stix_type != "relationship":
@@ -791,6 +854,8 @@ def _validate_relationships(
             target = by_id.get(reference)
             target_payload = target.safe_payload if target is not None else existing.get(reference)
             if target_payload is None:
+                if allow_unresolved:
+                    continue
                 raise StixValidationError("STIX relationship reference is unresolved.")
             validate_existing_safe_payload(
                 reference,
@@ -798,6 +863,36 @@ def _validate_relationships(
                 policy,
                 ExistingStixReferenceUse.RELATIONSHIP_TARGET,
             )
+
+
+def _supported_relationship_combination(payload: Mapping[str, object]) -> bool:
+    if payload.get("type") != "relationship":
+        return True
+    relationship_type = payload.get("relationship_type")
+    source_ref = payload.get("source_ref")
+    target_ref = payload.get("target_ref")
+    if not all(
+        isinstance(value, str)
+        for value in (relationship_type, source_ref, target_ref)
+    ):
+        raise StixValidationError("STIX relationship metadata is invalid.")
+    assert isinstance(relationship_type, str)
+    assert isinstance(source_ref, str)
+    assert isinstance(target_ref, str)
+    source_type = source_ref.split("--", 1)[0]
+    target_type = target_ref.split("--", 1)[0]
+    entity_types = {"attack-pattern", "campaign", "intrusion-set", "malware"}
+    if source_type not in entity_types or target_type not in entity_types:
+        return False
+    approved = {
+        ("intrusion-set", "uses", "malware"),
+        ("intrusion-set", "uses", "attack-pattern"),
+        ("campaign", "uses", "malware"),
+        ("campaign", "uses", "attack-pattern"),
+        ("malware", "uses", "attack-pattern"),
+        ("campaign", "attributed-to", "intrusion-set"),
+    }
+    return (source_type, relationship_type, target_type) in approved
 
 
 def _validate_stix_id(value: object, expected_type: str) -> None:
@@ -859,11 +954,17 @@ def _safe_external_references(
     if not isinstance(references, (tuple, list)) or len(references) > policy.maximum_external_references:
         raise StixValidationError("STIX external references are invalid.")
     safe: list[dict[str, str]] = []
+    mitre_policy = bool(policy.allowed_custom_properties)
     for reference in references:
+        allowed_fields = (
+            {"source_name", "external_id", "url", "description"}
+            if mitre_policy
+            else {"source_name", "external_id"}
+        )
         if (
             not isinstance(reference, Mapping)
             or not {"source_name"}.issubset(reference)
-            or set(reference) - {"source_name", "external_id"}
+            or set(reference) - allowed_fields
             or "external_id" in reference
             and reference["external_id"] is None
         ):
@@ -879,8 +980,93 @@ def _safe_external_references(
             if _EXTERNAL_ID_RE.fullmatch(external_id) is None:
                 raise StixValidationError("STIX external identifier is invalid.")
             mapped["external_id"] = external_id
+        if "url" in reference:
+            _validate_discarded_external_url(reference["url"])
+        if "description" in reference:
+            _bounded_text(reference["description"], 5000, "external description")
         safe.append(mapped)
     return safe
+
+
+def _validate_discarded_external_url(value: object) -> None:
+    text = _bounded_text(value, 2048, "external URL")
+    if not text.isascii():
+        raise StixValidationError("STIX external URL is invalid.")
+    try:
+        parsed = urlsplit(text)
+        port = parsed.port
+    except ValueError:
+        raise StixValidationError("STIX external URL is invalid.") from None
+    if (
+        parsed.scheme not in {"https", "http"}
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or "@" in parsed.netloc
+        or port not in {None, 80, 443}
+        or parsed.fragment
+    ):
+        raise StixValidationError("STIX external URL is invalid.")
+
+
+def _validate_source_custom_properties(
+    obj: Mapping[str, object],
+    policy: ApprovedStixSourcePolicy,
+) -> Mapping[str, object]:
+    custom_names = {key for key in obj if key.startswith("x_")}
+    if custom_names - policy.allowed_custom_properties:
+        raise StixValidationError("STIX custom property is not approved.")
+    if not custom_names:
+        return MappingProxyType({})
+    list_fields = {
+        "x_mitre_aliases",
+        "x_mitre_contributors",
+        "x_mitre_data_sources",
+        "x_mitre_defense_bypassed",
+        "x_mitre_domains",
+        "x_mitre_effective_permissions",
+        "x_mitre_impact_type",
+        "x_mitre_permissions_required",
+        "x_mitre_platforms",
+        "x_mitre_system_requirements",
+    }
+    text_limits = {
+        "x_mitre_attack_spec_version": 100,
+        "x_mitre_detection": 50_000,
+        "x_mitre_first_seen_citation": 5_000,
+        "x_mitre_last_seen_citation": 5_000,
+        "x_mitre_version": 100,
+    }
+    boolean_fields = {
+        "x_mitre_deprecated",
+        "x_mitre_is_subtechnique",
+        "x_mitre_network_requirements",
+        "x_mitre_remote_support",
+    }
+    validated: dict[str, object] = {}
+    for name in sorted(custom_names):
+        value = obj[name]
+        if name in list_fields:
+            items = _bounded_string_list(
+                value,
+                policy.maximum_aliases,
+                name,
+            )
+            validated[name] = items
+        elif name in text_limits:
+            validated[name] = _bounded_text(value, text_limits[name], name)
+        elif name in boolean_fields:
+            if type(value) is not bool:
+                raise StixValidationError("ATT&CK custom property is invalid.")
+            validated[name] = value
+        else:
+            raise StixValidationError("STIX custom property is not approved.")
+    domains = validated.get("x_mitre_domains")
+    if domains is not None and (
+        not isinstance(domains, tuple) or "enterprise-attack" not in domains
+    ):
+        raise StixValidationError("ATT&CK object is outside the Enterprise domain.")
+    return MappingProxyType(validated)
 
 
 def _reject_control_strings(value: object) -> None:
@@ -961,6 +1147,15 @@ def _validate_safe_payload_fields(
         _validate_stix_id(payload["created_by_ref"], "identity")
     if "revoked" in payload and type(payload["revoked"]) is not bool:
         raise StixValidationError("Existing STIX revoked value is invalid.")
+    for name in ("source_revoked", "x_mitre_deprecated"):
+        if name in payload and type(payload[name]) is not bool:
+            raise StixValidationError("Existing ATT&CK lifecycle value is invalid.")
+    if "source_revoked" in payload or "x_mitre_deprecated" in payload:
+        if not policy.allowed_custom_properties or payload.get("revoked") is not (
+            payload.get("source_revoked", False)
+            or payload.get("x_mitre_deprecated", False)
+        ):
+            raise StixValidationError("Existing ATT&CK lifecycle value is invalid.")
     if "confidence" in payload and (
         type(payload["confidence"]) is not int
         or not 0 <= payload["confidence"] <= 100

@@ -1,5 +1,11 @@
 # B0-06 Architecture Decision Register
 
+> **C05 supersession (5 August 2026):** Paid commercial-source plans and their
+> APR-01 through APR-04 gates are retired. References below to Censys Platform,
+> VirusTotal premium/business, Recorded Future, paid credentials, licences, or
+> later commercial implementation are historical only, not pending work. Public
+> Censys ARC/Rapid Response publication metadata remains permitted and distinct.
+
 ## Document control
 
 | Field | Value |
@@ -94,15 +100,15 @@ has the exact status `Proposed — pending B0-06 independent review`.
 | Field | Record |
 | --- | --- |
 | Status | Proposed — pending B0-06 independent review |
-| Context | All APR-01 through APR-15 remain `Need Approval`. Censys Platform, VirusTotal, Recorded Future and UAE automation need organizational decisions. Offline tests do not establish entitlement. |
+| Context | APR-01 through APR-04 are retired by C05 and require no commercial decision. Other unrelated approval records retain their own current states. |
 | Decision | Gated integrations have no transport until approval, entitlement, policy, credential reference, quota and enabled state all pass. UI/API show `Need Approval`, `Licence Required`, `Credentials Not Configured` or `Disabled` truthfully. |
 | Security rationale | Enforces INV-002/004/007/010/011 and mitigates THR-015/016/025/026/033. |
 | Alternatives considered | Fail-open activation, placeholder credentials, treating missing credentials as a failed source run and presenting mocked data as live rejected. |
 | Consequences | Offline adapter work may continue; live coverage remains unavailable without fabricated failure or claim. |
-| Implementation tasks | B0-05, B2-04, B5-01 through B5-04, B6-01 through B6-08 |
+| Implementation tasks | B0-05, B2-04, B5-01 through B5-04; former paid-source B6-02 through B6-08 are retired by C05 B6-01 |
 | Validation evidence | Approval/config matrix, zero-transport tests, disabled-state UI/API evidence and no-live-claim review. |
 | Approval dependency | APR-01–05; every record currently pending. |
-| Review trigger | Approval, licence, credential, quota, source policy or enable-state change. |
+| Review trigger | Any proposal to reverse C05 paid-source retirement requires a new separately frozen task; no such follow-up is currently planned. |
 
 ## ADR-007 — Secrets are referenced, never stored in Git or documentation
 

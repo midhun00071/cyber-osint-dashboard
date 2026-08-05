@@ -460,3 +460,13 @@ def test_architecture_has_no_private_path_or_secret_and_all_links_resolve() -> N
             continue
         assert parsed.path
         assert (ARCHITECTURE_PATH.parent / parsed.path).resolve().is_file()
+
+
+def test_architecture_documents_c05_inactive_transaction_boundary() -> None:
+    document = ARCHITECTURE_PATH.read_text(encoding="utf-8")
+    assert "C05 inactive official-source architecture" in document
+    assert "immutable, inactive registries" in document
+    assert "caller-owned database transaction" in document
+    assert "progress is proposed only after" in document
+    assert "No migration" in document
+    assert "no live" in document.lower()

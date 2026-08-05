@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from hashlib import sha256
 import json
 import logging
@@ -24,7 +25,10 @@ from app.ingestion.stix_taxii.bounded_json import (
     validate_bounded_json_tree,
 )
 from app.ingestion.stix_taxii.policy import (
+    ApprovedStixSourcePolicy,
     ApprovedTaxiiCollectionPolicy,
+    MITRE_ATTACK_ENTERPRISE_STIX_POLICY,
+    MITRE_ATTACK_ENTERPRISE_TAXII_POLICY,
     PRODUCTION_TAXII_COLLECTION_POLICIES,
     StixPolicyError,
     UnknownStixSourceError,
@@ -50,6 +54,7 @@ _HTTP_LOGGER_NAMES = (
     "httpcore.proxy",
     "httpcore.socks",
 )
+MITRE_ATTACK_ENTERPRISE_SOURCE_SLUG = "mitre-attack-enterprise"
 
 
 class TaxiiClientError(Exception):
@@ -118,6 +123,7 @@ class TaxiiCollectionResult:
     objects_validated: int
     pagination_complete: bool
     validated_document: ValidatedStixDocument
+    greatest_server_date_added: str | None = None
 
 
 class _CollectionThreadLogFilter(logging.Filter):
@@ -215,7 +221,7 @@ class _PreTransportRequestGuard:
     def arm(
         self,
         *,
-        params: dict[str, str] | None,
+        params: tuple[tuple[str, str], ...],
         timeout: httpx.Timeout,
     ) -> None:
         if self._ready:
@@ -303,6 +309,126 @@ class _PreTransportRequestGuard:
             )
 
 
+def _exact_canonical_field(value: object, canonical: object) -> bool:
+    if type(value) is not type(canonical):
+        return False
+    if type(canonical) is tuple:
+        return len(value) == len(canonical) and all(
+            _exact_canonical_field(item, expected)
+            for item, expected in zip(value, canonical, strict=True)
+        )
+    if type(canonical) is frozenset:
+        return all(type(item) is str for item in value) and value == canonical
+    return value == canonical
+
+
+def _stix_policy_signature(policy: ApprovedStixSourcePolicy) -> tuple[object, ...]:
+    return (
+        policy.source_slug,
+        policy.allowed_transport,
+        policy.policy_base_url,
+        policy.allowed_stix_types,
+        policy.allowed_relationship_types,
+        policy.allowed_tlp_levels,
+        policy.allowed_kill_chain_phases,
+        policy.allowed_custom_properties,
+        policy.allow_statement_markings,
+        policy.expected_source_enabled,
+        policy.maximum_file_bytes,
+        policy.maximum_json_depth,
+        policy.maximum_json_nodes,
+        policy.maximum_json_string_length,
+        policy.maximum_objects,
+        policy.maximum_relationships,
+        policy.maximum_marking_refs,
+        policy.maximum_external_references,
+        policy.maximum_aliases,
+    )
+
+
+def _taxii_policy_signature(
+    policy: ApprovedTaxiiCollectionPolicy,
+) -> tuple[object, ...]:
+    return (
+        policy.api_root_url,
+        policy.collection_id,
+        policy.collection_title,
+        policy.fixed_query_parameters,
+        policy.authentication_allowed,
+        policy.allow_incremental_relationship_references,
+        policy.maximum_response_bytes,
+        policy.maximum_total_response_bytes,
+        policy.maximum_pages,
+        policy.maximum_requests,
+        policy.maximum_total_objects,
+        policy.maximum_pagination_token_length,
+        policy.connect_timeout_seconds,
+        policy.read_timeout_seconds,
+        policy.write_timeout_seconds,
+        policy.pool_timeout_seconds,
+        policy.total_collection_deadline_seconds,
+    )
+
+
+def validate_mitre_attack_policy_entry(
+    source_slug: object,
+    policy: object,
+) -> ApprovedTaxiiCollectionPolicy:
+    """Return the trusted MITRE policy after exact-type canonical validation."""
+
+    if (
+        type(source_slug) is not str
+        or source_slug != MITRE_ATTACK_ENTERPRISE_SOURCE_SLUG
+        or type(policy) is not ApprovedTaxiiCollectionPolicy
+        or type(policy.stix_policy) is not ApprovedStixSourcePolicy
+    ):
+        raise TaxiiConfigurationError("The MITRE ATT&CK TAXII policy is invalid.")
+    canonical = MITRE_ATTACK_ENTERPRISE_TAXII_POLICY
+    canonical_stix = MITRE_ATTACK_ENTERPRISE_STIX_POLICY
+    if not _exact_canonical_field(
+        _stix_policy_signature(policy.stix_policy),
+        _stix_policy_signature(canonical_stix),
+    ) or not _exact_canonical_field(
+        _taxii_policy_signature(policy),
+        _taxii_policy_signature(canonical),
+    ):
+        raise TaxiiConfigurationError("The MITRE ATT&CK TAXII policy is invalid.")
+    if policy.stix_policy != canonical_stix or policy != canonical:
+        raise TaxiiConfigurationError("The MITRE ATT&CK TAXII policy is invalid.")
+    return canonical
+
+
+def validate_c05_mitre_policy_registry(
+    policy_registry: object,
+) -> MappingProxyType[str, ApprovedTaxiiCollectionPolicy]:
+    """Validate and snapshot the exact one-entry inactive C05 registry."""
+
+    if not isinstance(policy_registry, MappingProxyType) or len(policy_registry) != 1:
+        raise TaxiiConfigurationError("The MITRE ATT&CK TAXII policy is invalid.")
+    source_slug, policy = next(iter(policy_registry.items()))
+    canonical = validate_mitre_attack_policy_entry(source_slug, policy)
+    return MappingProxyType({MITRE_ATTACK_ENTERPRISE_SOURCE_SLUG: canonical})
+
+
+def _declares_mitre_policy(source_slug: object, policy: object) -> bool:
+    if isinstance(source_slug, str) and str.__eq__(
+        source_slug, MITRE_ATTACK_ENTERPRISE_SOURCE_SLUG
+    ) is True:
+        return True
+    if not isinstance(policy, ApprovedTaxiiCollectionPolicy):
+        return False
+    stix_policy = policy.stix_policy
+    return (
+        isinstance(stix_policy, ApprovedStixSourcePolicy)
+        and isinstance(stix_policy.source_slug, str)
+        and str.__eq__(
+            stix_policy.source_slug,
+            MITRE_ATTACK_ENTERPRISE_SOURCE_SLUG,
+        )
+        is True
+    )
+
+
 class TaxiiCollectionClient:
     """Collect one source selected only through an immutable policy registry."""
 
@@ -321,7 +447,11 @@ class TaxiiCollectionClient:
         normalized: dict[str, ApprovedTaxiiCollectionPolicy] = {}
         try:
             for source_slug, policy in policy_registry.items():
-                approved = validate_taxii_collection_policy(policy)
+                approved = (
+                    validate_mitre_attack_policy_entry(source_slug, policy)
+                    if _declares_mitre_policy(source_slug, policy)
+                    else validate_taxii_collection_policy(policy)
+                )
                 if source_slug != approved.source_slug:
                     raise StixPolicyError("TAXII registry identity is invalid.")
                 normalized[source_slug] = approved
@@ -343,10 +473,32 @@ class TaxiiCollectionClient:
         self._clock = monotonic_clock
         self._last_clock: float | None = None
 
-    def collect(self, source_slug: str) -> TaxiiCollectionResult:
+    def collect(
+        self,
+        source_slug: str,
+    ) -> TaxiiCollectionResult:
+        """Collect an initial or non-incremental exact approved source."""
+
+        return self.collect_incremental(source_slug, added_after=None)
+
+    def collect_incremental(
+        self,
+        source_slug: str,
+        *,
+        added_after: str | None = None,
+    ) -> TaxiiCollectionResult:
         """Collect and validate one exact approved source without discovery."""
 
         policy = self._policy_for_source(source_slug)
+        if self._auth is not None and not policy.authentication_allowed:
+            raise TaxiiConfigurationError(
+                "Authentication is prohibited for this TAXII source."
+            )
+        canonical_added_after = (
+            None
+            if added_after is None
+            else canonical_taxii_timestamp(added_after)
+        )
         started = self._read_clock()
         deadline = started + policy.total_collection_deadline_seconds
         request_guard = _PreTransportRequestGuard(
@@ -377,6 +529,7 @@ class TaxiiCollectionClient:
                         policy,
                         deadline,
                         request_guard,
+                        added_after=canonical_added_after,
                     )
         except (TaxiiClientError, UnknownStixSourceError):
             raise
@@ -405,6 +558,8 @@ class TaxiiCollectionClient:
         policy: ApprovedTaxiiCollectionPolicy,
         deadline: float,
         request_guard: _PreTransportRequestGuard,
+        *,
+        added_after: str | None,
     ) -> TaxiiCollectionResult:
         pages: list[BoundedStixDocument] = []
         total_bytes = 0
@@ -414,21 +569,40 @@ class TaxiiCollectionClient:
         seen_response_hashes: set[str] = set()
         seen_page_hashes: set[str] = set()
         seen_object_hashes: set[str] = set()
+        greatest_server_date_added: str | None = None
+        request_count = 0
 
         while True:
             if len(pages) >= policy.maximum_pages:
                 raise TaxiiPaginationError("TAXII pagination exceeded the page limit.")
+            if request_count >= policy.maximum_requests:
+                raise TaxiiPaginationError("TAXII pagination exceeded the request limit.")
             remaining = self._remaining(deadline)
-            params = None if next_token is None else {"next": next_token}
-            body = self._request_page(
+            params = list(policy.fixed_query_parameters)
+            if added_after is not None:
+                params.append(("added_after", added_after))
+            if next_token is not None:
+                params.append(("next", next_token))
+            body, server_date_added = self._request_page(
                 client,
                 policy,
-                params=params,
+                params=tuple(params),
                 remaining=remaining,
                 deadline=deadline,
                 total_bytes=total_bytes,
                 request_guard=request_guard,
             )
+            request_count += 1
+            if server_date_added is not None:
+                if added_after is not None and server_date_added < added_after:
+                    raise TaxiiEnvelopeError(
+                        "The TAXII server date-added boundary regressed."
+                    )
+                if (
+                    greatest_server_date_added is None
+                    or server_date_added > greatest_server_date_added
+                ):
+                    greatest_server_date_added = server_date_added
             total_bytes += len(body)
             response_identity = sha256(body).hexdigest()
             if response_identity in seen_response_hashes:
@@ -494,7 +668,13 @@ class TaxiiCollectionClient:
                 "The collected TAXII document exceeded aggregate JSON limits."
             ) from None
         try:
-            validated = validate_stix_document(combined, policy.stix_policy)
+            validated = validate_stix_document(
+                combined,
+                policy.stix_policy,
+                allow_unresolved_relationships=(
+                    policy.allow_incremental_relationship_references
+                ),
+            )
         except StixValidationError:
             raise TaxiiStixValidationError(
                 "The collected STIX document failed semantic validation."
@@ -507,6 +687,7 @@ class TaxiiCollectionClient:
             objects_validated=validated.objects_validated,
             pagination_complete=True,
             validated_document=validated,
+            greatest_server_date_added=greatest_server_date_added,
         )
 
     def _request_page(
@@ -514,12 +695,12 @@ class TaxiiCollectionClient:
         client: httpx.Client,
         policy: ApprovedTaxiiCollectionPolicy,
         *,
-        params: dict[str, str] | None,
+        params: tuple[tuple[str, str], ...],
         remaining: float,
         deadline: float,
         total_bytes: int,
         request_guard: _PreTransportRequestGuard,
-    ) -> bytes:
+    ) -> tuple[bytes, str | None]:
         timeout = _request_timeout(policy, remaining)
         request_guard.arm(params=params, timeout=timeout)
         try:
@@ -574,7 +755,8 @@ class TaxiiCollectionClient:
                     chunks.append(chunk)
                     self._remaining(deadline)
                 self._remaining(deadline)
-                return b"".join(chunks)
+                boundary = _taxii_date_added_boundary(response.headers)
+                return b"".join(chunks), boundary
         except TaxiiClientError:
             raise
         except httpx.TimeoutException:
@@ -709,11 +891,45 @@ def _safe_next_token(value: object, maximum: int) -> bool:
 def _validate_response_url(
     url: httpx.URL,
     policy: ApprovedTaxiiCollectionPolicy,
-    params: dict[str, str] | None,
+    params: tuple[tuple[str, str], ...],
 ) -> None:
     expected = httpx.URL(policy.objects_endpoint, params=params)
     if url != expected:
         raise TaxiiRedirectError("A TAXII response URL failed validation.")
+
+
+def canonical_taxii_timestamp(value: object) -> str:
+    """Return a canonical UTC RFC 3339 cursor value or fail safely."""
+
+    if (
+        not isinstance(value, str)
+        or not value
+        or len(value) > 100
+        or value != value.strip()
+        or not value.isascii()
+    ):
+        raise TaxiiEnvelopeError("A TAXII server date-added value was invalid.")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        raise TaxiiEnvelopeError(
+            "A TAXII server date-added value was invalid."
+        ) from None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise TaxiiEnvelopeError("A TAXII server date-added value was invalid.")
+    utc_value = parsed.astimezone(UTC)
+    return utc_value.isoformat(timespec="microseconds").replace("+00:00", "Z")
+
+
+def _taxii_date_added_boundary(headers: httpx.Headers) -> str | None:
+    values = headers.get_list("x-taxii-date-added-last")
+    if not values:
+        return None
+    if len(values) != 1 or "," in values[0]:
+        raise TaxiiEnvelopeError(
+            "TAXII server date-added response metadata was invalid."
+        )
+    return canonical_taxii_timestamp(values[0])
 
 
 def _page_object_identity(page: BoundedStixDocument) -> str:

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Synthetic CERT-FR alerts fixture</title>
+    <item>
+      <title>Alerte de sécurité synthétique</title>
+      <link>https://www.cert.ssi.gouv.fr/alerte/CERTFR-2026-ALE-001/</link>
+      <guid>https://www.cert.ssi.gouv.fr/alerte/CERTFR-2026-ALE-001/</guid>
+      <description>&lt;p&gt;Résumé &lt;strong&gt;synthétique&lt;/strong&gt; sans contenu actif.&lt;/p&gt;</description>
+      <pubDate>Sat, 01 Aug 2026 10:00:00 +0000</pubDate>
+      <author>CERT-FR</author>
+      <category>Alerte</category>
+    </item>
+  </channel>
+</rss>

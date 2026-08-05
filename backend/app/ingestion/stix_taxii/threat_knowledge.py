@@ -18,6 +18,7 @@ from app.models import SourceRecord, ThreatEntity, ThreatEntityAlias, ThreatRela
 
 ENTITY_TYPE_BY_STIX = {
     "threat-actor": "threat_actor",
+    "intrusion-set": "threat_actor",
     "campaign": "campaign",
     "malware": "malware_family",
     "attack-pattern": "attack_technique",

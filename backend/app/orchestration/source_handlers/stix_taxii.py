@@ -13,6 +13,7 @@ from app.ingestion.stix_taxii.bounded_json import thaw_json
 from app.ingestion.stix_taxii.import_service import StixBundleImportService
 from app.ingestion.stix_taxii.policy import (
     ApprovedTaxiiCollectionPolicy,
+    C05_IMPLEMENTED_TAXII_COLLECTION_POLICIES,
     PRODUCTION_TAXII_COLLECTION_POLICIES,
     validate_taxii_collection_policy,
 )
@@ -23,6 +24,8 @@ from app.ingestion.stix_taxii.stix_validation import (
 from app.ingestion.stix_taxii.taxii_client import (
     TaxiiCollectionClient,
     TaxiiCollectionResult,
+    canonical_taxii_timestamp,
+    validate_c05_mitre_policy_registry,
 )
 from app.orchestration.contracts import (
     ClassifiedFailure,
@@ -84,12 +87,27 @@ class StixTaxiiSourceHandler:
     ) -> None:
         if not isinstance(policy_registry, MappingProxyType):
             raise ValueError("The TAXII handler policy registry must be immutable.")
-        normalized: dict[str, ApprovedTaxiiCollectionPolicy] = {}
-        for key, value in policy_registry.items():
-            policy = validate_taxii_collection_policy(value)
-            if key != policy.source_slug:
-                raise ValueError("The TAXII handler policy identity is invalid.")
-            normalized[key] = policy
+        if isinstance(source_slug, str) and str.__eq__(
+            source_slug, "mitre-attack-enterprise"
+        ) is True:
+            if type(source_slug) is not str:
+                raise ValueError("The MITRE ATT&CK handler policy is invalid.")
+            try:
+                trusted_registry = validate_c05_mitre_policy_registry(
+                    policy_registry
+                )
+            except Exception:
+                raise ValueError(
+                    "The MITRE ATT&CK handler policy is invalid."
+                ) from None
+            normalized = dict(trusted_registry)
+        else:
+            normalized = {}
+            for key, value in policy_registry.items():
+                policy = validate_taxii_collection_policy(value)
+                if key != policy.source_slug:
+                    raise ValueError("The TAXII handler policy identity is invalid.")
+                normalized[key] = policy
         if source_slug not in normalized:
             raise ValueError("The TAXII handler source is not approved.")
         self._source_slug = source_slug
@@ -197,6 +215,185 @@ def build_c03_stix_taxii_handlers(
     return MappingProxyType(handlers)
 
 
+class MitreAttackSourceHandler(StixTaxiiSourceHandler):
+    """Inactive C05 handler using committed TAXII server date-added cursors."""
+
+    def execute(self, context: SourceExecutionContext) -> SourceExecutionResult:
+        self._validate_mitre_context(context)
+        replay = load_execution_evidence(self._session_factory, context)
+        if replay is not None:
+            return replay
+        started = perf_counter()
+        previous_cursor = _mitre_previous_cursor(context)
+        try:
+            client = self._client_factory(self._policy_registry)
+            collected = client.collect_incremental(
+                self._source_slug,
+                added_after=previous_cursor,
+            )
+            canonical_document = _validated_collection_document(
+                collected,
+                self._policy,
+            )
+        except Exception as error:
+            raise classified_client_failure(error, source_label="MITRE ATT&CK") from None
+
+        try:
+            with self._session_factory() as session, session.begin():
+                source_id = _source_id_for_slug(session, self._source_slug)
+                imported = StixBundleImportService(session).import_document(
+                    source_id,
+                    self._policy.stix_policy,
+                    canonical_document,
+                    observed_at=context.scheduled_for,
+                )
+                outcomes = tuple(item.action for item in imported.record_outcomes)
+                base_counters = counters_from_outcomes(outcomes)
+                excluded = canonical_document.relationships_excluded
+                counters = ReconciledCounters(
+                    fetched=base_counters.fetched + excluded,
+                    created=base_counters.created,
+                    updated=base_counters.updated,
+                    unchanged=base_counters.unchanged,
+                    skipped=base_counters.skipped + excluded,
+                    failed=base_counters.failed,
+                    error_count=base_counters.error_count,
+                )
+                cursor = _mitre_cursor_proposal(
+                    context,
+                    collected.greatest_server_date_added,
+                    previous_cursor,
+                )
+                result = make_result(
+                    source_slug=self._source_slug,
+                    counters=counters,
+                    metrics=SafeMetrics(
+                        duration_ms=elapsed_milliseconds(started),
+                        request_count=collected.pages_collected,
+                        page_count=collected.pages_collected,
+                    ),
+                    progress_proposal=cursor,
+                )
+                persist_outcome_evidence(
+                    session,
+                    run_id=context.attempt.run_id,
+                    evidence=(
+                        OutcomeEvidence(
+                            outcome=item.action,
+                            source_record_id=item.source_record_id,
+                            safe_detail=(
+                                "C05 processed one validated MITRE ATT&CK source record."
+                            ),
+                        )
+                        for item in imported.record_outcomes
+                    ),
+                )
+                persist_execution_evidence(session, context=context, result=result)
+                session.flush()
+        except Exception as error:
+            raise classified_client_failure(error, source_label="MITRE ATT&CK") from None
+        return result
+
+    def reconstruct_progress(
+        self,
+        context: SourceExecutionContext,
+        committed_counters: ReconciledCounters,
+    ) -> ProgressProposal:
+        self._validate_mitre_context(context)
+        return reconstruct_progress_from_evidence(
+            self._session_factory,
+            context,
+            committed_counters,
+        )
+
+    def _validate_mitre_context(self, context: SourceExecutionContext) -> None:
+        validate_handler_context(
+            context,
+            source_slug=self._source_slug,
+            progress_storage=ProgressStorage.CHECKPOINT,
+            progress_kind=ProgressKind.SOURCE_CURSOR,
+        )
+        if context.policy.source_slug != self._policy.source_slug:
+            raise ClassifiedFailure(
+                FailureCategory.INVALID_SOURCE_POLICY,
+                "The MITRE ATT&CK source identity conflicts with the approved policy.",
+            )
+
+
+def build_c05_mitre_attack_handlers(
+    policy_registry: MappingProxyType[str, ApprovedTaxiiCollectionPolicy] = (
+        C05_IMPLEMENTED_TAXII_COLLECTION_POLICIES
+    ),
+    *,
+    session_factory: SessionFactory | None = None,
+    client_factory: TaxiiClientFactory = (
+        lambda registry: TaxiiCollectionClient(policy_registry=registry)
+    ),
+) -> Mapping[str, SourceHandler]:
+    """Build immutable implemented/inactive C05 handlers without activation."""
+
+    try:
+        trusted_registry = validate_c05_mitre_policy_registry(policy_registry)
+    except Exception:
+        raise ValueError("The C05 TAXII handler policy registry must be immutable.")
+    return MappingProxyType(
+        {
+            source_slug: MitreAttackSourceHandler(
+                source_slug,
+                policy_registry=trusted_registry,
+                session_factory=session_factory,
+                client_factory=client_factory,
+            )
+            for source_slug in trusted_registry
+        }
+    )
+
+
+def _mitre_previous_cursor(context: SourceExecutionContext) -> str | None:
+    if context.progress is None:
+        return None
+    value = context.progress.value
+    if not isinstance(value, str):
+        raise ClassifiedFailure(
+            FailureCategory.INVALID_SOURCE_POLICY,
+            "The MITRE ATT&CK source cursor is invalid.",
+        )
+    try:
+        canonical = canonical_taxii_timestamp(value)
+    except Exception:
+        raise ClassifiedFailure(
+            FailureCategory.INVALID_SOURCE_POLICY,
+            "The MITRE ATT&CK source cursor is invalid.",
+        ) from None
+    if canonical != value:
+        raise ClassifiedFailure(
+            FailureCategory.INVALID_SOURCE_POLICY,
+            "The MITRE ATT&CK source cursor is invalid.",
+        )
+    return canonical
+
+
+def _mitre_cursor_proposal(
+    context: SourceExecutionContext,
+    candidate: str | None,
+    previous: str | None,
+) -> ProgressProposal | None:
+    if candidate is None:
+        return None
+    canonical = canonical_taxii_timestamp(candidate)
+    if previous is not None and canonical < previous:
+        raise ValueError("The MITRE ATT&CK source cursor regressed.")
+    if canonical == previous:
+        return None
+    return ProgressProposal(
+        storage=ProgressStorage.CHECKPOINT,
+        kind=ProgressKind.SOURCE_CURSOR,
+        name=ProgressKind.SOURCE_CURSOR.value,
+        value=canonical,
+        expected_previous_version=expected_previous_version(context),
+    )
+
+
 def canonical_document_sha256(document: ValidatedStixDocument) -> str:
     if not isinstance(document, ValidatedStixDocument):
         raise ValueError("A validated STIX document is required.")
@@ -222,7 +419,9 @@ def _validated_collection_document(
         or type(collected.objects_received) is not int
         or not 0 <= collected.objects_received <= policy.maximum_total_objects
         or type(collected.objects_validated) is not int
-        or collected.objects_validated != collected.objects_received
+        or collected.objects_validated
+        + collected.validated_document.relationships_excluded
+        != collected.objects_received
         or collected.pagination_complete is not True
     ):
         raise ValueError("The TAXII collection result is invalid.")
@@ -233,6 +432,8 @@ def _validated_collection_document(
     if (
         canonical.objects_received != collected.objects_received
         or canonical.objects_validated != collected.objects_validated
+        or canonical.relationships_excluded
+        != collected.validated_document.relationships_excluded
     ):
         raise ValueError("The TAXII collection counters conflict.")
     return canonical
@@ -248,4 +449,12 @@ def _source_id_for_slug(session, source_slug: str) -> int:
     return source.id
 
 
-__all__ = ["PRODUCTION_TAXII_LICENCE_REQUIRED", "StixTaxiiSourceHandler", "build_c03_stix_taxii_handlers", "canonical_document_sha256", "production_taxii_access_state"]
+__all__ = [
+    "PRODUCTION_TAXII_LICENCE_REQUIRED",
+    "MitreAttackSourceHandler",
+    "StixTaxiiSourceHandler",
+    "build_c03_stix_taxii_handlers",
+    "build_c05_mitre_attack_handlers",
+    "canonical_document_sha256",
+    "production_taxii_access_state",
+]

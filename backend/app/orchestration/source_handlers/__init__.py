@@ -16,6 +16,11 @@ from app.orchestration.source_handlers.desc_publications import (
 )
 from app.orchestration.source_handlers.epss import EpssSourceHandler
 from app.orchestration.source_handlers.nvd import NvdSourceHandler
+from app.orchestration.source_handlers.official_rss import (
+    C05_OFFICIAL_RSS_SOURCE_SLUGS,
+    OfficialRssSourceHandler,
+    build_c05_official_rss_handlers,
+)
 from app.orchestration.source_handlers.publications import (
     CERT_EU_SOURCE_SLUG,
     GOOGLE_SOURCE_SLUG,
@@ -23,9 +28,11 @@ from app.orchestration.source_handlers.publications import (
     PublicationSourceHandler,
 )
 from app.orchestration.source_handlers.stix_taxii import (
+    MitreAttackSourceHandler,
     PRODUCTION_TAXII_LICENCE_REQUIRED,
     StixTaxiiSourceHandler,
     build_c03_stix_taxii_handlers,
+    build_c05_mitre_attack_handlers,
     production_taxii_access_state,
 )
 
@@ -72,13 +79,18 @@ def build_c02_source_handlers(
 
 __all__ = [
     "C02_BOUND_SOURCE_SLUGS",
+    "C05_OFFICIAL_RSS_SOURCE_SLUGS",
     "DESC_NEWS_SOURCE_SLUG",
     "DESC_PUBLICATION_SOURCE_SLUGS",
     "DESC_RESEARCH_SOURCE_SLUG",
     "DescPublicationSourceHandler",
     "PRODUCTION_TAXII_LICENCE_REQUIRED",
+    "MitreAttackSourceHandler",
+    "OfficialRssSourceHandler",
     "StixTaxiiSourceHandler",
     "build_c02_source_handlers",
     "build_c03_stix_taxii_handlers",
+    "build_c05_mitre_attack_handlers",
+    "build_c05_official_rss_handlers",
     "production_taxii_access_state",
 ]

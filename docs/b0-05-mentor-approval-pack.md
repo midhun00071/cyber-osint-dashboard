@@ -1,5 +1,13 @@
 # B0-05 Mentor Decision and Approval Pack
 
+> **C05 supersession (5 August 2026):** APR-01 through APR-04 and every request
+> below for Censys Platform/API, VirusTotal premium/business, Recorded Future,
+> paid credentials, licences, subscriptions, or commercial access are retired.
+> They are retained only as historical decision-pack evidence and require no
+> mentor response. No commercial adapter, mock, credential request, or later
+> activation remains in the production plan. Public Censys publication metadata
+> remains a separate public workflow.
+
 ## 1. Document control
 
 | Field | Value |
@@ -107,23 +115,23 @@ The counts below are derived from the accompanying 15-row CSV register:
 | Rejected | 0 |
 | Deferred | 0 |
 | Not Required | 0 |
-| Decisions needed by 4 August 2026 | 14 |
+| Decisions needed by 4 August 2026 | 10; APR-01 through APR-04 retired by C05 |
 | Final decision needed by 11 August 2026 | 1 |
-| Commercial/vendor approvals | APR-01 through APR-04 |
+| Commercial/vendor approvals | Retired historical records APR-01 through APR-04 |
 | UAE automation approval | APR-05 |
 | Scheduling approval | APR-06 |
 | Hosting and operational approvals | APR-07 through APR-12 |
 | Access and identity approvals | APR-13 and APR-14 |
 | Final release approval | APR-15 |
 
-## 8. APR-01 decision request
+## 8. APR-01 retired historical record
 
 | Field | Request |
 | --- | --- |
-| Decision requested | Confirm whether approved organisational accounts, licences, subscriptions or credit budgets exist for Censys, VirusTotal and Recorded Future. |
+| Decision requested | None. C05 retired the commercial account, licence, subscription, and budget work. |
 | Decision owner role | Mentor / project owner with budget and vendor authority |
 | Needed by | 4 August 2026 |
-| Related tasks | B6-01 through B6-08 |
+| Related tasks | None; former paid-source tasks retired by C05 |
 | Why required | Live commercial access may require paid licences or credits. |
 | Permitted options | Approved accounts and bounded budget available; Some vendors approved; No commercial access for this release; Decision deferred |
 | Recommended secure default | No live commercial calls until vendor-specific approval is recorded. |
@@ -133,25 +141,25 @@ The counts below are derived from the accompanying 15-row CSV register:
 | What remains disabled | Live calls and paid-source coverage for all unapproved vendors. |
 | Consequence if unanswered | Staging may proceed only with all affected live features disabled, tested offline fallbacks and truthful UI/documentation. |
 | Prohibited claims | No live Censys, VirusTotal or Recorded Future coverage claim. |
-| Current status | Need Approval |
+| Current status | Retired and superseded by C05 |
 
 ```text
 Approval ID: APR-01
-Decision status: Need Approval
-Decision-maker: Pending
-Decision date: Pending
-Decision: Pending
-Limits and conditions: Pending
-Evidence reference: Pending
-Review or expiry date: Pending
-Additional notes: Pending
+Decision status: Retired
+Decision-maker: Not required
+Decision date: 2026-08-05
+Decision: Superseded by C05 paid-source retirement
+Limits and conditions: No commercial implementation remains planned
+Evidence reference: docs/c05-official-public-sources.md
+Review or expiry date: Not applicable
+Additional notes: Historical record only; no response required
 ```
 
-## 9. APR-02 decision request
+## 9. APR-02 retired historical record
 
 | Field | Request |
 | --- | --- |
-| Decision requested | Confirm Censys entitlement, credential-owner role, approved endpoints, approved response fields and credit budget. |
+| Decision requested | None. C05 retired Censys Platform/API implementation and activation work. |
 | Decision owner role | Mentor / project owner and named organisational credential owner |
 | Needed by | 4 August 2026 |
 | Related tasks | B6-02 through B6-04 |
@@ -164,25 +172,25 @@ Additional notes: Pending
 | What remains disabled | Censys Platform live enrichment. |
 | Consequence if unanswered | Staging may proceed only with mocked verification, live enrichment disabled and an accurate disabled state. |
 | Prohibited claims | Public Censys publication collection must not be represented as Censys Platform enrichment. |
-| Current status | Need Approval |
+| Current status | Retired and superseded by C05 |
 
 ```text
 Approval ID: APR-02
-Decision status: Need Approval
-Decision-maker: Pending
-Decision date: Pending
-Decision: Pending
-Limits and conditions: Pending
-Evidence reference: Pending
-Review or expiry date: Pending
-Additional notes: Pending
+Decision status: Retired
+Decision-maker: Not required
+Decision date: 2026-08-05
+Decision: Superseded by C05 paid-source retirement
+Limits and conditions: Public Censys publication metadata remains distinct
+Evidence reference: docs/c05-official-public-sources.md
+Review or expiry date: Not applicable
+Additional notes: Historical record only; no response required
 ```
 
-## 10. APR-03 decision request
+## 10. APR-03 retired historical record
 
 | Field | Request |
 | --- | --- |
-| Decision requested | Confirm whether metadata-only VirusTotal use is permitted under the organisational account and API tier. |
+| Decision requested | None. C05 retired VirusTotal premium/business and free-tier workaround work. |
 | Decision owner role | Mentor / project owner and named organisational credential owner |
 | Needed by | 4 August 2026 |
 | Related tasks | B6-05 through B6-06 |
@@ -195,25 +203,25 @@ Additional notes: Pending
 | What remains disabled | Live metadata requests. File upload, malware sample submission and binary retrieval remain absolutely prohibited. |
 | Consequence if unanswered | Staging may proceed only with the offline adapter tested and all live requests disabled. |
 | Prohibited claims | No live VirusTotal enrichment, file-upload, malware-submission, sample-retrieval or binary-retrieval claim. |
-| Current status | Need Approval |
+| Current status | Retired and superseded by C05 |
 
 ```text
 Approval ID: APR-03
-Decision status: Need Approval
-Decision-maker: Pending
-Decision date: Pending
-Decision: Pending
-Limits and conditions: Pending
-Evidence reference: Pending
-Review or expiry date: Pending
-Additional notes: Pending
+Decision status: Retired
+Decision-maker: Not required
+Decision date: 2026-08-05
+Decision: Superseded by C05 paid-source retirement
+Limits and conditions: No VirusTotal integration remains planned
+Evidence reference: docs/c05-official-public-sources.md
+Review or expiry date: Not applicable
+Additional notes: Historical record only; no response required
 ```
 
-## 11. APR-04 decision request
+## 11. APR-04 retired historical record
 
 | Field | Request |
 | --- | --- |
-| Decision requested | Confirm whether a Recorded Future subscription exists and which modules, endpoints and fields are licensed. |
+| Decision requested | None. C05 retired Recorded Future subscription and integration work. |
 | Decision owner role | Mentor / project owner and named organisational credential owner |
 | Needed by | 4 August 2026 |
 | Related tasks | B6-07 through B6-08 |
@@ -226,18 +234,18 @@ Additional notes: Pending
 | What remains disabled | Recorded Future live requests and licensed-data coverage. |
 | Consequence if unanswered | Staging may proceed only with the safe mocked adapter and truthful `Licence Required` state. |
 | Prohibited claims | No Recorded Future data-coverage claim. |
-| Current status | Need Approval |
+| Current status | Retired and superseded by C05 |
 
 ```text
 Approval ID: APR-04
-Decision status: Need Approval
-Decision-maker: Pending
-Decision date: Pending
-Decision: Pending
-Limits and conditions: Pending
-Evidence reference: Pending
-Review or expiry date: Pending
-Additional notes: Pending
+Decision status: Retired
+Decision-maker: Not required
+Decision date: 2026-08-05
+Decision: Superseded by C05 paid-source retirement
+Limits and conditions: No Recorded Future integration remains planned
+Evidence reference: docs/c05-official-public-sources.md
+Review or expiry date: Not applicable
+Additional notes: Historical record only; no response required
 ```
 
 ## 12. APR-05 decision request
@@ -585,7 +593,7 @@ Additional notes: Pending
 
 | Approval group | Potential implication |
 | --- | --- |
-| APR-01 through APR-04 | Vendor subscriptions, commercial tiers, licensed modules, credits, quotas and permitted-use constraints may create direct and recurring cost. |
+| APR-01 through APR-04 | Retired historical commercial records; no subscription, tier, module, credit, quota, credential, or cost decision is requested. |
 | APR-05 and APR-06 | Source-policy review, traffic, quotas, compute and operational ownership may create indirect cost. |
 | APR-07 through APR-12 | Hosting, domain/TLS, database, secret-management, backup, monitoring, storage, transfer and support choices may create recurring infrastructure cost. |
 | APR-13 and APR-14 | Identity administration, account lifecycle and an external identity provider may create administration or licence cost. |
@@ -639,10 +647,12 @@ explicitly says so.
 
 ## 27. Pending decisions and deadline risks
 
-Fourteen decisions are needed by 4 August 2026. Delay can keep paid sources,
-automation, scheduling, hosting, TLS, database operations, secrets, backup,
-monitoring, user access or SSO disabled and can force a documented local-only
-or offline demonstration. APR-07, APR-09 and APR-13 need explicit acceptance of
+Ten unrelated decisions remain from the original 4 August 2026 target. APR-01
+through APR-04 no longer require decisions, and paid sources remain retired.
+Other pending decisions can keep UAE automation, scheduling, hosting, TLS,
+database operations, secrets, backup, monitoring, user access, or SSO disabled
+and can force a documented local-only or offline demonstration. APR-07, APR-09
+and APR-13 need explicit acceptance of
 even their local fallback before staging release can rely on it.
 
 APR-15 is due by 11 August 2026 and depends on an exact release candidate,

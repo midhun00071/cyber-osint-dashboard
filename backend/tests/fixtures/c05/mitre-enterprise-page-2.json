@@ -1,0 +1,58 @@
+{
+  "more": false,
+  "objects": [
+    {
+      "type": "attack-pattern",
+      "spec_version": "2.1",
+      "id": "attack-pattern--55555555-5555-4555-8555-555555555555",
+      "created": "2026-08-01T00:00:00Z",
+      "modified": "2026-08-03T00:00:00Z",
+      "created_by_ref": "identity--11111111-1111-4111-8111-111111111111",
+      "name": "Synthetic Enterprise Technique",
+      "external_references": [
+        {
+          "source_name": "mitre-attack",
+          "external_id": "T1234",
+          "url": "https://attack.mitre.org/techniques/T1234/",
+          "description": "Validated and discarded fixture URL metadata."
+        }
+      ],
+      "x_mitre_domains": ["enterprise-attack"],
+      "x_mitre_detection": "Synthetic bounded detection guidance.",
+      "x_mitre_is_subtechnique": false,
+      "x_mitre_version": "1.0"
+    },
+    {
+      "type": "campaign",
+      "spec_version": "2.1",
+      "id": "campaign--66666666-6666-4666-8666-666666666666",
+      "created": "2026-08-01T00:00:00Z",
+      "modified": "2026-08-03T00:00:00Z",
+      "created_by_ref": "identity--11111111-1111-4111-8111-111111111111",
+      "name": "Synthetic Enterprise Campaign",
+      "x_mitre_domains": ["enterprise-attack"]
+    },
+    {
+      "type": "relationship",
+      "spec_version": "2.1",
+      "id": "relationship--77777777-7777-4777-8777-777777777777",
+      "created": "2026-08-01T00:00:00Z",
+      "modified": "2026-08-03T00:00:00Z",
+      "relationship_type": "uses",
+      "source_ref": "intrusion-set--33333333-3333-4333-8333-333333333333",
+      "target_ref": "malware--44444444-4444-4444-8444-444444444444",
+      "x_mitre_domains": ["enterprise-attack"]
+    },
+    {
+      "type": "relationship",
+      "spec_version": "2.1",
+      "id": "relationship--88888888-8888-4888-8888-888888888888",
+      "created": "2026-08-01T00:00:00Z",
+      "modified": "2026-08-03T00:00:00Z",
+      "relationship_type": "attributed-to",
+      "source_ref": "campaign--66666666-6666-4666-8666-666666666666",
+      "target_ref": "intrusion-set--33333333-3333-4333-8333-333333333333",
+      "x_mitre_domains": ["enterprise-attack"]
+    }
+  ]
+}

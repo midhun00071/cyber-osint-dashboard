@@ -34,6 +34,30 @@ SUPPORTED_RELATIONSHIP_TYPES = frozenset(
     {"indicates", "uses", "attributed-to", "targets", "related-to"}
 )
 SUPPORTED_TLP_LEVELS = frozenset({"white", "green", "amber", "red"})
+MITRE_ATTACK_CUSTOM_PROPERTIES = frozenset(
+    {
+        "x_mitre_aliases",
+        "x_mitre_attack_spec_version",
+        "x_mitre_contributors",
+        "x_mitre_data_sources",
+        "x_mitre_defense_bypassed",
+        "x_mitre_deprecated",
+        "x_mitre_detection",
+        "x_mitre_domains",
+        "x_mitre_effective_permissions",
+        "x_mitre_first_seen_citation",
+        "x_mitre_impact_type",
+        "x_mitre_is_subtechnique",
+        "x_mitre_last_seen_citation",
+        "x_mitre_network_requirements",
+        "x_mitre_permissions_required",
+        "x_mitre_platforms",
+        "x_mitre_remote_support",
+        "x_mitre_system_requirements",
+        "x_mitre_version",
+    }
+)
+IMPLEMENTABLE_STIX_TYPES = SUPPORTED_STIX_TYPES | {"intrusion-set"}
 _SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _HOST_RE = re.compile(
     r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
@@ -78,7 +102,9 @@ class ApprovedStixSourcePolicy:
     allowed_relationship_types: frozenset[str] = SUPPORTED_RELATIONSHIP_TYPES
     allowed_tlp_levels: frozenset[str] = frozenset()
     allowed_kill_chain_phases: frozenset[str] = frozenset()
+    allowed_custom_properties: frozenset[str] = frozenset()
     allow_statement_markings: bool = False
+    expected_source_enabled: bool = True
     maximum_file_bytes: int = 2 * 1024 * 1024
     maximum_json_depth: int = 16
     maximum_json_nodes: int = 10_000
@@ -105,9 +131,14 @@ class ApprovedTaxiiCollectionPolicy:
     stix_policy: ApprovedStixSourcePolicy
     api_root_url: str
     collection_id: str
+    collection_title: str = "Approved TAXII collection"
+    fixed_query_parameters: tuple[tuple[str, str], ...] = ()
+    authentication_allowed: bool = True
+    allow_incremental_relationship_references: bool = False
     maximum_response_bytes: int = 2 * 1024 * 1024
     maximum_total_response_bytes: int = 8 * 1024 * 1024
     maximum_pages: int = 10
+    maximum_requests: int = 10
     maximum_total_objects: int = 500
     maximum_pagination_token_length: int = 1024
     connect_timeout_seconds: float = 5.0
@@ -153,7 +184,7 @@ def validate_stix_source_policy(
 
     stix_types = _validated_allow_list(
         policy.allowed_stix_types,
-        SUPPORTED_STIX_TYPES,
+        IMPLEMENTABLE_STIX_TYPES,
         "STIX object type",
         require_values=True,
     )
@@ -173,8 +204,16 @@ def validate_stix_source_policy(
         policy.allowed_kill_chain_phases,
         "kill-chain phase",
     )
+    custom_properties = _validated_allow_list(
+        policy.allowed_custom_properties,
+        MITRE_ATTACK_CUSTOM_PROPERTIES,
+        "STIX custom property",
+        require_values=False,
+    )
     if type(policy.allow_statement_markings) is not bool:
         raise StixPolicyError("Statement-marking policy must be a boolean.")
+    if type(policy.expected_source_enabled) is not bool:
+        raise StixPolicyError("Expected source state must be a boolean.")
     limits = (
         policy.maximum_file_bytes,
         policy.maximum_json_depth,
@@ -199,6 +238,7 @@ def validate_stix_source_policy(
         allowed_relationship_types=relationship_types,
         allowed_tlp_levels=tlp_levels,
         allowed_kill_chain_phases=kill_chain_phases,
+        allowed_custom_properties=custom_properties,
     )
 
 
@@ -238,6 +278,11 @@ def validate_taxii_collection_policy(
     if stix_policy.allowed_transport is not StixInputTransport.TAXII_21_COLLECTION:
         raise StixPolicyError("TAXII collection policy requires the live transport.")
     api_root_url = _normalize_taxii_api_root_url(policy.api_root_url)
+    collection_title = _require_bounded_policy_text(
+        policy.collection_title,
+        "TAXII collection title",
+        200,
+    )
     if (
         not isinstance(policy.collection_id, str)
         or policy.collection_id != policy.collection_id.strip()
@@ -249,6 +294,7 @@ def validate_taxii_collection_policy(
         policy.maximum_response_bytes,
         policy.maximum_total_response_bytes,
         policy.maximum_pages,
+        policy.maximum_requests,
         policy.maximum_total_objects,
         policy.maximum_pagination_token_length,
     )
@@ -260,8 +306,16 @@ def validate_taxii_collection_policy(
         or policy.maximum_total_objects > stix_policy.maximum_objects
         or policy.maximum_pagination_token_length
         > stix_policy.maximum_json_string_length
+        or policy.maximum_pages > policy.maximum_requests
     ):
         raise StixPolicyError("TAXII collection limits exceed the STIX policy.")
+    if type(policy.authentication_allowed) is not bool:
+        raise StixPolicyError("TAXII authentication policy must be a boolean.")
+    if type(policy.allow_incremental_relationship_references) is not bool:
+        raise StixPolicyError("TAXII relationship-reference policy must be a boolean.")
+    fixed_query_parameters = _validated_fixed_query_parameters(
+        policy.fixed_query_parameters
+    )
     timeouts = (
         policy.connect_timeout_seconds,
         policy.read_timeout_seconds,
@@ -281,6 +335,8 @@ def validate_taxii_collection_policy(
         policy,
         stix_policy=stix_policy,
         api_root_url=api_root_url,
+        collection_title=collection_title,
+        fixed_query_parameters=fixed_query_parameters,
         connect_timeout_seconds=float(policy.connect_timeout_seconds),
         read_timeout_seconds=float(policy.read_timeout_seconds),
         write_timeout_seconds=float(policy.write_timeout_seconds),
@@ -420,7 +476,48 @@ def _normalize_taxii_api_root_url(value: object) -> str:
     parsed = urlsplit(normalized)
     if not parsed.path or parsed.path == "/":
         raise StixPolicyError("TAXII API root URL is invalid.")
-    return normalized
+    return normalized.rstrip("/")
+
+
+def _require_bounded_policy_text(value: object, label: str, maximum: int) -> str:
+    if (
+        not isinstance(value, str)
+        or not value
+        or value != value.strip()
+        or len(value) > maximum
+        or any(unicodedata.category(character) == "Cc" for character in value)
+    ):
+        raise StixPolicyError(f"{label} is invalid.")
+    return value
+
+
+def _validated_fixed_query_parameters(
+    values: object,
+) -> tuple[tuple[str, str], ...]:
+    if not isinstance(values, tuple):
+        raise StixPolicyError("TAXII fixed query policy is invalid.")
+    normalized: list[tuple[str, str]] = []
+    for item in values:
+        if not isinstance(item, tuple) or len(item) != 2:
+            raise StixPolicyError("TAXII fixed query policy is invalid.")
+        name, value = item
+        if (
+            not isinstance(name, str)
+            or not isinstance(value, str)
+            or not name
+            or not value
+            or len(name) > 100
+            or len(value) > 1000
+            or name in {"next", "added_after"}
+            or not name.isascii()
+            or not value.isascii()
+            or any(not 0x21 <= ord(character) <= 0x7E for character in name + value)
+        ):
+            raise StixPolicyError("TAXII fixed query policy is invalid.")
+        normalized.append((name, value))
+    if len({name for name, _ in normalized}) != len(normalized):
+        raise StixPolicyError("TAXII fixed query policy contains duplicates.")
+    return tuple(normalized)
 
 
 def _validated_bounded_strings(values: object, label: str) -> frozenset[str]:
@@ -443,3 +540,80 @@ def _validated_bounded_strings(values: object, label: str) -> frozenset[str]:
 
 PRODUCTION_STIX_SOURCE_POLICIES = build_stix_policy_registry(())
 PRODUCTION_TAXII_COLLECTION_POLICIES = build_taxii_policy_registry(())
+
+
+MITRE_ATTACK_ENTERPRISE_STIX_POLICY = validate_stix_source_policy(
+    ApprovedStixSourcePolicy(
+        source_slug="mitre-attack-enterprise",
+        allowed_transport=StixInputTransport.TAXII_21_COLLECTION,
+        policy_base_url=(
+            "https://attack-taxii.mitre.org/api/v21/collections/"
+            "x-mitre-collection--1f5f1533-f617-4ca8-9ab4-6a02367fa019/"
+            "objects/"
+        ),
+        allowed_stix_types=frozenset(
+            {
+                "attack-pattern",
+                "campaign",
+                "intrusion-set",
+                "malware",
+                "relationship",
+                "identity",
+                "marking-definition",
+            }
+        ),
+        allowed_relationship_types=frozenset({"uses", "attributed-to"}),
+        allowed_custom_properties=MITRE_ATTACK_CUSTOM_PROPERTIES,
+        allow_statement_markings=True,
+        expected_source_enabled=False,
+        maximum_file_bytes=8 * 1024 * 1024,
+        maximum_json_depth=24,
+        maximum_json_nodes=2_000_000,
+        maximum_json_string_length=50_000,
+        maximum_objects=30_000,
+        maximum_relationships=20_000,
+        maximum_marking_refs=20,
+        maximum_external_references=25,
+        maximum_aliases=100,
+    )
+)
+
+MITRE_ATTACK_ENTERPRISE_TAXII_POLICY = validate_taxii_collection_policy(
+    ApprovedTaxiiCollectionPolicy(
+        stix_policy=MITRE_ATTACK_ENTERPRISE_STIX_POLICY,
+        api_root_url="https://attack-taxii.mitre.org/api/v21/",
+        collection_id=(
+            "x-mitre-collection--1f5f1533-f617-4ca8-9ab4-6a02367fa019"
+        ),
+        collection_title="Enterprise ATT&CK",
+        fixed_query_parameters=(
+            ("limit", "1000"),
+            ("match[spec_version]", "2.1"),
+            (
+                "match[type]",
+                "attack-pattern,campaign,intrusion-set,malware,relationship,"
+                "identity,marking-definition",
+            ),
+        ),
+        authentication_allowed=False,
+        allow_incremental_relationship_references=True,
+        maximum_response_bytes=8 * 1024 * 1024,
+        maximum_total_response_bytes=64 * 1024 * 1024,
+        maximum_pages=40,
+        maximum_requests=40,
+        maximum_total_objects=30_000,
+        maximum_pagination_token_length=1024,
+        connect_timeout_seconds=5.0,
+        read_timeout_seconds=30.0,
+        write_timeout_seconds=5.0,
+        pool_timeout_seconds=5.0,
+        total_collection_deadline_seconds=600.0,
+    )
+)
+
+C05_IMPLEMENTED_STIX_SOURCE_POLICIES = build_stix_policy_registry(
+    (MITRE_ATTACK_ENTERPRISE_STIX_POLICY,)
+)
+C05_IMPLEMENTED_TAXII_COLLECTION_POLICIES = build_taxii_policy_registry(
+    (MITRE_ATTACK_ENTERPRISE_TAXII_POLICY,)
+)

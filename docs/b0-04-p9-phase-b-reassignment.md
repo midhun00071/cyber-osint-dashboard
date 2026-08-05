@@ -1,5 +1,12 @@
 # B0-04 P9-to-Phase-B Reassignment
 
+> **C05 supersession (5 August 2026):** The P9-12/P9-13 commercial mappings,
+> former B6-02 through B6-08 paid-source tasks, and APR-01 through APR-04 vendor
+> gates below are retired historical traceability only. They are not unfinished,
+> approval-gated, credential-gated, or planned work. Public Censys ARC/Rapid
+> Response publication metadata remains distinct. C05 now means B6-01 paid-source
+> retirement, B6-02 MITRE Enterprise ATT&CK, and B6-03 CERT-FR/UK NCSC RSS.
+
 ## 1. Document control
 
 | Field | Value |
@@ -97,8 +104,8 @@ remain unfinished and do not inherit P9-08 through P9-10 completion evidence.
 | Legacy task | Historical status | Active Phase B replacement | Decision | Approval linkage |
 | --- | --- | --- | --- | --- |
 | P9-11 | Reassigned — unfinished | B4-01 through B4-04 | Reassigned | None |
-| P9-12 | Reassigned — unfinished / live use approval-gated | B6-02 through B6-04 | Reassigned / Need Approval | APR-02 |
-| P9-13 | Reassigned — unfinished | B0-05; B6-01; official Approval Register | Reassigned | APR-01 through APR-04 |
+| P9-12 | Retired and superseded by C05 | None | Retired | Retired APR-02 |
+| P9-13 | Retired and superseded by C05 | None | Retired | Retired APR-01 through APR-04 |
 | P9-14 | Merged into production UI — unfinished | B8-01 through B8-07 | Merged into production UI | None |
 | P9-15 | Expanded and reordered — unfinished | B10-01 through B10-08; B11-01 through B11-05 | Expanded and reordered | None |
 
@@ -128,14 +135,12 @@ testing, Git, and evidence criteria.
 
 ## 8. P9-12 detailed disposition
 
-P9-12 maps to B6-02 through B6-04:
+P9-12 and its former B6-02 through B6-04 Censys Platform mapping are retired:
 
-- B6-02 assesses Censys Platform entitlement, endpoints, quotas, credits, and
-  approved fields;
-- B6-03 implements the fixed-policy metadata-only adapter and Prefect flow with
-  offline fixtures and mocked transport; and
-- B6-04 permits one bounded staging activation only after approval,
-  entitlement, credentials, and credit limits exist.
+- no Platform entitlement, endpoint, quota, credit, credential, adapter, mock,
+  Prefect flow, or staging activation is pending; and
+- public Censys ARC and Rapid Response publication metadata remains separate and
+  must not be represented as Platform enrichment.
 
 Existing public Censys research/publication collection is distinct from Censys
 Platform API exposure enrichment. This mapping authorizes no scan, rescan,
@@ -146,28 +151,24 @@ While approval or access is absent, the adapter may be completed and tested
 offline, no live request is made, and the source reports `Need Approval`,
 `Licence Required`, `Credentials Not Configured`, or `Disabled`. Missing
 credentials are a configuration state, not a failed run, and no exposure result
-is fabricated. B6-03 may be implementation-complete while B6-04 remains
-approval-gated; P9-12 receives no completion credit.
+is fabricated. P9-12 receives no completion credit and creates no future work.
 
 ## 9. P9-13 detailed disposition
 
 P9-13 maps to:
 
-- B0-05 — obtain, record, and evidence mentor decisions;
-- B6-01 — define the common commercial-source access policy and disabled-state
-  contract; and
-- the official Approval Register.
+- C05 B6-01 records paid-source retirement; and
+- the official Approval Register retains APR-01 through APR-04 as retired
+  historical records.
 
-The relevant decisions are APR-01 for budget/accounts, APR-02 for Censys,
-APR-03 for VirusTotal, and APR-04 for Recorded Future. No decision is invented.
-When a decision is absent, dependent live use remains disabled and makes no live
-coverage claim.
+APR-01 through APR-04 require no decision. Censys Platform, VirusTotal
+premium/business, Recorded Future, commercial free-tier workarounds, paid
+credentials, subscription mocks, and fabricated commercial results are retired.
 
-Vendor implementation is not duplicated here. Censys remains B6-02 through
-B6-04, VirusTotal remains B6-05 through B6-06, and Recorded Future remains
-B6-07 through B6-08. The assessment is satisfied only through B0-05 evidence of
-an actual decision or explicit safe fallback. P9-13 receives no separate
-completion or hours credit.
+No vendor implementation remains mapped here. The former Censys B6-02 through
+B6-04, VirusTotal B6-05 through B6-06, and Recorded Future B6-07 through B6-08
+tasks are retired and superseded by C05. P9-13 receives no separate completion
+or hours credit and creates no follow-up implementation.
 
 ## 10. P9-14 detailed disposition
 
@@ -313,11 +314,11 @@ task's purpose. Generic process wording is retained as `Unrelated text` with
 | REF-0022 | N/A | `docs/b0-03-release-acceptance-checklist.csv` | line 4 | independent-review | The original P9-10 independent-review ZIP is recorded as unavailable. | Unrelated text | None; this is provenance for completed P9-10 evidence. | Retain; no P9 reassignment linkage. |
 | REF-0023 | P9-11 | `docs/b0-03-release-acceptance-checklist.csv` | line 100 | Threat Entities | The separate sidebar page is removed and only safe B4-04 metadata may remain. | Authoritative reassignment reference | Low; it is the frozen release acceptance gate. | Retain as authoritative supporting scope. |
 | REF-0024 | N/A | `docs/data-sources.md` | line 510 | independent review | A future source requires licensing, bounded implementation, tests, documentation, and independent review. | Unrelated text | None; this is generic source-governance wording. | Retain; no P9 reassignment linkage. |
-| REF-0025 | P9-12 | `docs/source-assessment-matrix.md` | line 35 | Censys enrichment | Active DNS context is reserved for future authorized, bounded Censys enrichment. | Dependency/reference requiring clarification | The policy is safe but does not name B6-02 through B6-04 as active ownership. | Follow-up correction under B11-03 or B11-04: preserve the restriction and link the active B6 tasks. |
-| REF-0026 | P9-12 | `docs/source-assessment-matrix.md` | line 36 | Censys enrichment | Threat context is reserved for future authorized Censys enrichment with allow-listed fields. | Dependency/reference requiring clarification | The policy is safe but does not name B6-02 through B6-04 or APR-02. | Follow-up correction under B11-03 or B11-04: preserve the restriction and link B6 plus APR-02. |
-| REF-0027 | P9-13 | `docs/source-assessment-matrix.md` | line 56 | Commercial access | VirusTotal threat-profile concepts require commercial-access verification and are not ingestion entities. | Dependency/reference requiring clarification | The access boundary is accurate but does not point to the active commercial decision owners. | Follow-up correction under B11-03 or B11-04: retain the boundary and link B0-05, B6-01, and APR-03. |
+| REF-0025 | P9-12 | `docs/source-assessment-matrix.md` | historical line 35 | Censys enrichment | Former future Censys Active DNS assessment. | Retired historical evidence | C05 retires Platform/API enrichment. | No follow-up; retain only under the matrix supersession notice. |
+| REF-0026 | P9-12 | `docs/source-assessment-matrix.md` | historical line 36 | Censys enrichment | Former future Censys threat-context assessment. | Retired historical evidence | C05 retires Platform/API enrichment and APR-02. | No follow-up; retain only under the matrix supersession notice. |
+| REF-0027 | P9-13 | `docs/source-assessment-matrix.md` | historical line 56 | Commercial access | Former VirusTotal commercial assessment. | Retired historical evidence | C05 retires VirusTotal premium/business work and APR-03. | No follow-up; retain only under the matrix supersession notice. |
 | REF-0028 | P9-11 | `docs/source-assessment-matrix.md` | line 61 | threat entities | Recorded Future report metadata may contain threat entities but remains manual metadata. | Historical evidence | Low; this is source-assessment context, not authority to implement an entity model. | Retain; B4 implementation remains independently governed. |
-| REF-0029 | P9-13 | `docs/source-assessment-matrix.md` | line 66 | Commercial access | Recorded Future daily concepts require commercial-access and redistribution verification. | Dependency/reference requiring clarification | The access boundary is accurate but does not point to the active commercial decision owners. | Follow-up correction under B11-03 or B11-04: retain the boundary and link B0-05, B6-01, and APR-04. |
+| REF-0029 | P9-13 | `docs/source-assessment-matrix.md` | historical line 66 | Commercial access | Former Recorded Future commercial assessment. | Retired historical evidence | C05 retires Recorded Future work and APR-04. | No follow-up; retain only under the matrix supersession notice. |
 | REF-0030 | P9-13 | `docs/source-assessment-matrix.md` | line 84 | Commercial access | Mandiant threat-profile concepts require commercial-access verification and are not ingestion entities. | Dependency/reference requiring clarification | The general commercial boundary is accurate but is outside the three vendor implementations mapped by B0-04. | Follow-up correction under B11-03 or B11-04: retain as source-assessment context without expanding B6 implementation scope. |
 | REF-0031 | P9-11 | `docs/source-integration-policy.md` | line 135 | P9-11 | The offline foundation is said not to complete P9-10 or implement P9-11 entities. | Superseded active wording | P9-10 is completed and the legacy P9-11 owner is retired. | Follow-up correction under B11-03: preserve the offline boundary and reference completed P9-10 plus active B4 work. |
 | REF-0032 | P9-11 | `docs/stix-taxii-import.md` | line 15 | P9-11 | The importer does not implement P9-11 threat-entity tables. | Historical evidence | Low; it accurately limits the completed P9-10 importer. | Retain. |

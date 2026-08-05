@@ -1105,3 +1105,21 @@ authoritative detailed references:
 
 Before staging any handover update, independently review the complete changed
 files together with the focused and full-regression evidence.
+## C05 official public sources (implemented, disabled)
+
+C05 combines B6-01/B6-02/B6-03. Paid-source implementation work is retired:
+there is no pending Censys Platform/Search API, VirusTotal premium/business,
+Recorded Future, commercial free-tier workaround, paid credential, subscription
+mock, or fabricated commercial result. The existing public Censys ARC and Rapid
+Response publication-metadata workflows remain preserved and are not Platform
+API integrations.
+
+MITRE ATT&CK Enterprise TAXII/STIX 2.1, CERT-FR alerts, CERT-FR advisories, and
+UK NCSC Threat Reports are fixture-tested and implemented but disabled. They
+require no credentials, are absent from production handler bindings and
+schedules, and made no live request during C05. No database migration was added.
+The RSS sources collect metadata only; no article, PDF, attachment, enclosure,
+image, or external-reference retrieval exists. See
+[`docs/c05-official-public-sources.md`](docs/c05-official-public-sources.md) for
+the exact endpoints, bounds, progress contracts, security controls, and accepted
+limitations. Activation requires separate approval and bounded staging evidence.

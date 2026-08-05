@@ -25,9 +25,11 @@ from app.ingestion.stix_taxii.import_service import (
 from app.ingestion.stix_taxii.object_mapping import canonical_safe_content_hash
 from app.ingestion.stix_taxii.policy import (
     ApprovedStixSourcePolicy,
+    MITRE_ATTACK_ENTERPRISE_STIX_POLICY,
     StixInputTransport,
     validate_stix_source_policy,
 )
+from app.ingestion.stix_taxii.threat_knowledge import map_threat_entity
 from app.ingestion.stix_taxii.stix_validation import (
     ValidatedStixDocument,
     validate_stix_document,
@@ -2564,5 +2566,226 @@ def test_c03a_one_sided_and_outside_domain_relationships_remain_source_record_on
     assert result.threat_relationships_unmapped == 2
     assert len(session.records) == 5
     assert len(session.entities) == 1
+    assert session.threat_relationships == []
+    assert_caller_owns_transaction(session)
+
+
+def test_c05_intrusion_set_maps_to_existing_threat_actor_lifecycle():
+    raw = json.dumps(
+        {
+            "objects": [
+                {
+                    "type": "intrusion-set",
+                    "spec_version": "2.1",
+                    "id": "intrusion-set--dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+                    "created": CREATED,
+                    "modified": MODIFIED,
+                    "name": "Synthetic Enterprise Group",
+                    "x_mitre_domains": ["enterprise-attack"],
+                    "x_mitre_deprecated": True,
+                }
+            ],
+        }
+    ).encode()
+    bounded = parse_stix_json_bytes(
+        raw,
+        MITRE_ATTACK_ENTERPRISE_STIX_POLICY,
+        StixDocumentFormat.TAXII_ENVELOPE,
+    )
+    document = validate_stix_document(
+        bounded,
+        MITRE_ATTACK_ENTERPRISE_STIX_POLICY,
+    )
+    value = map_threat_entity(document.objects[0].safe_payload)
+    assert value is not None
+    assert value.entity_type == "threat_actor"
+    assert value.revoked is True
+    assert document.objects[0].safe_payload["source_revoked"] is False
+    assert document.objects[0].safe_payload["x_mitre_deprecated"] is True
+
+
+MITRE_INTRUSION_ID = "intrusion-set--aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+MITRE_MALWARE_ID = "malware--bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+MITRE_RELATIONSHIP_ID = "relationship--cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+
+
+def _mitre_objects():
+    intrusion = {
+        "type": "intrusion-set",
+        "spec_version": "2.1",
+        "id": MITRE_INTRUSION_ID,
+        "created": CREATED,
+        "modified": MODIFIED,
+        "name": "Synthetic Enterprise Group",
+        "x_mitre_domains": ["enterprise-attack"],
+    }
+    malware = {
+        "type": "malware",
+        "spec_version": "2.1",
+        "id": MITRE_MALWARE_ID,
+        "created": CREATED,
+        "modified": MODIFIED,
+        "name": "Synthetic Enterprise Malware",
+        "is_family": True,
+        "x_mitre_domains": ["enterprise-attack"],
+    }
+    relationship = {
+        "type": "relationship",
+        "spec_version": "2.1",
+        "id": MITRE_RELATIONSHIP_ID,
+        "created": CREATED,
+        "modified": MODIFIED,
+        "relationship_type": "uses",
+        "source_ref": MITRE_INTRUSION_ID,
+        "target_ref": MITRE_MALWARE_ID,
+        "x_mitre_domains": ["enterprise-attack"],
+    }
+    return intrusion, malware, relationship
+
+
+def _mitre_validated(objects, *, allow_unresolved=False):
+    bounded = parse_stix_json_bytes(
+        json.dumps({"objects": objects}).encode(),
+        MITRE_ATTACK_ENTERPRISE_STIX_POLICY,
+        StixDocumentFormat.TAXII_ENVELOPE,
+    )
+    return validate_stix_document(
+        bounded,
+        MITRE_ATTACK_ENTERPRISE_STIX_POLICY,
+        allow_unresolved_relationships=allow_unresolved,
+    )
+
+
+def _mitre_source():
+    return IntelligenceSource(
+        id=17,
+        name="MITRE ATT&CK Enterprise",
+        slug="mitre-attack-enterprise",
+        source_type="json",
+        base_url=MITRE_ATTACK_ENTERPRISE_STIX_POLICY.policy_base_url + "/",
+        is_enabled=False,
+    )
+
+
+def _mitre_record(staged, record_id):
+    payload = thaw_json(staged.safe_payload)
+    source_url = MITRE_ATTACK_ENTERPRISE_STIX_POLICY.object_url(staged.stix_id)
+    return SourceRecord(
+        id=record_id,
+        source_id=17,
+        intelligence_item_id=None,
+        source_external_id=staged.stix_id,
+        source_url=source_url,
+        canonical_url_hash=sha256(
+            f"mitre-attack-enterprise\0{source_url}".encode("utf-8")
+        ).hexdigest(),
+        content_hash=canonical_safe_content_hash(payload),
+        is_primary_reference=False,
+        raw_payload=payload,
+        payload_collected_at=OBSERVED,
+        first_seen_at=OBSERVED,
+        last_seen_at=OBSERVED,
+        source_published_at=staged.created,
+        source_modified_at=staged.modified,
+        processing_status="processed",
+        last_processed_at=OBSERVED,
+        safe_error_summary=None,
+        upstream_status="present",
+    )
+
+
+def _mitre_incremental_setup():
+    intrusion, malware, relationship = _mitre_objects()
+    endpoints = _mitre_validated([intrusion, malware])
+    relationship_only = _mitre_validated(
+        [relationship],
+        allow_unresolved=True,
+    )
+    records = [
+        _mitre_record(endpoints.objects[0], 1),
+        _mitre_record(endpoints.objects[1], 2),
+    ]
+    return relationship_only, records
+
+
+def test_c05_relationship_only_increment_resolves_revalidated_same_source_endpoints_idempotently():
+    document, records = _mitre_incremental_setup()
+    session = FakeSession(_mitre_source(), records=records)
+    service = StixBundleImportService(session)
+
+    first = service.import_document(
+        17,
+        MITRE_ATTACK_ENTERPRISE_STIX_POLICY,
+        document,
+        observed_at=OBSERVED,
+    )
+    second = service.import_document(
+        17,
+        MITRE_ATTACK_ENTERPRISE_STIX_POLICY,
+        document,
+        observed_at=OBSERVED + timedelta(minutes=1),
+    )
+
+    assert first.objects_created == 1
+    assert first.entities_created == 2
+    assert first.threat_relationships_created == 1
+    assert second.objects_unchanged == 1
+    assert second.entities_unchanged == 0
+    assert second.threat_relationships_unchanged == 1
+    assert len(session.records) == 3
+    assert len(session.entities) == 2
+    assert len(session.threat_relationships) == 1
+    assert session.execute_calls >= 6
+    assert_caller_owns_transaction(session)
+
+
+@pytest.mark.parametrize(
+    "corruption",
+    (
+        "missing",
+        "conflicting",
+        "malformed_payload",
+        "hash_inconsistent",
+        "corrupt_status",
+    ),
+)
+def test_c05_relationship_only_increment_fails_closed_for_invalid_stored_endpoint(
+    corruption,
+):
+    document, records = _mitre_incremental_setup()
+    if corruption == "missing":
+        records.pop()
+    elif corruption == "conflicting":
+        records[1].canonical_url_hash = "0" * 64
+    elif corruption == "malformed_payload":
+        records[1].raw_payload = {
+            "type": "malware",
+            "id": MITRE_MALWARE_ID,
+            "spec_version": "2.1",
+        }
+        records[1].content_hash = canonical_safe_content_hash(
+            records[1].raw_payload
+        )
+    elif corruption == "hash_inconsistent":
+        records[1].content_hash = "0" * 64
+    elif corruption == "corrupt_status":
+        records[1].processing_status = "failed"
+    session = FakeSession(_mitre_source(), records=records)
+    before = [record_state(record) for record in session.records]
+    session.begin_caller_transaction()
+
+    with pytest.raises(StixImportServiceError) as caught:
+        StixBundleImportService(session).import_document(
+            17,
+            MITRE_ATTACK_ENTERPRISE_STIX_POLICY,
+            document,
+            observed_at=OBSERVED + timedelta(minutes=1),
+        )
+
+    assert str(caught.value) == "Existing STIX reference record is invalid."
+    assert "malware--" not in str(caught.value)
+    session.caller_rollback()
+    assert [record_state(record) for record in session.records] == before
+    assert session.entities == []
     assert session.threat_relationships == []
     assert_caller_owns_transaction(session)

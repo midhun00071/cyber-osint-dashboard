@@ -359,6 +359,10 @@ def test_exact_frozen_progress_contract_mapping() -> None:
         "uae-cyber-security-council-nibras": ProgressContract.NONE,
         "desc-news": ProgressContract.WATERMARK,
         "desc-published-research": ProgressContract.WATERMARK,
+        "mitre-attack-enterprise": ProgressContract.CHECKPOINT,
+        "cert-fr-security-alerts": ProgressContract.CHECKPOINT,
+        "cert-fr-security-advisories": ProgressContract.CHECKPOINT,
+        "uk-ncsc-threat-reports": ProgressContract.CHECKPOINT,
     }
 
     assert {
@@ -881,6 +885,71 @@ def test_canonical_publication_hosts_are_immutable_and_normalized() -> None:
     assert definition.canonical_publication_hosts == ("public.example.com",)
     with pytest.raises(FrozenInstanceError):
         definition.canonical_publication_hosts = ("changed.example",)  # type: ignore[misc]
+
+
+@pytest.mark.parametrize(
+    "slug,display_name,vendor,base_url,hosts,publication_hosts,source_type",
+    [
+        (
+            "mitre-attack-enterprise",
+            "MITRE ATT&CK Enterprise",
+            "MITRE",
+            "https://attack-taxii.mitre.org/api/v21/collections/"
+            "x-mitre-collection--1f5f1533-f617-4ca8-9ab4-6a02367fa019/objects/",
+            ("attack-taxii.mitre.org",),
+            None,
+            "json",
+        ),
+        (
+            "cert-fr-security-alerts",
+            "CERT-FR Security Alerts",
+            "CERT-FR / ANSSI",
+            "https://www.cert.ssi.gouv.fr/alerte/feed/",
+            ("www.cert.ssi.gouv.fr",),
+            ("www.cert.ssi.gouv.fr", "cert.ssi.gouv.fr"),
+            "rss",
+        ),
+        (
+            "cert-fr-security-advisories",
+            "CERT-FR Security Advisories",
+            "CERT-FR / ANSSI",
+            "https://cert.ssi.gouv.fr/avis/feed/",
+            ("cert.ssi.gouv.fr",),
+            ("www.cert.ssi.gouv.fr", "cert.ssi.gouv.fr"),
+            "rss",
+        ),
+        (
+            "uk-ncsc-threat-reports",
+            "UK NCSC Threat Reports",
+            "UK National Cyber Security Centre",
+            "https://www.ncsc.gov.uk/api/1/services/v1/report-rss-feed.xml",
+            ("www.ncsc.gov.uk",),
+            ("www.ncsc.gov.uk",),
+            "rss",
+        ),
+    ],
+)
+def test_c05_sources_have_exact_inactive_registry_contract(
+    slug,
+    display_name,
+    vendor,
+    base_url,
+    hosts,
+    publication_hosts,
+    source_type,
+) -> None:
+    source = get_source_definition(slug)
+    assert source.display_name == display_name
+    assert source.vendor == vendor
+    assert source.base_url == base_url
+    assert source.allowed_hosts == hosts
+    assert source.canonical_publication_hosts == publication_hosts
+    assert source.source_type == source_type
+    assert source.implementation_status is ImplementationStatus.IMPLEMENTED
+    assert source.enabled is False
+    assert source.authentication_required is False
+    assert source.progress_contract is ProgressContract.CHECKPOINT
+    assert slug not in {item.slug for item in list_enabled_implemented_sources()}
 
 
 def test_invalid_canonical_publication_hosts_are_rejected() -> None:
