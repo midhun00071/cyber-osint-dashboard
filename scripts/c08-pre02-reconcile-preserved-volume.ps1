@@ -38,7 +38,7 @@ $DatabaseContainer = "alpha-data-db"
 $DatabaseService = "db"
 $DatabaseName = "alpha_data_db"
 $InitialDatabaseIdentity = "alpha_data_user"
-$ProvisionSqlSha256 = "c6bcb315e4ac925ccf8221dda9a7c08d559ce1f8d5a415b6ab6307b0f8b1fe06"
+$ProvisionSqlSha256 = "4e1264e5e4b1dddceedb6349885995fb324fa4fa03a04172aebef37e862c0bf5"
 $CorrectionSqlSha256 = "d614601fef244bb612035b6029392f207126e1de8a3cbc1bc819bb98595c0a4e"
 $MaximumBackupAge = [TimeSpan]::FromHours(2)
 $AllowedBackupExtensions = @(".backup", ".dump", ".tar", ".gz")
@@ -319,6 +319,7 @@ function Get-RoleBoundaryState {
     )
     $dedicatedSafe = (
         (Test-EvidenceBool $Snapshot "bootstrap_role_exists" $true) -and
+        (Test-EvidenceBool $Snapshot "bootstrap_role_is_oid_10" $false) -and
         (Test-EvidenceBool $Snapshot "bootstrap_role_can_login" $true) -and
         (Test-EvidenceBool $Snapshot "bootstrap_role_superuser" $true) -and
         (Test-EvidenceBool $Snapshot "bootstrap_role_createdb" $false) -and
@@ -343,9 +344,32 @@ function Get-RoleBoundaryState {
         (Test-EvidenceInt $Snapshot "auxiliary_schema_create_count" 0) -and
         (Test-EvidenceInt $Snapshot "auxiliary_no_sequence_privilege_count" 27)
     )
+    $bootstrapCollision = (
+        (Test-EvidenceInt $Snapshot "app_role_oid" 10) -and
+        (Test-EvidenceBool $Snapshot "app_role_is_oid_10" $true) -and
+        (Test-EvidenceBool $Snapshot "cluster_bootstrap_role_exists" $false) -and
+        (Test-EvidenceInt $Snapshot "cluster_bootstrap_role_oid" 0) -and
+        (Test-EvidenceBool $Snapshot "cluster_bootstrap_role_can_login" $false) -and
+        (Test-EvidenceBool $Snapshot "cluster_bootstrap_role_superuser" $false) -and
+        (Test-EvidenceInt $Snapshot "oid_10_role_count" 1) -and
+        (Test-EvidenceText $Snapshot "oid_10_role_name" "alpha_data_user")
+    )
+    $splitIdentitySafe = (
+        -not (Test-EvidenceInt $Snapshot "app_role_oid" 10) -and
+        (Test-EvidenceBool $Snapshot "app_role_is_oid_10" $false) -and
+        (Test-EvidenceBool $Snapshot "cluster_bootstrap_role_exists" $true) -and
+        (Test-EvidenceInt $Snapshot "cluster_bootstrap_role_oid" 10) -and
+        (Test-EvidenceBool $Snapshot "cluster_bootstrap_role_can_login" $false) -and
+        (Test-EvidenceBool $Snapshot "cluster_bootstrap_role_superuser" $true) -and
+        (Test-EvidenceInt $Snapshot "oid_10_role_count" 1) -and
+        (Test-EvidenceText $Snapshot "oid_10_role_name" "alpha_data_cluster_bootstrap") -and
+        (Test-EvidenceInt $Snapshot "cluster_bootstrap_owned_public_object_count" 0) -and
+        (Test-EvidenceInt $Snapshot "cluster_bootstrap_explicit_connect_count" 0) -and
+        (Test-EvidenceInt $Snapshot "cluster_bootstrap_explicit_object_acl_count" 0)
+    )
 
     if (
-        $legacyApplication -and $dedicatedAbsent -and
+        $legacyApplication -and $dedicatedAbsent -and $bootstrapCollision -and
         (Test-EvidenceText $Snapshot "database_owner" "alpha_data_user") -and
         (Test-EvidenceText $Snapshot "public_schema_owner" "pg_database_owner") -and
         (Test-EvidenceInt $Snapshot "app_owned_table_count" 11) -and
@@ -353,10 +377,10 @@ function Get-RoleBoundaryState {
         (Test-EvidenceInt $Snapshot "migration_owned_table_count" 0) -and
         (Test-EvidenceInt $Snapshot "migration_owned_sequence_count" 0) -and
         (Test-EvidenceBool $Snapshot "public_database_connect" $true)
-    ) { return "legacy" }
+    ) { return "legacy_bootstrap_collision" }
 
     if (
-        $legacyApplication -and $dedicatedSafe -and
+        $legacyApplication -and $dedicatedSafe -and $bootstrapCollision -and
         (Test-EvidenceText $Snapshot "database_owner" "alpha_data_user") -and
         (Test-EvidenceText $Snapshot "public_schema_owner" "pg_database_owner") -and
         (Test-EvidenceInt $Snapshot "app_owned_table_count" 11) -and
@@ -367,10 +391,10 @@ function Get-RoleBoundaryState {
         (Test-EvidenceInt $Snapshot "prepared_migration_no_table_privilege_count" 11) -and
         (Test-EvidenceInt $Snapshot "prepared_migration_no_sequence_privilege_count" 9) -and
         (Test-EvidenceBool $Snapshot "public_database_connect" $true)
-    ) { return "prepared" }
+    ) { return "prepared_bootstrap_collision" }
 
     if (
-        $safeApplication -and $dedicatedSafe -and
+        $safeApplication -and $dedicatedSafe -and $splitIdentitySafe -and
         (Test-EvidenceText $Snapshot "database_owner" "alpha_data_bootstrap") -and
         (Test-EvidenceText $Snapshot "public_schema_owner" "alpha_data_bootstrap") -and
         (Test-EvidenceInt $Snapshot "app_owned_table_count" 0) -and
@@ -392,12 +416,12 @@ function Get-RoleBoundaryState {
 }
 
 function Get-RoleExecutionPlan {
-    param([Parameter(Mandatory = $true)][ValidateSet("legacy", "prepared", "normalized", "unexpected")][string]$RoleState)
+    param([Parameter(Mandatory = $true)][ValidateSet("legacy_bootstrap_collision", "prepared_bootstrap_collision", "normalized", "unexpected")][string]$RoleState)
 
     switch ($RoleState) {
-        "legacy" { return [pscustomobject]@{ Prepare=$true; SetCredentials=$true; VerifyLogins=$true; Normalize=$true; CorrectSyntheticProgress=$true } }
-        "prepared" { return [pscustomobject]@{ Prepare=$false; SetCredentials=$true; VerifyLogins=$true; Normalize=$true; CorrectSyntheticProgress=$true } }
-        "normalized" { return [pscustomobject]@{ Prepare=$false; SetCredentials=$false; VerifyLogins=$true; Normalize=$false; CorrectSyntheticProgress=$true } }
+        "legacy_bootstrap_collision" { return [pscustomobject]@{ Prepare=$true; SetCredentials=$true; VerifyLogins=$true; RequireRuntimeCredential=$true; Normalize=$true; CorrectSyntheticProgress=$true } }
+        "prepared_bootstrap_collision" { return [pscustomobject]@{ Prepare=$false; SetCredentials=$true; VerifyLogins=$true; RequireRuntimeCredential=$true; Normalize=$true; CorrectSyntheticProgress=$true } }
+        "normalized" { return [pscustomobject]@{ Prepare=$false; SetCredentials=$false; VerifyLogins=$true; RequireRuntimeCredential=$false; Normalize=$false; CorrectSyntheticProgress=$true } }
         default { throw "C08-PRE-02 role boundary state is unexpected" }
     }
 }
@@ -422,28 +446,44 @@ function Assert-ApplyInvocation {
 }
 
 function Read-ReconciliationCredentials {
-    param([scriptblock]$PromptProvider)
+    param(
+        [bool]$IncludeRuntimeCredential = $false,
+        [scriptblock]$PromptProvider
+    )
 
     $bootstrap = $null
     $migration = $null
+    $runtime = $null
     try {
         if ($null -eq $PromptProvider) {
+            if ($IncludeRuntimeCredential) {
+                $runtime = Read-Host "Enter current alpha_data_user credential for replacement role" -AsSecureString
+            }
             $bootstrap = Read-Host "Enter alpha_data_bootstrap credential" -AsSecureString
             $migration = Read-Host "Enter alpha_data_migration credential" -AsSecureString
         }
         else {
+            if ($IncludeRuntimeCredential) {
+                $runtime = & $PromptProvider "Enter current alpha_data_user credential for replacement role"
+            }
             $bootstrap = & $PromptProvider "Enter alpha_data_bootstrap credential"
             $migration = & $PromptProvider "Enter alpha_data_migration credential"
+        }
+        if ($IncludeRuntimeCredential) {
+            Assert-Condition ($runtime -is [System.Security.SecureString]) "C08-PRE-02 runtime prompt did not return SecureString"
+            Assert-Condition ($runtime.Length -gt 0) "C08-PRE-02 runtime credential must not be empty"
         }
         Assert-Condition ($bootstrap -is [System.Security.SecureString]) "C08-PRE-02 bootstrap prompt did not return SecureString"
         Assert-Condition ($migration -is [System.Security.SecureString]) "C08-PRE-02 migration prompt did not return SecureString"
         Assert-Condition ($bootstrap.Length -gt 0) "C08-PRE-02 bootstrap credential must not be empty"
         Assert-Condition ($migration.Length -gt 0) "C08-PRE-02 migration credential must not be empty"
-        return [pscustomobject]@{ Bootstrap=$bootstrap; Migration=$migration }
+        return [pscustomobject]@{ Runtime=$runtime; Bootstrap=$bootstrap; Migration=$migration }
     }
     catch {
+        if ($runtime -is [System.Security.SecureString]) { $runtime.Dispose() }
         if ($bootstrap -is [System.Security.SecureString]) { $bootstrap.Dispose() }
         if ($migration -is [System.Security.SecureString]) { $migration.Dispose() }
+        $runtime = $null
         $bootstrap = $null
         $migration = $null
         throw
@@ -597,18 +637,52 @@ function Invoke-DatabaseQuery {
 function Invoke-ReviewedSqlArtifact {
     param(
         [Parameter(Mandatory = $true)]$Artifact,
-        [ValidateSet("prepare", "normalize", "correction")][string]$Phase
+        [ValidateSet("prepare", "normalize", "correction")][string]$Phase,
+        [System.Security.SecureString]$RuntimeCredential
     )
+    $executionIdentity = if ($Phase -eq "normalize") { "alpha_data_bootstrap" } else { $InitialDatabaseIdentity }
     $arguments = @(
         "compose", "exec", "-T", $DatabaseService,
-        "psql", "--no-psqlrc", "--username", $InitialDatabaseIdentity,
+        "psql", "--no-psqlrc", "--username", $executionIdentity,
         "--dbname", $DatabaseName, "--set", "ON_ERROR_STOP=1"
     )
     if ($Phase -in @("prepare", "normalize")) {
         $arguments += @("--set", "c08_phase=$Phase")
     }
     $arguments += "--file=-"
-    [void](Invoke-SafeProcess -FileName "docker" -ArgumentList $arguments -WorkingDirectory $script:ResolvedRepositoryRoot -StandardInputText $Artifact.Text)
+    if ($Phase -ne "normalize") {
+        Assert-Condition ($null -eq $RuntimeCredential) "C08-PRE-02 runtime credential is valid only for Normalize"
+        [void](Invoke-SafeProcess -FileName "docker" -ArgumentList $arguments -WorkingDirectory $script:ResolvedRepositoryRoot -StandardInputText $Artifact.Text)
+        return
+    }
+
+    Assert-Condition ($RuntimeCredential -is [System.Security.SecureString]) "C08-PRE-02 Normalize requires a SecureString runtime credential"
+    Invoke-WithSecureStringPlaintext -SecureValue $RuntimeCredential -Operation {
+        param($plainText)
+        Assert-Condition (
+            -not $plainText.Contains("`r") -and -not $plainText.Contains("`n")
+        ) "C08-PRE-02 runtime credential contained an unsupported line break"
+        $markerMatches = [regex]::Matches(
+            $Artifact.Text,
+            '(?m)^\\password alpha_data_user(?<eol>\r?\n)'
+        )
+        Assert-Condition ($markerMatches.Count -eq 1) "C08-PRE-02 reviewed Normalize credential marker mismatch"
+        $inputText = $null
+        try {
+            $marker = $markerMatches[0]
+            $lineEnding = $marker.Groups["eol"].Value
+            $insertAt = $marker.Index + $marker.Length
+            $inputText = $Artifact.Text.Insert(
+                $insertAt,
+                "$plainText$lineEnding$plainText$lineEnding"
+            )
+            [void](Invoke-SafeProcess -FileName "docker" -ArgumentList $arguments -WorkingDirectory $script:ResolvedRepositoryRoot -StandardInputText $inputText)
+        }
+        finally {
+            $inputText = $null
+            $plainText = $null
+        }
+    }
 }
 
 function Set-ProtectedRoleCredential {
@@ -747,6 +821,8 @@ UNION ALL SELECT 'c07_operator_column_count=' || count(*)::text FROM information
 UNION ALL SELECT 'database_owner=' || pg_get_userbyid(datdba) FROM pg_database WHERE datname = current_database()
 UNION ALL SELECT 'public_schema_owner=' || pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname = 'public'
 UNION ALL SELECT 'app_role_exists=' || EXISTS(SELECT 1 FROM pg_roles WHERE rolname = 'alpha_data_user')::text
+UNION ALL SELECT 'app_role_oid=' || coalesce((SELECT oid::text FROM pg_roles WHERE rolname = 'alpha_data_user'), '0')
+UNION ALL SELECT 'app_role_is_oid_10=' || coalesce((SELECT oid = 10 FROM pg_roles WHERE rolname = 'alpha_data_user'), false)::text
 UNION ALL SELECT 'app_role_can_login=' || coalesce((SELECT rolcanlogin FROM pg_roles WHERE rolname = 'alpha_data_user'), false)::text
 UNION ALL SELECT 'app_role_superuser=' || coalesce((SELECT rolsuper FROM pg_roles WHERE rolname = 'alpha_data_user'), false)::text
 UNION ALL SELECT 'app_role_createdb=' || coalesce((SELECT rolcreatedb FROM pg_roles WHERE rolname = 'alpha_data_user'), false)::text
@@ -754,12 +830,20 @@ UNION ALL SELECT 'app_role_createrole=' || coalesce((SELECT rolcreaterole FROM p
 UNION ALL SELECT 'app_role_replication=' || coalesce((SELECT rolreplication FROM pg_roles WHERE rolname = 'alpha_data_user'), false)::text
 UNION ALL SELECT 'app_role_bypassrls=' || coalesce((SELECT rolbypassrls FROM pg_roles WHERE rolname = 'alpha_data_user'), false)::text
 UNION ALL SELECT 'bootstrap_role_exists=' || EXISTS(SELECT 1 FROM pg_roles WHERE rolname = 'alpha_data_bootstrap')::text
+UNION ALL SELECT 'bootstrap_role_oid=' || coalesce((SELECT oid::text FROM pg_roles WHERE rolname = 'alpha_data_bootstrap'), '0')
+UNION ALL SELECT 'bootstrap_role_is_oid_10=' || coalesce((SELECT oid = 10 FROM pg_roles WHERE rolname = 'alpha_data_bootstrap'), false)::text
 UNION ALL SELECT 'bootstrap_role_can_login=' || coalesce((SELECT rolcanlogin FROM pg_roles WHERE rolname = 'alpha_data_bootstrap'), false)::text
 UNION ALL SELECT 'bootstrap_role_superuser=' || coalesce((SELECT rolsuper FROM pg_roles WHERE rolname = 'alpha_data_bootstrap'), false)::text
 UNION ALL SELECT 'bootstrap_role_createdb=' || coalesce((SELECT rolcreatedb FROM pg_roles WHERE rolname = 'alpha_data_bootstrap'), false)::text
 UNION ALL SELECT 'bootstrap_role_createrole=' || coalesce((SELECT rolcreaterole FROM pg_roles WHERE rolname = 'alpha_data_bootstrap'), false)::text
 UNION ALL SELECT 'bootstrap_role_replication=' || coalesce((SELECT rolreplication FROM pg_roles WHERE rolname = 'alpha_data_bootstrap'), false)::text
 UNION ALL SELECT 'bootstrap_role_bypassrls=' || coalesce((SELECT rolbypassrls FROM pg_roles WHERE rolname = 'alpha_data_bootstrap'), false)::text
+UNION ALL SELECT 'cluster_bootstrap_role_exists=' || EXISTS(SELECT 1 FROM pg_roles WHERE rolname = 'alpha_data_cluster_bootstrap')::text
+UNION ALL SELECT 'cluster_bootstrap_role_oid=' || coalesce((SELECT oid::text FROM pg_roles WHERE rolname = 'alpha_data_cluster_bootstrap'), '0')
+UNION ALL SELECT 'cluster_bootstrap_role_can_login=' || coalesce((SELECT rolcanlogin FROM pg_roles WHERE rolname = 'alpha_data_cluster_bootstrap'), false)::text
+UNION ALL SELECT 'cluster_bootstrap_role_superuser=' || coalesce((SELECT rolsuper FROM pg_roles WHERE rolname = 'alpha_data_cluster_bootstrap'), false)::text
+UNION ALL SELECT 'oid_10_role_count=' || count(*)::text FROM pg_roles WHERE oid = 10
+UNION ALL SELECT 'oid_10_role_name=' || coalesce((SELECT rolname FROM pg_roles WHERE oid = 10), 'missing')
 UNION ALL SELECT 'migration_role_exists=' || EXISTS(SELECT 1 FROM pg_roles WHERE rolname = 'alpha_data_migration')::text
 UNION ALL SELECT 'migration_role_can_login=' || coalesce((SELECT rolcanlogin FROM pg_roles WHERE rolname = 'alpha_data_migration'), false)::text
 UNION ALL SELECT 'migration_role_superuser=' || coalesce((SELECT rolsuper FROM pg_roles WHERE rolname = 'alpha_data_migration'), false)::text
@@ -778,11 +862,14 @@ UNION ALL SELECT 'app_owned_table_count=' || count(*)::text FROM pg_class AS obj
 UNION ALL SELECT 'app_owned_sequence_count=' || count(*)::text FROM pg_class AS object JOIN pg_namespace AS namespace ON namespace.oid = object.relnamespace JOIN pg_roles AS owner_role ON owner_role.oid = object.relowner WHERE namespace.nspname = 'public' AND object.relkind = 'S' AND owner_role.rolname = 'alpha_data_user'
 UNION ALL SELECT 'migration_owned_table_count=' || count(*)::text FROM pg_class AS object JOIN pg_namespace AS namespace ON namespace.oid = object.relnamespace JOIN pg_roles AS owner_role ON owner_role.oid = object.relowner WHERE namespace.nspname = 'public' AND object.relkind IN ('r', 'p') AND owner_role.rolname = 'alpha_data_migration'
 UNION ALL SELECT 'migration_owned_sequence_count=' || count(*)::text FROM pg_class AS object JOIN pg_namespace AS namespace ON namespace.oid = object.relnamespace JOIN pg_roles AS owner_role ON owner_role.oid = object.relowner WHERE namespace.nspname = 'public' AND object.relkind = 'S' AND owner_role.rolname = 'alpha_data_migration'
+UNION ALL SELECT 'cluster_bootstrap_owned_public_object_count=' || count(*)::text FROM pg_class AS object JOIN pg_namespace AS namespace ON namespace.oid = object.relnamespace JOIN pg_roles AS owner_role ON owner_role.oid = object.relowner WHERE namespace.nspname = 'public' AND object.relkind IN ('r', 'p', 'S') AND owner_role.rolname = 'alpha_data_cluster_bootstrap'
 UNION ALL SELECT 'unexpected_owner_count=' || count(*)::text FROM pg_class AS object JOIN pg_namespace AS namespace ON namespace.oid = object.relnamespace JOIN pg_roles AS owner_role ON owner_role.oid = object.relowner WHERE namespace.nspname = 'public' AND object.relkind IN ('r', 'p', 'S') AND owner_role.rolname NOT IN ('alpha_data_user', 'alpha_data_migration')
 UNION ALL SELECT 'app_database_connect=' || has_database_privilege('alpha_data_user', current_database(), 'CONNECT')::text
 UNION ALL SELECT 'app_schema_usage=' || has_schema_privilege('alpha_data_user', 'public', 'USAGE')::text
 UNION ALL SELECT 'public_database_connect=' || EXISTS(SELECT 1 FROM pg_database AS database_record CROSS JOIN LATERAL aclexplode(coalesce(database_record.datacl, acldefault('d', database_record.datdba))) AS privilege_record WHERE database_record.datname = current_database() AND privilege_record.grantee = 0 AND privilege_record.privilege_type = 'CONNECT')::text
 UNION ALL SELECT 'unexpected_database_connect_grant_count=' || count(*)::text FROM pg_database AS database_record CROSS JOIN LATERAL aclexplode(coalesce(database_record.datacl, acldefault('d', database_record.datdba))) AS privilege_record LEFT JOIN pg_roles AS grantee_role ON grantee_role.oid = privilege_record.grantee WHERE database_record.datname = current_database() AND privilege_record.privilege_type = 'CONNECT' AND privilege_record.grantee <> 0 AND grantee_role.rolname NOT IN ('alpha_data_user', 'alpha_data_bootstrap', 'alpha_data_migration', 'alpha_data_readonly', 'alpha_data_backup', 'alpha_data_retention')
+UNION ALL SELECT 'cluster_bootstrap_explicit_connect_count=' || count(*)::text FROM pg_database AS database_record CROSS JOIN LATERAL aclexplode(coalesce(database_record.datacl, acldefault('d', database_record.datdba))) AS privilege_record JOIN pg_roles AS grantee_role ON grantee_role.oid = privilege_record.grantee WHERE database_record.datname = current_database() AND privilege_record.privilege_type = 'CONNECT' AND grantee_role.rolname = 'alpha_data_cluster_bootstrap'
+UNION ALL SELECT 'cluster_bootstrap_explicit_object_acl_count=' || count(*)::text FROM (SELECT privilege_record.privilege_type FROM pg_class AS object JOIN pg_namespace AS namespace ON namespace.oid = object.relnamespace CROSS JOIN LATERAL aclexplode(object.relacl) AS privilege_record WHERE namespace.nspname = 'public' AND object.relkind IN ('r', 'p', 'S') AND privilege_record.grantee = (SELECT oid FROM pg_roles WHERE rolname = 'alpha_data_cluster_bootstrap') UNION ALL SELECT privilege_record.privilege_type FROM pg_namespace AS namespace CROSS JOIN LATERAL aclexplode(namespace.nspacl) AS privilege_record WHERE namespace.nspname = 'public' AND privilege_record.grantee = (SELECT oid FROM pg_roles WHERE rolname = 'alpha_data_cluster_bootstrap')) AS cluster_bootstrap_acl
 UNION ALL SELECT 'bootstrap_database_connect=' || CASE WHEN EXISTS(SELECT 1 FROM pg_roles WHERE rolname = 'alpha_data_bootstrap') THEN has_database_privilege('alpha_data_bootstrap', current_database(), 'CONNECT') ELSE false END::text
 UNION ALL SELECT 'migration_connect=' || CASE WHEN EXISTS(SELECT 1 FROM pg_roles WHERE rolname = 'alpha_data_migration') THEN has_database_privilege('alpha_data_migration', current_database(), 'CONNECT') ELSE false END::text
 UNION ALL SELECT 'migration_schema_usage=' || CASE WHEN EXISTS(SELECT 1 FROM pg_roles WHERE rolname = 'alpha_data_migration') THEN has_schema_privilege('alpha_data_migration', 'public', 'USAGE') ELSE false END::text
@@ -873,7 +960,7 @@ function Invoke-C08Pre02Main {
         $script:DatabaseEvidence = $snapshot
         Assert-ExactPreservedDataSnapshot -Snapshot $snapshot
         $roleState = Get-RoleBoundaryState -Snapshot $snapshot
-        Assert-Gate "role_boundary_state_expected" ($roleState -ne "unexpected") "Role state must be legacy, prepared, or normalized."
+        Assert-Gate "role_boundary_state_expected" ($roleState -ne "unexpected") "Role state must be legacy_bootstrap_collision, prepared_bootstrap_collision, or normalized."
         $script:RoleStateEvidence = $roleState
 
         if ($BackupEvidencePath) {
@@ -915,13 +1002,13 @@ function Invoke-C08Pre02Main {
             Assert-RepositoryState -ReviewedCheckpoint $script:ReviewedGitCheckpoint
             Invoke-ReviewedSqlArtifact -Artifact $provisionArtifact -Phase "prepare"
             $preparedSnapshot = Invoke-DatabaseQuery -Sql $DatabaseSnapshotSql
-            Assert-Gate "post_prepare_state" ((Get-RoleBoundaryState $preparedSnapshot) -eq "prepared") "Prepare must produce exact prepared state."
-            $roleState = "prepared"
+            Assert-Gate "post_prepare_state" ((Get-RoleBoundaryState $preparedSnapshot) -eq "prepared_bootstrap_collision") "Prepare must produce exact prepared bootstrap-collision state."
+            $roleState = "prepared_bootstrap_collision"
         }
 
         $credentials = $null
         try {
-            $credentials = Read-ReconciliationCredentials
+            $credentials = Read-ReconciliationCredentials -IncludeRuntimeCredential $plan.RequireRuntimeCredential
             if ($plan.SetCredentials) {
                 Assert-RepositoryState -ReviewedCheckpoint $script:ReviewedGitCheckpoint
                 Set-ProtectedRoleCredential -RoleName "alpha_data_bootstrap" -Credential $credentials.Bootstrap
@@ -929,18 +1016,20 @@ function Invoke-C08Pre02Main {
             }
             Assert-Gate "bootstrap_login_verified" (Test-ProtectedRoleLogin -RoleName "alpha_data_bootstrap" -Credential $credentials.Bootstrap) "Bootstrap fixed loopback login must succeed."
             Assert-Gate "migration_login_and_capability_verified" (Test-ProtectedRoleLogin -RoleName "alpha_data_migration" -Credential $credentials.Migration) "Migration fixed loopback login and bounded capability must succeed."
+            if ($plan.Normalize) {
+                Assert-RepositoryState -ReviewedCheckpoint $script:ReviewedGitCheckpoint
+                Invoke-ReviewedSqlArtifact -Artifact $provisionArtifact -Phase "normalize" -RuntimeCredential $credentials.Runtime
+            }
         }
         finally {
             if ($null -ne $credentials) {
+                if ($credentials.Runtime -is [System.Security.SecureString]) {
+                    $credentials.Runtime.Dispose()
+                }
                 $credentials.Bootstrap.Dispose()
                 $credentials.Migration.Dispose()
             }
             $credentials = $null
-        }
-
-        if ($plan.Normalize) {
-            Assert-RepositoryState -ReviewedCheckpoint $script:ReviewedGitCheckpoint
-            Invoke-ReviewedSqlArtifact -Artifact $provisionArtifact -Phase "normalize"
         }
         $normalizedSnapshot = Invoke-DatabaseQuery -Sql $DatabaseSnapshotSql
         Assert-Gate "normalized_role_state" ((Get-RoleBoundaryState $normalizedSnapshot) -eq "normalized") "Role boundary must be exactly normalized before correction."
@@ -975,3 +1064,4 @@ if ($MyInvocation.InvocationName -ne ".") {
         exit 1
     }
 }
+        $runtime = $null

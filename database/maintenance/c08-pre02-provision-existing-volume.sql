@@ -45,7 +45,8 @@ BEGIN
     IF current_database() <> 'alpha_data_db' THEN
         RAISE EXCEPTION 'C08-PRE-02 unexpected database';
     END IF;
-    IF current_user <> 'alpha_data_user' THEN
+    IF current_user <> 'alpha_data_user'
+       OR (SELECT oid FROM pg_roles WHERE rolname = 'alpha_data_user') <> 10 THEN
         RAISE EXCEPTION 'C08-PRE-02 unexpected maintenance identity';
     END IF;
 
@@ -68,6 +69,7 @@ BEGIN
         SELECT 1
         FROM pg_roles AS role
         WHERE role.rolname = 'alpha_data_user'
+          AND role.oid = 10
           AND role.rolcanlogin
           AND role.rolsuper
           AND role.rolcreatedb
@@ -82,7 +84,8 @@ BEGIN
     FROM pg_roles
     WHERE rolname IN (
         'alpha_data_bootstrap', 'alpha_data_migration',
-        'alpha_data_readonly', 'alpha_data_backup', 'alpha_data_retention'
+        'alpha_data_readonly', 'alpha_data_backup', 'alpha_data_retention',
+        'alpha_data_cluster_bootstrap'
     );
 
     IF managed_role_count <> 0 THEN
@@ -184,6 +187,12 @@ DECLARE
     prepared_sequence_privilege_count integer;
     migration_default_acl_count integer;
 BEGIN
+    IF (SELECT oid FROM pg_roles WHERE rolname = 'alpha_data_user') <> 10
+       OR EXISTS (
+           SELECT 1 FROM pg_roles WHERE rolname = 'alpha_data_cluster_bootstrap'
+       ) THEN
+        RAISE EXCEPTION 'C08-PRE-02 Prepare changed bootstrap identity boundary';
+    END IF;
     IF pg_get_userbyid((SELECT datdba FROM pg_database WHERE datname = current_database()))
         <> 'alpha_data_user'
        OR pg_get_userbyid((SELECT nspowner FROM pg_namespace WHERE nspname = 'public'))
@@ -344,7 +353,8 @@ DECLARE
     migration_default_acl_count integer;
     unexpected_database_connect_grant_count integer;
 BEGIN
-    IF current_database() <> 'alpha_data_db' OR current_user <> 'alpha_data_user' THEN
+    IF current_database() <> 'alpha_data_db'
+       OR current_user <> 'alpha_data_bootstrap' THEN
         RAISE EXCEPTION 'C08-PRE-02 Normalize execution identity precondition failed';
     END IF;
     IF pg_get_userbyid((SELECT datdba FROM pg_database WHERE datname = current_database()))
@@ -356,10 +366,23 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_roles AS role
         WHERE role.rolname = 'alpha_data_user'
+          AND role.oid = 10
           AND role.rolcanlogin AND role.rolsuper AND role.rolcreatedb
           AND role.rolcreaterole AND role.rolbypassrls
     ) THEN
         RAISE EXCEPTION 'C08-PRE-02 prepared application-role precondition failed';
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM pg_roles WHERE rolname = 'alpha_data_cluster_bootstrap'
+    ) OR NOT EXISTS (
+        SELECT 1 FROM pg_roles AS role
+        WHERE role.rolname = 'alpha_data_bootstrap'
+          AND role.oid <> 10
+          AND role.rolcanlogin AND role.rolsuper
+          AND NOT role.rolcreatedb AND NOT role.rolcreaterole
+          AND NOT role.rolreplication AND role.rolbypassrls
+    ) THEN
+        RAISE EXCEPTION 'C08-PRE-02 prepared bootstrap identity precondition failed';
     END IF;
 
     SELECT count(*)
@@ -516,6 +539,36 @@ BEGIN
 END
 $c08_pre02_normalize_guard$;
 
+ALTER ROLE alpha_data_user RENAME TO alpha_data_cluster_bootstrap;
+ALTER ROLE alpha_data_cluster_bootstrap WITH
+    NOLOGIN INHERIT SUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION BYPASSRLS;
+CREATE ROLE alpha_data_user
+    LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+\password alpha_data_user
+
+DO $c08_pre02_verify_identity_split$
+BEGIN
+    IF current_user <> 'alpha_data_bootstrap'
+       OR (SELECT count(*) FROM pg_roles WHERE oid = 10) <> 1
+       OR NOT EXISTS (
+           SELECT 1 FROM pg_roles AS role
+           WHERE role.oid = 10
+             AND role.rolname = 'alpha_data_cluster_bootstrap'
+             AND NOT role.rolcanlogin AND role.rolsuper
+       )
+       OR NOT EXISTS (
+           SELECT 1 FROM pg_roles AS role
+           WHERE role.rolname = 'alpha_data_user'
+             AND role.oid <> 10
+             AND role.rolcanlogin AND NOT role.rolsuper
+             AND NOT role.rolcreatedb AND NOT role.rolcreaterole
+             AND NOT role.rolreplication AND NOT role.rolbypassrls
+       ) THEN
+        RAISE EXCEPTION 'C08-PRE-02 bootstrap identity split verification failed';
+    END IF;
+END
+$c08_pre02_verify_identity_split$;
+
 ALTER DATABASE alpha_data_db OWNER TO alpha_data_bootstrap;
 ALTER SCHEMA public OWNER TO alpha_data_bootstrap;
 
@@ -544,7 +597,7 @@ BEGIN
         JOIN pg_roles AS owner_role ON owner_role.oid = object.relowner
         WHERE namespace.nspname = 'public'
           AND object.relkind IN ('r', 'p', 'S')
-          AND owner_role.rolname = 'alpha_data_user'
+          AND owner_role.rolname = 'alpha_data_cluster_bootstrap'
           AND (
               (object.relkind IN ('r', 'p') AND object.relname = ANY(expected_tables))
               OR (object.relkind = 'S' AND object.relname = ANY(expected_sequences))
@@ -573,6 +626,10 @@ END
 $c08_pre02_transfer_exact_ownership$;
 
 REVOKE CONNECT ON DATABASE alpha_data_db FROM PUBLIC;
+REVOKE CONNECT ON DATABASE alpha_data_db FROM alpha_data_cluster_bootstrap;
+REVOKE ALL ON SCHEMA public FROM alpha_data_cluster_bootstrap;
+REVOKE ALL ON ALL TABLES IN SCHEMA public FROM alpha_data_cluster_bootstrap;
+REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM alpha_data_cluster_bootstrap;
 GRANT CONNECT ON DATABASE alpha_data_db TO alpha_data_user;
 GRANT CONNECT ON DATABASE alpha_data_db TO alpha_data_bootstrap;
 GRANT CONNECT ON DATABASE alpha_data_db TO alpha_data_migration;
@@ -750,16 +807,33 @@ DECLARE
     unexpected_owner_count integer;
     public_database_connect_count integer;
     unexpected_database_connect_grant_count integer;
+    cluster_bootstrap_connect_grant_count integer;
     migration_default_acl_count integer;
+    oid_10_role_count integer;
+    cluster_bootstrap_owned_object_count integer;
+    cluster_bootstrap_explicit_object_acl_count integer;
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_roles AS role
         WHERE role.rolname = 'alpha_data_bootstrap'
+          AND role.oid <> 10
           AND role.rolcanlogin AND role.rolsuper
           AND NOT role.rolcreatedb AND NOT role.rolcreaterole
           AND NOT role.rolreplication AND role.rolbypassrls
     ) THEN
         RAISE EXCEPTION 'C08-PRE-02 final administrative path verification failed';
+    END IF;
+    SELECT count(*)
+    INTO oid_10_role_count
+    FROM pg_roles AS role
+    WHERE role.oid = 10
+      AND role.rolname = 'alpha_data_cluster_bootstrap'
+      AND NOT role.rolcanlogin AND role.rolsuper
+      AND NOT role.rolcreatedb AND NOT role.rolcreaterole
+      AND NOT role.rolreplication AND role.rolbypassrls;
+    IF oid_10_role_count <> 1
+       OR (SELECT count(*) FROM pg_roles WHERE oid = 10) <> 1 THEN
+        RAISE EXCEPTION 'C08-PRE-02 final cluster-bootstrap identity verification failed';
     END IF;
     IF NOT EXISTS (
         SELECT 1 FROM pg_roles AS role
@@ -773,13 +847,13 @@ BEGIN
        OR NOT has_schema_privilege('alpha_data_migration', 'public', 'CREATE') THEN
         RAISE EXCEPTION 'C08-PRE-02 final migration path verification failed';
     END IF;
-    IF EXISTS (
+    IF NOT EXISTS (
         SELECT 1 FROM pg_roles AS role
         WHERE role.rolname = 'alpha_data_user'
-          AND (
-              NOT role.rolcanlogin OR role.rolsuper OR role.rolcreatedb
-              OR role.rolcreaterole OR role.rolreplication OR role.rolbypassrls
-          )
+          AND role.oid <> 10
+          AND role.rolcanlogin AND NOT role.rolsuper
+          AND NOT role.rolcreatedb AND NOT role.rolcreaterole
+          AND NOT role.rolreplication AND NOT role.rolbypassrls
     ) THEN
         RAISE EXCEPTION 'C08-PRE-02 runtime attribute normalization failed';
     END IF;
@@ -806,9 +880,11 @@ BEGIN
               AND grantee_role.rolname NOT IN (
                   'alpha_data_user', 'alpha_data_bootstrap', 'alpha_data_migration',
                   'alpha_data_readonly', 'alpha_data_backup', 'alpha_data_retention'
-              )
-        )
-    INTO public_database_connect_count, unexpected_database_connect_grant_count
+                )
+        ),
+        count(*) FILTER (WHERE grantee_role.rolname = 'alpha_data_cluster_bootstrap')
+    INTO public_database_connect_count, unexpected_database_connect_grant_count,
+         cluster_bootstrap_connect_grant_count
     FROM pg_database AS database_record
     CROSS JOIN LATERAL aclexplode(
         coalesce(database_record.datacl, acldefault('d', database_record.datdba))
@@ -817,7 +893,8 @@ BEGIN
     WHERE database_record.datname = current_database()
       AND privilege_record.privilege_type = 'CONNECT';
     IF public_database_connect_count <> 0
-       OR unexpected_database_connect_grant_count <> 0 THEN
+       OR unexpected_database_connect_grant_count <> 0
+       OR cluster_bootstrap_connect_grant_count <> 0 THEN
         RAISE EXCEPTION 'C08-PRE-02 database CONNECT allow-list verification failed';
     END IF;
 
@@ -830,16 +907,44 @@ BEGIN
         RAISE EXCEPTION 'C08-PRE-02 migration default privilege verification failed';
     END IF;
 
+    SELECT count(*)
+    INTO cluster_bootstrap_explicit_object_acl_count
+    FROM (
+        SELECT privilege_record.privilege_type
+        FROM pg_class AS object
+        JOIN pg_namespace AS namespace ON namespace.oid = object.relnamespace
+        CROSS JOIN LATERAL aclexplode(object.relacl) AS privilege_record
+        WHERE namespace.nspname = 'public'
+          AND object.relkind IN ('r', 'p', 'S')
+          AND privilege_record.grantee = (
+              SELECT oid FROM pg_roles WHERE rolname = 'alpha_data_cluster_bootstrap'
+          )
+        UNION ALL
+        SELECT privilege_record.privilege_type
+        FROM pg_namespace AS namespace
+        CROSS JOIN LATERAL aclexplode(namespace.nspacl) AS privilege_record
+        WHERE namespace.nspname = 'public'
+          AND privilege_record.grantee = (
+              SELECT oid FROM pg_roles WHERE rolname = 'alpha_data_cluster_bootstrap'
+          )
+    ) AS cluster_bootstrap_acl;
+    IF cluster_bootstrap_explicit_object_acl_count <> 0 THEN
+        RAISE EXCEPTION 'C08-PRE-02 cluster-bootstrap object privilege remains';
+    END IF;
+
     SELECT
         count(*) FILTER (WHERE owner_role.rolname = 'alpha_data_user'),
-        count(*) FILTER (WHERE owner_role.rolname <> 'alpha_data_migration')
-    INTO runtime_owned_object_count, unexpected_owner_count
+        count(*) FILTER (WHERE owner_role.rolname <> 'alpha_data_migration'),
+        count(*) FILTER (WHERE owner_role.rolname = 'alpha_data_cluster_bootstrap')
+    INTO runtime_owned_object_count, unexpected_owner_count,
+         cluster_bootstrap_owned_object_count
     FROM pg_class AS object
     JOIN pg_namespace AS namespace ON namespace.oid = object.relnamespace
     JOIN pg_roles AS owner_role ON owner_role.oid = object.relowner
     WHERE namespace.nspname = 'public'
       AND object.relkind IN ('r', 'p', 'S');
-    IF runtime_owned_object_count <> 0 OR unexpected_owner_count <> 0 THEN
+    IF runtime_owned_object_count <> 0 OR unexpected_owner_count <> 0
+       OR cluster_bootstrap_owned_object_count <> 0 THEN
         RAISE EXCEPTION 'C08-PRE-02 final ownership normalization failed';
     END IF;
 END

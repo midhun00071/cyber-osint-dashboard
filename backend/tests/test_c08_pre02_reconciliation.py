@@ -21,6 +21,7 @@ AUTHORIZED_FILES = {
     "scripts/c08-pre02-reconcile-preserved-volume.ps1",
     "database/maintenance/c08-pre02-provision-existing-volume.sql",
     "backend/tests/test_c08_pre02_reconciliation.py",
+    "docs/c08-pre02-preserved-volume-reconciliation.md",
 }
 EXPECTED_CORRECTION_SQL_SHA256 = (
     "d614601fef244bb612035b6029392f207126e1de8a3cbc1bc819bb98595c0a4e"
@@ -84,6 +85,8 @@ def exact_timestamp(value: datetime) -> str:
 def role_fixture(state: str) -> dict[str, object]:
     fixture: dict[str, object] = {
         "app_role_exists": True,
+        "app_role_oid": 10,
+        "app_role_is_oid_10": True,
         "app_role_can_login": True,
         "app_role_superuser": True,
         "app_role_createdb": True,
@@ -93,6 +96,8 @@ def role_fixture(state: str) -> dict[str, object]:
         "app_database_connect": True,
         "app_schema_usage": True,
         "bootstrap_role_exists": False,
+        "bootstrap_role_oid": 0,
+        "bootstrap_role_is_oid_10": False,
         "bootstrap_role_can_login": False,
         "bootstrap_role_superuser": False,
         "bootstrap_role_createdb": False,
@@ -100,6 +105,15 @@ def role_fixture(state: str) -> dict[str, object]:
         "bootstrap_role_replication": False,
         "bootstrap_role_bypassrls": False,
         "bootstrap_database_connect": False,
+        "cluster_bootstrap_role_exists": False,
+        "cluster_bootstrap_role_oid": 0,
+        "cluster_bootstrap_role_can_login": False,
+        "cluster_bootstrap_role_superuser": False,
+        "cluster_bootstrap_owned_public_object_count": 0,
+        "cluster_bootstrap_explicit_connect_count": 0,
+        "cluster_bootstrap_explicit_object_acl_count": 0,
+        "oid_10_role_count": 1,
+        "oid_10_role_name": "alpha_data_user",
         "migration_role_exists": False,
         "migration_role_can_login": False,
         "migration_role_superuser": False,
@@ -143,10 +157,12 @@ def role_fixture(state: str) -> dict[str, object]:
         "backup_table_privilege_shape_count": 0,
         "retention_table_privilege_shape_count": 0,
     }
-    if state in {"prepared", "normalized"}:
+    if state in {"prepared_bootstrap_collision", "normalized"}:
         fixture.update(
             {
                 "bootstrap_role_exists": True,
+                "bootstrap_role_oid": 73_731,
+                "bootstrap_role_is_oid_10": False,
                 "bootstrap_role_can_login": True,
                 "bootstrap_role_superuser": True,
                 "bootstrap_role_createdb": False,
@@ -178,10 +194,17 @@ def role_fixture(state: str) -> dict[str, object]:
     if state == "normalized":
         fixture.update(
             {
+                "app_role_oid": 80_001,
+                "app_role_is_oid_10": False,
                 "app_role_superuser": False,
                 "app_role_createdb": False,
                 "app_role_createrole": False,
                 "app_role_bypassrls": False,
+                "cluster_bootstrap_role_exists": True,
+                "cluster_bootstrap_role_oid": 10,
+                "cluster_bootstrap_role_can_login": False,
+                "cluster_bootstrap_role_superuser": True,
+                "oid_10_role_name": "alpha_data_cluster_bootstrap",
                 "database_owner": "alpha_data_bootstrap",
                 "public_schema_owner": "alpha_data_bootstrap",
                 "app_owned_table_count": 0,
@@ -346,12 +369,63 @@ def test_stale_backup_artifact_fails_functionally(tmp_path: Path) -> None:
     assert_ps_fails(backup_call(evidence), "backup artifact is stale or future-dated")
 
 
-@pytest.mark.parametrize("state", ["legacy", "prepared", "normalized"])
+@pytest.mark.parametrize(
+    "state",
+    ["legacy_bootstrap_collision", "prepared_bootstrap_collision", "normalized"],
+)
 def test_role_states_are_distinguished_functionally(state: str) -> None:
     command = f"{ps_fixture(role_fixture(state))}; Get-RoleBoundaryState -Snapshot $fixture"
     result = run_safe_powershell(command)
     assert result.returncode == 0, result.stdout + result.stderr
     assert result.stdout.strip() == state
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("app_role_oid", 10),
+        ("app_role_is_oid_10", True),
+        ("cluster_bootstrap_role_exists", False),
+        ("cluster_bootstrap_role_oid", 11),
+        ("cluster_bootstrap_role_can_login", True),
+        ("cluster_bootstrap_role_superuser", False),
+        ("bootstrap_role_is_oid_10", True),
+        ("oid_10_role_count", 0),
+        ("oid_10_role_name", "alpha_data_user"),
+        ("cluster_bootstrap_owned_public_object_count", 1),
+        ("cluster_bootstrap_explicit_connect_count", 1),
+        ("cluster_bootstrap_explicit_object_acl_count", 1),
+    ],
+)
+def test_normalized_identity_split_variants_fail_closed_functionally(
+    key: str, value: object
+) -> None:
+    fixture = role_fixture("normalized")
+    fixture[key] = value
+    command = f"{ps_fixture(fixture)}; Get-RoleBoundaryState -Snapshot $fixture"
+    result = run_safe_powershell(command)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.strip() == "unexpected"
+
+
+def test_partial_bootstrap_rename_without_replacement_fails_closed_functionally() -> None:
+    fixture = role_fixture("prepared_bootstrap_collision")
+    fixture.update(
+        {
+            "app_role_exists": False,
+            "app_role_oid": 0,
+            "app_role_is_oid_10": False,
+            "cluster_bootstrap_role_exists": True,
+            "cluster_bootstrap_role_oid": 10,
+            "cluster_bootstrap_role_can_login": False,
+            "cluster_bootstrap_role_superuser": True,
+            "oid_10_role_name": "alpha_data_cluster_bootstrap",
+        }
+    )
+    command = f"{ps_fixture(fixture)}; Get-RoleBoundaryState -Snapshot $fixture"
+    result = run_safe_powershell(command)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.strip() == "unexpected"
 
 
 @pytest.mark.parametrize(
@@ -370,7 +444,7 @@ def test_role_states_are_distinguished_functionally(state: str) -> None:
 def test_unexpected_owner_attribute_or_membership_state_fails_closed_functionally(
     key: str, value: object
 ) -> None:
-    fixture = role_fixture("legacy")
+    fixture = role_fixture("legacy_bootstrap_collision")
     fixture[key] = value
     command = f"{ps_fixture(fixture)}; Get-RoleBoundaryState -Snapshot $fixture"
     result = run_safe_powershell(command)
@@ -392,6 +466,7 @@ def test_normalized_resume_skips_all_role_mutation_functionally() -> None:
         "Prepare": False,
         "SetCredentials": False,
         "VerifyLogins": True,
+        "RequireRuntimeCredential": False,
         "Normalize": False,
         "CorrectSyntheticProgress": True,
     }
@@ -400,10 +475,10 @@ def test_normalized_resume_skips_all_role_mutation_functionally() -> None:
 @pytest.mark.parametrize(
     ("state", "replication", "expected_state"),
     [
-        ("legacy", False, "legacy"),
-        ("legacy", True, "legacy"),
-        ("prepared", False, "prepared"),
-        ("prepared", True, "prepared"),
+        ("legacy_bootstrap_collision", False, "legacy_bootstrap_collision"),
+        ("legacy_bootstrap_collision", True, "legacy_bootstrap_collision"),
+        ("prepared_bootstrap_collision", False, "prepared_bootstrap_collision"),
+        ("prepared_bootstrap_collision", True, "prepared_bootstrap_collision"),
         ("normalized", False, "normalized"),
         ("normalized", True, "unexpected"),
     ],
@@ -420,7 +495,7 @@ def test_application_replication_is_bounded_by_role_state_functionally(
 
 
 def test_replication_tolerance_does_not_accept_mixed_legacy_attributes() -> None:
-    fixture = role_fixture("legacy")
+    fixture = role_fixture("legacy_bootstrap_collision")
     fixture["app_role_replication"] = True
     fixture["app_role_createrole"] = False
     command = f"{ps_fixture(fixture)}; Get-RoleBoundaryState -Snapshot $fixture"
@@ -431,7 +506,7 @@ def test_replication_tolerance_does_not_accept_mixed_legacy_attributes() -> None
 
 def test_prepared_resume_reconfigures_credentials_then_normalizes_functionally() -> None:
     result = run_safe_powershell(
-        "Get-RoleExecutionPlan -RoleState 'prepared' | ConvertTo-Json -Compress"
+        "Get-RoleExecutionPlan -RoleState 'prepared_bootstrap_collision' | ConvertTo-Json -Compress"
     )
     assert result.returncode == 0, result.stderr
     plan = json.loads(result.stdout)
@@ -439,6 +514,7 @@ def test_prepared_resume_reconfigures_credentials_then_normalizes_functionally()
         "Prepare": False,
         "SetCredentials": True,
         "VerifyLogins": True,
+        "RequireRuntimeCredential": True,
         "Normalize": True,
         "CorrectSyntheticProgress": True,
     }
@@ -475,19 +551,45 @@ def test_reviewed_sql_text_is_retained_after_disk_change_functionally(tmp_path: 
 
 def test_credentials_are_non_echoing_secure_strings_functionally() -> None:
     result = run_safe_powershell(
-        "$credentials=Read-ReconciliationCredentials -PromptProvider { "
+        "$credentials=Read-ReconciliationCredentials -IncludeRuntimeCredential $true -PromptProvider { "
         "param($promptText) ConvertTo-SecureString 'synthetic-test-value' -AsPlainText -Force }; "
-        "$safe=[pscustomobject]@{Bootstrap=$credentials.Bootstrap.GetType().FullName;Migration=$credentials.Migration.GetType().FullName}; "
-        "$credentials.Bootstrap.Dispose(); $credentials.Migration.Dispose(); $credentials=$null; "
+        "$safe=[pscustomobject]@{Runtime=$credentials.Runtime.GetType().FullName;Bootstrap=$credentials.Bootstrap.GetType().FullName;Migration=$credentials.Migration.GetType().FullName}; "
+        "$credentials.Runtime.Dispose(); $credentials.Bootstrap.Dispose(); $credentials.Migration.Dispose(); $credentials=$null; "
         "$safe | ConvertTo-Json -Compress"
     )
     assert result.returncode == 0, result.stdout + result.stderr
     types = json.loads(result.stdout)
     assert types == {
+        "Runtime": "System.Security.SecureString",
         "Bootstrap": "System.Security.SecureString",
         "Migration": "System.Security.SecureString",
     }
     assert "synthetic-test-value" not in result.stdout
+
+
+def test_normalize_uses_bootstrap_and_runtime_credential_only_on_stdin_functionally() -> None:
+    result = run_safe_powershell(
+        f"$script:ResolvedRepositoryRoot={ps_quote(REPO_ROOT)}; "
+        "function Invoke-SafeProcess { param($FileName,$ArgumentList,$WorkingDirectory,$StandardInputText) "
+        "$script:capturedArguments=$ArgumentList -join ' '; "
+        "$script:capturedInput=$StandardInputText; "
+        "[pscustomobject]@{ExitCode=0;Stdout='';StderrPresent=$false} }; "
+        "$credential=ConvertTo-SecureString 'synthetic-runtime-value' -AsPlainText -Force; "
+        "$artifact=[pscustomobject]@{Text=\"BEGIN;`n\\password alpha_data_user`nSELECT 1;`nCOMMIT;`n\"}; "
+        "Invoke-ReviewedSqlArtifact -Artifact $artifact -Phase 'normalize' -RuntimeCredential $credential; "
+        "$safe=[pscustomobject]@{BootstrapIdentity=($script:capturedArguments -match '--username alpha_data_bootstrap');SecretInArguments=$script:capturedArguments.Contains('synthetic-runtime-value');SecretInputCount=([regex]::Matches($script:capturedInput,'synthetic-runtime-value')).Count;MarkerCount=([regex]::Matches($script:capturedInput,'\\\\password alpha_data_user')).Count}; "
+        "$credential.Dispose(); $credential=$null; $script:capturedInput=$null; "
+        "$safe | ConvertTo-Json -Compress"
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    evidence = json.loads(result.stdout)
+    assert evidence == {
+        "BootstrapIdentity": True,
+        "SecretInArguments": False,
+        "SecretInputCount": 2,
+        "MarkerCount": 1,
+    }
+    assert "synthetic-runtime-value" not in result.stdout
 
 
 def test_script_is_dot_source_safe_and_main_is_explicit() -> None:
@@ -508,6 +610,10 @@ def test_no_secret_parameter_environment_log_or_evidence_path_exists() -> None:
         assert f"${forbidden}" not in parameter_block
     assert "Read-Host \"Enter alpha_data_bootstrap credential\" -AsSecureString" in script
     assert "Read-Host \"Enter alpha_data_migration credential\" -AsSecureString" in script
+    assert (
+        'Read-Host "Enter current alpha_data_user credential for replacement role" '
+        "-AsSecureString"
+    ) in script
     assert "GetEnvironmentVariable" not in script
     assert "C08_PRE02_BOOTSTRAP_CREDENTIAL_FILE" not in script
     assert "SecureStringToBSTR" in script
@@ -576,13 +682,17 @@ def test_legacy_replication_tolerance_does_not_weaken_normalized_state() -> None
     normalize_app = normalize_guard.split("role.rolname = 'alpha_data_user'", 1)[
         1
     ].split(") THEN", 1)[0]
+    final_guard = sql.split("$c08_pre02_final_guard$", 2)[1]
+    normalized_runtime = final_guard.split("role.rolname = 'alpha_data_user'", 1)[
+        1
+    ].split(") THEN", 1)[0]
 
     assert "app_role_replication" not in common
     assert '(Test-EvidenceBool $Snapshot "app_role_replication" $false)' in safe_application
     assert "rolreplication" not in prepare_app
     assert "rolreplication" not in normalize_app
     assert "LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS" in sql
-    assert "OR role.rolcreaterole OR role.rolreplication OR role.rolbypassrls" in sql
+    assert "NOT role.rolreplication" in normalized_runtime
 
 
 def test_prepare_does_not_transfer_ownership_or_demote_application_role() -> None:
@@ -604,6 +714,10 @@ def test_prepare_does_not_transfer_ownership_or_demote_application_role() -> Non
 def test_normalize_transfers_exact_ownership_then_restricts_application_last() -> None:
     sql = source(ROLE_SQL_PATH)
     normalize = sql.split("\\elif :c08_normalize", 1)[1]
+    rename = normalize.index(
+        "ALTER ROLE alpha_data_user RENAME TO alpha_data_cluster_bootstrap"
+    )
+    create_runtime = normalize.index("CREATE ROLE alpha_data_user")
     transfer = normalize.index("$c08_pre02_transfer_exact_ownership$")
     path_verification = normalize.index(
         "$c08_pre02_verify_paths_before_application_restriction$"
@@ -613,7 +727,8 @@ def test_normalize_transfers_exact_ownership_then_restricts_application_last() -
     )
     demotion = normalize.index("ALTER ROLE alpha_data_user WITH")
     final_guard = normalize.index("$c08_pre02_final_guard$")
-    assert transfer < path_verification < app_revoke < demotion < final_guard
+    assert rename < create_runtime < transfer < path_verification < app_revoke
+    assert app_revoke < demotion < final_guard
     assert "transferred_table_count <> 11" in normalize
     assert "transferred_sequence_count <> 9" in normalize
     assert "migration_owned_table_count <> 11" in normalize
@@ -648,8 +763,9 @@ def test_role_sql_guards_complete_owner_attribute_and_membership_boundary() -> N
 
 def test_role_sql_has_no_credentials_or_destructive_role_database_operations() -> None:
     sql = source(ROLE_SQL_PATH)
+    assert re.search(r"(?i)(?<!\\)\bPASSWORD\b", sql) is None
+    assert sql.count("\\password alpha_data_user") == 1
     for forbidden_pattern in (
-        r"(?i)\bPASSWORD\b",
         r"(?i)DROP\s+ROLE",
         r"(?i)DROP\s+DATABASE",
         r"(?i)DROP\s+SCHEMA",
@@ -659,6 +775,35 @@ def test_role_sql_has_no_credentials_or_destructive_role_database_operations() -
         r"(?i)postgresql(?:\+psycopg)?://",
     ):
         assert re.search(forbidden_pattern, sql) is None
+
+
+def test_normalize_splits_oid_10_from_runtime_and_runs_as_bootstrap() -> None:
+    script = source(POWERSHELL_PATH)
+    sql = source(ROLE_SQL_PATH)
+    normalize = sql.split("\\elif :c08_normalize", 1)[1]
+    final_guard = normalize.split("$c08_pre02_final_guard$", 2)[1]
+
+    assert 'if ($Phase -eq "normalize") { "alpha_data_bootstrap" }' in script
+    assert "current_user <> 'alpha_data_bootstrap'" in normalize
+    assert "role.rolname = 'alpha_data_user'" in normalize
+    assert "role.oid = 10" in normalize
+    assert "role.rolname = 'alpha_data_bootstrap'" in normalize
+    assert "role.oid <> 10" in normalize
+    assert "ALTER ROLE alpha_data_user RENAME TO alpha_data_cluster_bootstrap" in normalize
+    assert "ALTER ROLE alpha_data_cluster_bootstrap WITH" in normalize
+    assert "NOLOGIN INHERIT SUPERUSER" in normalize
+    assert "CREATE ROLE alpha_data_user" in normalize
+    assert "LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS" in normalize
+    assert "\\password alpha_data_user" in normalize
+    assert "ALTER ROLE alpha_data_cluster_bootstrap WITH\n    NOSUPERUSER" not in normalize
+    assert "role.rolname = 'alpha_data_cluster_bootstrap'" in final_guard
+    assert "role.oid = 10" in final_guard
+    assert "NOT role.rolcanlogin AND role.rolsuper" in final_guard
+    assert "role.rolname = 'alpha_data_user'" in final_guard
+    assert "role.oid <> 10" in final_guard
+    assert "cluster_bootstrap_connect_grant_count <> 0" in final_guard
+    assert "cluster_bootstrap_owned_object_count <> 0" in final_guard
+    assert "cluster_bootstrap_explicit_object_acl_count <> 0" in final_guard
 
 
 def test_role_sql_keeps_public_and_default_privileges_closed() -> None:
@@ -725,6 +870,53 @@ def test_snapshot_dynamic_sequence_privileges_use_pg_sequence_oids() -> None:
         snapshot,
         flags=re.DOTALL,
     ) is None
+
+
+def test_snapshot_contains_sanitized_bootstrap_identity_evidence() -> None:
+    script = source(POWERSHELL_PATH)
+    snapshot = script.split("$DatabaseSnapshotSql = @'", 1)[1].split("'@", 1)[0]
+    for evidence_key in (
+        "app_role_oid",
+        "app_role_is_oid_10",
+        "bootstrap_role_oid",
+        "bootstrap_role_is_oid_10",
+        "cluster_bootstrap_role_exists",
+        "cluster_bootstrap_role_oid",
+        "cluster_bootstrap_role_can_login",
+        "cluster_bootstrap_role_superuser",
+        "oid_10_role_count",
+        "oid_10_role_name",
+        "cluster_bootstrap_owned_public_object_count",
+        "cluster_bootstrap_explicit_connect_count",
+        "cluster_bootstrap_explicit_object_acl_count",
+    ):
+        assert f"'{evidence_key}='" in snapshot
+    assert "pg_authid" not in snapshot
+    assert "rolpassword" not in snapshot
+
+
+def test_explicit_cluster_bootstrap_acl_checks_use_nullable_acl_arrays() -> None:
+    script = source(POWERSHELL_PATH)
+    sql = source(ROLE_SQL_PATH)
+    snapshot = script.split("$DatabaseSnapshotSql = @'", 1)[1].split("'@", 1)[0]
+    snapshot_acl_line = next(
+        line
+        for line in snapshot.splitlines()
+        if "cluster_bootstrap_explicit_object_acl_count=" in line
+    )
+    sql_acl_guard = sql.split(
+        "INTO cluster_bootstrap_explicit_object_acl_count", 1
+    )[1].split("IF cluster_bootstrap_explicit_object_acl_count", 1)[0]
+
+    for acl_check in (snapshot_acl_line, sql_acl_guard):
+        assert "aclexplode(object.relacl)" in acl_check
+        assert "aclexplode(namespace.nspacl)" in acl_check
+        assert "'{}'::aclitem[]" not in acl_check
+        assert "acldefault" not in acl_check
+    assert "coalesce(object.relacl" not in script
+    assert "coalesce(namespace.nspacl" not in script
+    assert "coalesce(object.relacl" not in sql
+    assert "coalesce(namespace.nspacl" not in sql
 
 
 def test_provision_dynamic_sequence_privileges_use_pg_sequence_oids() -> None:
@@ -820,14 +1012,15 @@ def test_correction_sql_preserves_exact_mutation_boundary_and_reapply_failure() 
     assert "checkpoint_value IS NOT NULL" in sql
 
 
-def test_corrective_task_scope_policy_is_exact_and_narrow() -> None:
+def test_bootstrap_identity_split_scope_policy_is_exact_and_narrow() -> None:
     expected_scope = {
         "scripts/c08-pre02-reconcile-preserved-volume.ps1",
         "database/maintenance/c08-pre02-provision-existing-volume.sql",
         "backend/tests/test_c08_pre02_reconciliation.py",
+        "docs/c08-pre02-preserved-volume-reconciliation.md",
     }
     assert AUTHORIZED_FILES == expected_scope
-    assert len(AUTHORIZED_FILES) == 3
+    assert len(AUTHORIZED_FILES) == 4
     assert not any(
         path.startswith("backend/alembic/versions/") for path in AUTHORIZED_FILES
     )
@@ -835,18 +1028,21 @@ def test_corrective_task_scope_policy_is_exact_and_narrow() -> None:
     assert not any("*" in path or "?" in path for path in AUTHORIZED_FILES)
 
 
-def test_documentation_is_phase_a_only_and_covers_hardening_contract() -> None:
+def test_documentation_covers_bootstrap_identity_split_and_current_boundary() -> None:
     documentation = source(DOC_PATH)
     for required in (
-        "Phase A does not modify the preserved database",
+        "Prepare completed",
+        "Normalize failed transactionally",
         "C08 remains blocked",
         "post-commit Git checkpoint",
         "actual backup artifact",
         "Read-Host -AsSecureString",
-        "legacy",
-        "prepared",
+        "legacy_bootstrap_collision",
+        "prepared_bootstrap_collision",
         "normalized",
         "unexpected",
+        "alpha_data_cluster_bootstrap",
+        "OID 10",
         "never paste credentials into chat",
         "retained reviewed text",
         "functional",
