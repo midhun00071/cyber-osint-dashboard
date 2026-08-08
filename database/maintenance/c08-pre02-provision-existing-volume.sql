@@ -72,7 +72,6 @@ BEGIN
           AND role.rolsuper
           AND role.rolcreatedb
           AND role.rolcreaterole
-          AND NOT role.rolreplication
           AND role.rolbypassrls
     ) THEN
         RAISE EXCEPTION 'C08-PRE-02 legacy application-role precondition failed';
@@ -279,6 +278,7 @@ BEGIN
     FROM pg_roles AS role
     CROSS JOIN pg_class AS object
     JOIN pg_namespace AS namespace ON namespace.oid = object.relnamespace
+    JOIN pg_sequence AS sequence_record ON sequence_record.seqrelid = object.oid
     WHERE role.rolname IN (
         'alpha_data_migration', 'alpha_data_readonly',
         'alpha_data_backup', 'alpha_data_retention'
@@ -286,9 +286,9 @@ BEGIN
       AND namespace.nspname = 'public'
       AND object.relkind = 'S'
       AND (
-          has_sequence_privilege(role.rolname, object.oid, 'USAGE')
-          OR has_sequence_privilege(role.rolname, object.oid, 'SELECT')
-          OR has_sequence_privilege(role.rolname, object.oid, 'UPDATE')
+          has_sequence_privilege(role.rolname, sequence_record.seqrelid, 'USAGE')
+          OR has_sequence_privilege(role.rolname, sequence_record.seqrelid, 'SELECT')
+          OR has_sequence_privilege(role.rolname, sequence_record.seqrelid, 'UPDATE')
       );
     IF prepared_table_privilege_count <> 0
        OR prepared_sequence_privilege_count <> 0 THEN
@@ -357,7 +357,7 @@ BEGIN
         SELECT 1 FROM pg_roles AS role
         WHERE role.rolname = 'alpha_data_user'
           AND role.rolcanlogin AND role.rolsuper AND role.rolcreatedb
-          AND role.rolcreaterole AND NOT role.rolreplication AND role.rolbypassrls
+          AND role.rolcreaterole AND role.rolbypassrls
     ) THEN
         RAISE EXCEPTION 'C08-PRE-02 prepared application-role precondition failed';
     END IF;
@@ -470,6 +470,7 @@ BEGIN
     FROM pg_roles AS role
     CROSS JOIN pg_class AS object
     JOIN pg_namespace AS namespace ON namespace.oid = object.relnamespace
+    JOIN pg_sequence AS sequence_record ON sequence_record.seqrelid = object.oid
     WHERE role.rolname IN (
         'alpha_data_migration', 'alpha_data_readonly',
         'alpha_data_backup', 'alpha_data_retention'
@@ -477,9 +478,9 @@ BEGIN
       AND namespace.nspname = 'public'
       AND object.relkind = 'S'
       AND (
-          has_sequence_privilege(role.rolname, object.oid, 'USAGE')
-          OR has_sequence_privilege(role.rolname, object.oid, 'SELECT')
-          OR has_sequence_privilege(role.rolname, object.oid, 'UPDATE')
+          has_sequence_privilege(role.rolname, sequence_record.seqrelid, 'USAGE')
+          OR has_sequence_privilege(role.rolname, sequence_record.seqrelid, 'SELECT')
+          OR has_sequence_privilege(role.rolname, sequence_record.seqrelid, 'UPDATE')
       );
     IF prepared_table_privilege_count <> 0
        OR prepared_sequence_privilege_count <> 0 THEN

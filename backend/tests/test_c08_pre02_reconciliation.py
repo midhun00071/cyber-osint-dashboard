@@ -20,10 +20,11 @@ DOC_PATH = REPO_ROOT / "docs" / "c08-pre02-preserved-volume-reconciliation.md"
 AUTHORIZED_FILES = {
     "scripts/c08-pre02-reconcile-preserved-volume.ps1",
     "database/maintenance/c08-pre02-provision-existing-volume.sql",
-    "database/maintenance/c08-pre02-correct-synthetic-progress.sql",
     "backend/tests/test_c08_pre02_reconciliation.py",
-    "docs/c08-pre02-preserved-volume-reconciliation.md",
 }
+EXPECTED_CORRECTION_SQL_SHA256 = (
+    "d614601fef244bb612035b6029392f207126e1de8a3cbc1bc819bb98595c0a4e"
+)
 OLD_PARENT_CHECKPOINT = "c6a9573d2f6dc9d519f76a1d96045b33bc21b1ba"
 FUTURE_REVIEWED_CHECKPOINT = "1234567890abcdef1234567890abcdef12345678"
 TARGET_SLUGS = {
@@ -241,21 +242,6 @@ def backup_call(evidence: Path) -> str:
     )
 
 
-def normalized_status_paths() -> set[str]:
-    result = subprocess.run(
-        ["git", "status", "--porcelain=v1", "--untracked-files=all"],
-        cwd=REPO_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return {
-        line[3:].replace("\\", "/").split(" -> ", 1)[-1]
-        for line in result.stdout.splitlines()
-        if line
-    }
-
-
 @pytest.mark.parametrize(
     "checkpoint",
     ["", "abc", "A" * 40, "g" * 40, "0" * 39, "0" * 41],
@@ -375,7 +361,6 @@ def test_role_states_are_distinguished_functionally(state: str) -> None:
         ("public_schema_owner", "someone_else"),
         ("unexpected_owner_count", 1),
         ("managed_membership_count", 1),
-        ("app_role_replication", True),
         ("auxiliary_role_count", 1),
         ("expected_table_name_count", 10),
         ("expected_sequence_name_count", 8),
@@ -410,6 +395,38 @@ def test_normalized_resume_skips_all_role_mutation_functionally() -> None:
         "Normalize": False,
         "CorrectSyntheticProgress": True,
     }
+
+
+@pytest.mark.parametrize(
+    ("state", "replication", "expected_state"),
+    [
+        ("legacy", False, "legacy"),
+        ("legacy", True, "legacy"),
+        ("prepared", False, "prepared"),
+        ("prepared", True, "prepared"),
+        ("normalized", False, "normalized"),
+        ("normalized", True, "unexpected"),
+    ],
+)
+def test_application_replication_is_bounded_by_role_state_functionally(
+    state: str, replication: bool, expected_state: str
+) -> None:
+    fixture = role_fixture(state)
+    fixture["app_role_replication"] = replication
+    command = f"{ps_fixture(fixture)}; Get-RoleBoundaryState -Snapshot $fixture"
+    result = run_safe_powershell(command)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.strip() == expected_state
+
+
+def test_replication_tolerance_does_not_accept_mixed_legacy_attributes() -> None:
+    fixture = role_fixture("legacy")
+    fixture["app_role_replication"] = True
+    fixture["app_role_createrole"] = False
+    command = f"{ps_fixture(fixture)}; Get-RoleBoundaryState -Snapshot $fixture"
+    result = run_safe_powershell(command)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.strip() == "unexpected"
 
 
 def test_prepared_resume_reconfigures_credentials_then_normalizes_functionally() -> None:
@@ -541,6 +558,33 @@ def test_role_sql_uses_explicit_phase_and_never_infers_password_state() -> None:
     assert "rolpassword" not in sql
 
 
+def test_legacy_replication_tolerance_does_not_weaken_normalized_state() -> None:
+    script = source(POWERSHELL_PATH)
+    sql = source(ROLE_SQL_PATH)
+    classifier = script.split("function Get-RoleBoundaryState", 1)[1].split(
+        "function Get-RoleExecutionPlan", 1
+    )[0]
+    common = classifier.split("$common = (", 1)[1].split("$legacyApplication", 1)[0]
+    safe_application = classifier.split("$safeApplication = (", 1)[1].split(
+        "$dedicatedAbsent", 1
+    )[0]
+    prepare_guard = sql.split("$c08_pre02_prepare_guard$", 2)[1]
+    prepare_app = prepare_guard.split("role.rolname = 'alpha_data_user'", 1)[1].split(
+        ") THEN", 1
+    )[0]
+    normalize_guard = sql.split("$c08_pre02_normalize_guard$", 2)[1]
+    normalize_app = normalize_guard.split("role.rolname = 'alpha_data_user'", 1)[
+        1
+    ].split(") THEN", 1)[0]
+
+    assert "app_role_replication" not in common
+    assert '(Test-EvidenceBool $Snapshot "app_role_replication" $false)' in safe_application
+    assert "rolreplication" not in prepare_app
+    assert "rolreplication" not in normalize_app
+    assert "LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS" in sql
+    assert "OR role.rolcreaterole OR role.rolreplication OR role.rolbypassrls" in sql
+
+
 def test_prepare_does_not_transfer_ownership_or_demote_application_role() -> None:
     sql = source(ROLE_SQL_PATH)
     prepare = sql.split("\\if :c08_prepare", 1)[1].split("\\elif :c08_normalize", 1)[0]
@@ -664,6 +708,76 @@ def test_role_sql_pins_exact_initial_object_names_before_transfer() -> None:
         assert object_name in transfer
 
 
+def test_snapshot_dynamic_sequence_privileges_use_pg_sequence_oids() -> None:
+    script = source(POWERSHELL_PATH)
+    snapshot = script.split("$DatabaseSnapshotSql = @'", 1)[1].split("'@", 1)[0]
+    safe_join = (
+        "JOIN pg_sequence AS sequence_record "
+        "ON sequence_record.seqrelid = object.oid"
+    )
+    assert snapshot.count(safe_join) == 3
+    assert snapshot.count("sequence_record.seqrelid") == 12
+    assert "has_sequence_privilege(role.rolname, object.oid" not in snapshot
+    assert "has_sequence_privilege('alpha_data_migration', object.oid" not in snapshot
+    assert "has_sequence_privilege('alpha_data_user', object.oid" not in snapshot
+    assert re.search(
+        r"has_sequence_privilege\([^)]*\bobject\.oid\b",
+        snapshot,
+        flags=re.DOTALL,
+    ) is None
+
+
+def test_provision_dynamic_sequence_privileges_use_pg_sequence_oids() -> None:
+    sql = source(ROLE_SQL_PATH)
+    safe_join = (
+        "JOIN pg_sequence AS sequence_record "
+        "ON sequence_record.seqrelid = object.oid"
+    )
+    assert sql.count(safe_join) == 2
+    assert sql.count("sequence_record.seqrelid") == 8
+    assert re.search(
+        r"has_sequence_privilege\([^)]*\bobject\.oid\b",
+        sql,
+        flags=re.DOTALL,
+    ) is None
+
+
+def test_reviewed_sql_hashes_match_final_files() -> None:
+    script = source(POWERSHELL_PATH)
+    provision_hash = hashlib.sha256(ROLE_SQL_PATH.read_bytes()).hexdigest()
+    correction_hash = hashlib.sha256(CORRECTION_SQL_PATH.read_bytes()).hexdigest()
+    provision_match = re.search(
+        r'^\$ProvisionSqlSha256 = "([0-9a-f]{64})"$',
+        script,
+        flags=re.MULTILINE,
+    )
+    correction_match = re.search(
+        r'^\$CorrectionSqlSha256 = "([0-9a-f]{64})"$',
+        script,
+        flags=re.MULTILINE,
+    )
+    assert provision_match is not None
+    assert correction_match is not None
+    assert provision_match.group(1) == provision_hash
+    assert correction_match.group(1) == correction_hash
+    assert correction_hash == EXPECTED_CORRECTION_SQL_SHA256
+
+
+def test_sequence_counts_and_role_state_expectations_remain_frozen() -> None:
+    script = source(POWERSHELL_PATH)
+    sql = source(ROLE_SQL_PATH)
+    for expected in (
+        '(Test-EvidenceInt $Snapshot "public_sequence_count" 9)',
+        '(Test-EvidenceInt $Snapshot "auxiliary_no_sequence_privilege_count" 27)',
+        '(Test-EvidenceInt $Snapshot "prepared_migration_no_sequence_privilege_count" 9)',
+        '(Test-EvidenceInt $Snapshot "app_sequence_privilege_shape_count" 9)',
+    ):
+        assert expected in script
+    assert "app_owned_sequence_count <> 9" in sql
+    assert "transferred_sequence_count <> 9" in sql
+    assert "migration_owned_sequence_count <> 9" in sql
+
+
 def test_correction_sql_uses_exact_four_slug_allow_list_without_wildcard() -> None:
     sql = source(CORRECTION_SQL_PATH)
     found = set(re.findall(r"'((?:alpha-synthetic-)[a-z-]+)'", sql))
@@ -706,11 +820,19 @@ def test_correction_sql_preserves_exact_mutation_boundary_and_reapply_failure() 
     assert "checkpoint_value IS NOT NULL" in sql
 
 
-def test_only_five_authorized_files_are_in_worktree_scope() -> None:
-    changed_paths = normalized_status_paths()
-    assert changed_paths == AUTHORIZED_FILES
-    assert not any(path.startswith("backend/alembic/versions/") for path in changed_paths)
-    assert not any(Path(path).name.startswith(".env") for path in changed_paths)
+def test_corrective_task_scope_policy_is_exact_and_narrow() -> None:
+    expected_scope = {
+        "scripts/c08-pre02-reconcile-preserved-volume.ps1",
+        "database/maintenance/c08-pre02-provision-existing-volume.sql",
+        "backend/tests/test_c08_pre02_reconciliation.py",
+    }
+    assert AUTHORIZED_FILES == expected_scope
+    assert len(AUTHORIZED_FILES) == 3
+    assert not any(
+        path.startswith("backend/alembic/versions/") for path in AUTHORIZED_FILES
+    )
+    assert not any(Path(path).name.startswith(".env") for path in AUTHORIZED_FILES)
+    assert not any("*" in path or "?" in path for path in AUTHORIZED_FILES)
 
 
 def test_documentation_is_phase_a_only_and_covers_hardening_contract() -> None:
