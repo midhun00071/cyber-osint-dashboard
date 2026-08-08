@@ -32,6 +32,7 @@ from app.models import (
     IntelligenceItemIdentifier,
     IntelligenceSource,
     SourceRecord,
+    Tag,
 )
 from app.processing.uae_relevance_classifier import confidence_for_rule
 
@@ -58,6 +59,7 @@ class FakeSession:
         self.items: list[IntelligenceItem] = []
         self.source_records: list[SourceRecord] = []
         self.identifiers: list[IntelligenceItemIdentifier] = []
+        self.tags: list[Tag] = []
 
     def add(self, record: object) -> None:
         if isinstance(record, IntelligenceSource):
@@ -68,6 +70,8 @@ class FakeSession:
             collection = self.source_records
         elif isinstance(record, IntelligenceItemIdentifier):
             collection = self.identifiers
+        elif isinstance(record, Tag):
+            collection = self.tags
         else:
             raise AssertionError(f"Unexpected record type: {type(record)}")
         if record not in collection:
@@ -79,7 +83,13 @@ class FakeSession:
                 "postgresql://private-user:private-password@private-host/database"
             )
         self.flushes += 1
-        for collection in (self.sources, self.items, self.source_records, self.identifiers):
+        for collection in (
+            self.sources,
+            self.items,
+            self.source_records,
+            self.identifiers,
+            self.tags,
+        ):
             for index, record in enumerate(collection, start=1):
                 if getattr(record, "id", None) is None:
                     record.id = index
@@ -145,6 +155,9 @@ class FakeSession:
             if len(matches) > 1:
                 raise AssertionError("Ambiguous identifier query in fake session.")
             return ScalarResult(matches[0] if matches else None)
+        if entity is Tag:
+            slug = criterion_value(criteria, "slug")
+            return ScalarResult(next((tag for tag in self.tags if tag.slug == slug), None))
         raise AssertionError(f"Unexpected select entity: {entity}")
 
     def commit(self) -> None:
@@ -362,10 +375,10 @@ def test_new_advisory_creates_security_advisory_item_and_primary_source_record()
     assert item.summary == record.summary
     assert item.status == "active"
     assert item.data_confidence == Decimal("0.900")
-    assert item.uae_relevance_status == "unknown"
-    assert item.uae_relevance_confidence is None
+    assert item.uae_relevance_status == "not_relevant"
+    assert item.uae_relevance_confidence == confidence_for_rule("explicit_global_scope")
     assert item.uae_relevance_method == "automatic"
-    assert item.uae_relevance_reason == "No direct UAE evidence found."
+    assert item.uae_relevance_reason == "Global relevance with no demonstrated UAE-specific evidence."
     assert item.analyst_review_status == "pending"
     assert source_record.intelligence_item is item
     assert source_record.is_primary_reference is True
@@ -534,10 +547,15 @@ def test_new_rss_record_receives_automatic_uae_classification() -> None:
     assert result.outcome == "created"
     item = session.items[0]
     assert item.geographic_scope == "uae"
-    assert item.uae_relevance_status == "confirmed"
-    assert item.uae_relevance_confidence == confidence_for_rule("direct_emirate_name")
+    assert item.uae_relevance_status == "possible"
+    assert item.uae_relevance_confidence == confidence_for_rule("text_emirate_mention")
     assert item.uae_relevance_method == "automatic"
-    assert item.uae_relevance_reason == "Matched emirate name: Dubai."
+    assert item.uae_relevance_reason == "Potential UAE relevance from a Dubai mention; no attribution asserted."
+    assert {assignment.tag.slug for assignment in item.tag_assignments} == {
+        "language-english",
+        "uae-emirate-dubai",
+    }
+    assert len(item.tag_assignments) == 2
 
 
 def test_automatic_rss_update_refreshes_uae_confidence() -> None:
@@ -559,9 +577,9 @@ def test_automatic_rss_update_refreshes_uae_confidence() -> None:
 
     assert result.outcome == "updated"
     assert item.geographic_scope == "uae"
-    assert item.uae_relevance_status == "confirmed"
-    assert item.uae_relevance_confidence == confidence_for_rule("direct_country_name")
-    assert item.uae_relevance_reason == "Matched direct UAE country phrase."
+    assert item.uae_relevance_status == "possible"
+    assert item.uae_relevance_confidence == confidence_for_rule("text_country_mention")
+    assert item.uae_relevance_reason == "Potential UAE relevance from a text mention; no attribution asserted."
 
 
 def test_external_id_and_url_hash_conflict_fails_without_auto_merge() -> None:

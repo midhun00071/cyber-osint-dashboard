@@ -27,8 +27,12 @@ type SidebarNavigationItem = {
 
 const navigationItems: readonly SidebarNavigationItem[] = [
   { label: "Overview", icon: "overview", href: "/" },
+  { label: "Threat Feed", icon: "feed", href: "/threat-feed" },
+  { label: "Vulnerabilities", icon: "vulnerabilities", href: "/vulnerabilities" },
+  { label: "UAE Intelligence", icon: "uae", href: "/uae-intelligence" },
+  { label: "IOC Search", icon: "feed", href: "/ioc-search", permission: "analysis.use" },
   { label: "Sources", icon: "sources", href: "/sources" },
-  { label: "Operations", icon: "operations", href: "/operations", permission: "ingestion.read" },
+  { label: "Ingestion Operations", icon: "operations", href: "/ingestion-operations", permission: "ingestion.read" },
   { label: "Run History", icon: "history", href: "/run-history", permission: "ingestion.read" },
   { label: "User Access", icon: "users", href: "/admin/users", permission: "user.read" },
 ] as const;

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 
 import { SafeExternalLink } from "@/components/SafeExternalLink";
+import { ItemProvenancePanel } from "@/components/analyst/ItemProvenancePanel";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { fetchArticleDetail } from "@/services/articleApi";
@@ -237,6 +238,7 @@ function ArticleDetailContent() {
             </strong>
           </div>
         </section>
+        <ItemProvenancePanel publicId={article.public_id} />
       </article>
     </main>
   );

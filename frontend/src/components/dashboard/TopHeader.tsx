@@ -40,29 +40,6 @@ export function TopHeader({
         </div>
       </div>
 
-      <div className="headerSearchShell">
-        <svg
-          aria-hidden="true"
-          fill="none"
-          stroke="currentColor"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth="1.8"
-          viewBox="0 0 24 24"
-        >
-          <circle cx="11" cy="11" r="7" />
-          <path d="m16 16 4 4" />
-        </svg>
-        <input
-          aria-describedby="search-shell-note"
-          aria-label="Search preview coming soon"
-          placeholder="Search shell coming soon"
-          readOnly
-          type="search"
-        />
-        <span id="search-shell-note">Visual placeholder</span>
-      </div>
-
       <div className="identityControls">
         <div className="environmentIndicator">
           <span className="previewDot" aria-hidden="true" />

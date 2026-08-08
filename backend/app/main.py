@@ -13,6 +13,7 @@ from app.api.v1.query_validation import (
     validate_query_parameters,
 )
 from app.api.v1.routes.articles import router as articles_router
+from app.api.v1.routes.analyst import router as analyst_router
 from app.api.v1.routes.admin_users import router as admin_users_router
 from app.api.v1.routes.audit import router as audit_router
 from app.api.v1.routes.auth import router as auth_router
@@ -126,6 +127,7 @@ app.add_middleware(SecurityHeadersMiddleware)
 app.include_router(health_router, prefix="/api")
 app.include_router(version_router, prefix="/api")
 app.include_router(articles_router, prefix="/api/v1")
+app.include_router(analyst_router, prefix="/api/v1")
 app.include_router(dashboard_router, prefix="/api/v1")
 app.include_router(intelligence_router, prefix="/api/v1")
 app.include_router(auth_router, prefix="/api/v1")

@@ -5,11 +5,13 @@ from __future__ import annotations
 from datetime import date, datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class IntelligenceItemSummary(BaseModel):
     """Safe dashboard-ready intelligence item fields."""
+
+    model_config = ConfigDict(extra="forbid")
 
     public_id: UUID
     title: str
@@ -44,8 +46,9 @@ class IntelligenceItemSummary(BaseModel):
 class IntelligenceItemListResponse(BaseModel):
     """Offset-based paginated list response."""
 
+    model_config = ConfigDict(extra="forbid")
+
     items: list[IntelligenceItemSummary]
     total: int = Field(ge=0)
     limit: int = Field(ge=1, le=100)
     offset: int = Field(ge=0)
-

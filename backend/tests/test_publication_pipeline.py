@@ -55,6 +55,7 @@ from app.models import (
     IntelligenceItemIdentifier,
     IntelligenceSource,
     SourceRecord,
+    Tag,
 )
 
 
@@ -83,6 +84,7 @@ class FakeSession:
         self.items: list[IntelligenceItem] = []
         self.source_records: list[SourceRecord] = []
         self.identifiers: list[IntelligenceItemIdentifier] = []
+        self.tags: list[Tag] = []
 
     def add(self, record: object) -> None:
         if isinstance(record, IntelligenceSource):
@@ -93,6 +95,8 @@ class FakeSession:
             collection = self.source_records
         elif isinstance(record, IntelligenceItemIdentifier):
             collection = self.identifiers
+        elif isinstance(record, Tag):
+            collection = self.tags
         else:
             raise AssertionError(f"Unexpected record type: {type(record)}")
         if record not in collection:
@@ -102,7 +106,13 @@ class FakeSession:
         if self.fail_flush:
             raise SQLAlchemyError("postgresql://private-user:private-password@host/db")
         self.flushes += 1
-        for collection in (self.sources, self.items, self.source_records, self.identifiers):
+        for collection in (
+            self.sources,
+            self.items,
+            self.source_records,
+            self.identifiers,
+            self.tags,
+        ):
             for index, record in enumerate(collection, start=1):
                 if getattr(record, "id", None) is None:
                     record.id = index
@@ -169,6 +179,9 @@ class FakeSession:
             if len(matches) > 1:
                 raise AssertionError("Ambiguous identifier query in fake session.")
             return ScalarResult(matches[0] if matches else None)
+        if entity is Tag:
+            slug = criterion_value(criteria, "slug")
+            return ScalarResult(next((tag for tag in self.tags if tag.slug == slug), None))
         raise AssertionError(f"Unexpected select entity: {entity}")
 
     def commit(self) -> None:

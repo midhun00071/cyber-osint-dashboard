@@ -7,7 +7,13 @@ from typing import Any
 import pytest
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.models import IntelligenceItem, IntelligenceSource, SourceRecord
+from app.models import (
+    IntelligenceItem,
+    IntelligenceItemTag,
+    IntelligenceSource,
+    SourceRecord,
+    Tag,
+)
 from app.processing.uae_classification_service import (
     MAX_CLASSIFICATION_ITEMS,
     UaeClassificationService,
@@ -34,6 +40,9 @@ class ExecuteResult:
     def scalars(self) -> ScalarList:
         return ScalarList(self._items)
 
+    def scalar_one_or_none(self):
+        return self._items[0] if self._items else None
+
 
 class FakeSession:
     def __init__(
@@ -49,13 +58,21 @@ class FakeSession:
         self.commits = 0
         self.rollbacks = 0
         self.closed = 0
+        self.tags: dict[str, Tag] = {}
 
     def execute(self, statement: Any) -> ExecuteResult:
         if self.fail_execute:
             raise SQLAlchemyError("postgresql://private-user:private-password@host/db")
+        if getattr(statement, "is_delete", False):
+            return ExecuteResult([])
+        entity = statement.column_descriptions[0].get("entity")
+        criteria = list(getattr(statement, "_where_criteria", ()))
+        if entity is Tag:
+            slug = criterion_value(criteria, "slug")
+            tag = self.tags.get(str(slug))
+            return ExecuteResult([tag] if tag is not None else [])
         limit_clause = getattr(statement, "_limit_clause", None)
         limit = getattr(limit_clause, "value", None) or len(self.items)
-        criteria = list(getattr(statement, "_where_criteria", ()))
         method = criterion_value(criteria, "uae_relevance_method")
         items = [
             item
@@ -72,6 +89,9 @@ class FakeSession:
             ),
         )
         return ExecuteResult(ordered[:limit])
+
+    def add(self, value: Tag) -> None:
+        self.tags[value.slug] = value
 
     def commit(self) -> None:
         if self.fail_commit:
@@ -144,7 +164,33 @@ def make_item(
         upstream_status="present",
     )
     item.source_records = [source_record]
+    item.tag_assignments = []
     return item
+
+
+def assign_tag(
+    item: IntelligenceItem,
+    *,
+    slug: str,
+    assigned_by: str,
+    confidence: Decimal,
+    display_name: str | None = None,
+    tag_type: str = "theme",
+) -> IntelligenceItemTag:
+    tag = Tag(
+        slug=slug,
+        display_name=display_name or slug,
+        tag_type=tag_type,
+    )
+    assignment = IntelligenceItemTag(
+        intelligence_item=item,
+        tag=tag,
+        assigned_by=assigned_by,
+        confidence=confidence,
+    )
+    if assignment not in item.tag_assignments:
+        item.tag_assignments.append(assignment)
+    return assignment
 
 
 def test_rejects_invalid_limits() -> None:
@@ -185,22 +231,22 @@ def test_apply_updates_eligible_rows_and_commits_once() -> None:
     assert counts.processed == 1
     assert counts.updated == 1
     assert item.geographic_scope == "uae"
-    assert item.uae_relevance_status == "confirmed"
-    assert item.uae_relevance_confidence == confidence_for_rule("direct_country_name")
+    assert item.uae_relevance_status == "possible"
+    assert item.uae_relevance_confidence == confidence_for_rule("text_country_mention")
     assert item.uae_relevance_method == "automatic"
-    assert item.uae_relevance_reason == "Matched direct UAE country phrase."
+    assert "no attribution asserted" in item.uae_relevance_reason
     assert session.commits == 1
     assert session.rollbacks == 0
 
 
-def test_unchanged_automatic_rows_are_not_rewritten() -> None:
+def test_automatic_rows_without_controlled_tags_are_backfilled() -> None:
     item = make_item(
         title="Dubai advisory",
         method="automatic",
-        status="confirmed",
-        reason="Matched emirate name: Dubai.",
+        status="possible",
+        reason="Potential UAE relevance from a Dubai mention; no attribution asserted.",
         scope="uae",
-        confidence=confidence_for_rule("direct_emirate_name"),
+        confidence=confidence_for_rule("text_emirate_mention"),
     )
     session = FakeSession([item])
 
@@ -209,9 +255,13 @@ def test_unchanged_automatic_rows_are_not_rewritten() -> None:
         apply=True,
     )
 
-    assert counts.unchanged == 1
-    assert counts.updated == 0
-    assert item.uae_relevance_confidence == confidence_for_rule("direct_emirate_name")
+    assert counts.unchanged == 0
+    assert counts.updated == 1
+    assert item.uae_relevance_confidence == confidence_for_rule("text_emirate_mention")
+    assert {assignment.tag.slug for assignment in item.tag_assignments} >= {
+        "uae-emirate-dubai",
+        "language-english",
+    }
     assert session.commits == 1
 
 
@@ -219,8 +269,8 @@ def test_automatic_row_with_missing_confidence_is_recalculated() -> None:
     item = make_item(
         title="Dubai advisory",
         method="automatic",
-        status="confirmed",
-        reason="Matched emirate name: Dubai.",
+        status="possible",
+        reason="Potential UAE relevance from a Dubai mention; no attribution asserted.",
         scope="uae",
         confidence=None,
     )
@@ -232,7 +282,102 @@ def test_automatic_row_with_missing_confidence_is_recalculated() -> None:
     )
 
     assert counts.updated == 1
-    assert item.uae_relevance_confidence == confidence_for_rule("direct_emirate_name")
+    assert item.uae_relevance_confidence == confidence_for_rule("text_emirate_mention")
+
+
+@pytest.mark.parametrize("source_slug", ["nvd", "cert-eu"])
+def test_automatic_ingestion_classification_applies_controlled_tags(
+    source_slug: str,
+) -> None:
+    item = make_item(title="Dubai defensive advisory", source_slug=source_slug)
+    session = FakeSession([item])
+
+    UaeClassificationService(session).classify_and_apply_if_allowed(item)  # type: ignore[arg-type]
+
+    assert item.uae_relevance_method == "automatic"
+    assert {assignment.tag.slug for assignment in item.tag_assignments} == {
+        "language-english",
+        "uae-emirate-dubai",
+    }
+    assert len(item.tag_assignments) == 2
+    assert all(
+        assignment.assigned_by == "system"
+        for assignment in item.tag_assignments
+    )
+    assert session.commits == 0
+    assert session.rollbacks == 0
+
+
+def test_automatic_reclassification_removes_only_stale_system_tags() -> None:
+    item = make_item(title="Abu Dhabi defensive advisory", method="automatic")
+    stale = assign_tag(
+        item,
+        slug="uae-emirate-dubai",
+        assigned_by="system",
+        confidence=Decimal("0.700"),
+        display_name="Dubai",
+        tag_type="region",
+    )
+    analyst = assign_tag(
+        item,
+        slug="analyst-priority",
+        assigned_by="analyst",
+        confidence=Decimal("0.900"),
+        display_name="Analyst priority",
+    )
+    protected_controlled = assign_tag(
+        item,
+        slug="uae-sector-finance",
+        assigned_by="analyst",
+        confidence=Decimal("0.800"),
+        display_name="Finance",
+        tag_type="sector",
+    )
+    session = FakeSession([item])
+
+    service = UaeClassificationService(session)  # type: ignore[arg-type]
+    service.classify_and_apply_if_allowed(item)
+    first_assignments = list(item.tag_assignments)
+    service.classify_and_apply_if_allowed(item)
+
+    assert stale not in item.tag_assignments
+    assert analyst in item.tag_assignments
+    assert protected_controlled in item.tag_assignments
+    assert {assignment.tag.slug for assignment in item.tag_assignments} >= {
+        "language-english",
+        "uae-emirate-abu-dhabi",
+        "uae-sector-finance",
+        "analyst-priority",
+    }
+    assert item.tag_assignments == first_assignments
+    assert analyst.assigned_by == "analyst"
+    assert analyst.confidence == Decimal("0.900")
+
+
+def test_protected_classification_leaves_all_tags_untouched() -> None:
+    item = make_item(
+        title="Dubai advisory",
+        method="reviewed",
+        status="confirmed",
+        reason="Reviewed analyst evidence",
+        confidence=Decimal("0.950"),
+    )
+    analyst = assign_tag(
+        item,
+        slug="uae-emirate-abu-dhabi",
+        assigned_by="analyst",
+        confidence=Decimal("0.850"),
+        display_name="Abu Dhabi",
+        tag_type="region",
+    )
+    session = FakeSession([item])
+
+    UaeClassificationService(session).classify_and_apply_if_allowed(item)  # type: ignore[arg-type]
+
+    assert item.tag_assignments == [analyst]
+    assert item.uae_relevance_reason == "Reviewed analyst evidence"
+    assert session.commits == 0
+    assert session.rollbacks == 0
 
 
 @pytest.mark.parametrize("method", ["manual", "source_declared", "reviewed"])
@@ -291,9 +436,9 @@ def test_repeated_bounded_apply_runs_progress_through_unassigned_backfill() -> N
     assert second.updated == 10
     assert second.unchanged == 10
     assert all(item.uae_relevance_method == "automatic" for item in items)
-    assert all(item.uae_relevance_status == "confirmed" for item in items)
+    assert all(item.uae_relevance_status == "possible" for item in items)
     assert all(
-        item.uae_relevance_confidence == confidence_for_rule("direct_emirate_name")
+        item.uae_relevance_confidence == confidence_for_rule("text_emirate_mention")
         for item in items
     )
     assert session.commits == 2
@@ -329,7 +474,7 @@ def test_protected_records_do_not_consume_unassigned_backfill_batch() -> None:
     assert all(item.uae_relevance_confidence == Decimal("0.250") for item in protected)
     assert all(item.uae_relevance_method == "automatic" for item in backfill)
     assert all(
-        item.uae_relevance_confidence == confidence_for_rule("direct_emirate_name")
+        item.uae_relevance_confidence == confidence_for_rule("text_emirate_mention")
         for item in backfill
     )
 
@@ -353,13 +498,13 @@ def test_automatic_reclassification_runs_after_unassigned_backfill_is_exhausted(
 
     assert counts.processed == 2
     assert counts.updated == 2
-    assert unassigned.uae_relevance_reason == "Matched emirate name: Dubai."
-    assert automatic.uae_relevance_reason == "Matched direct UAE country phrase."
+    assert "no attribution asserted" in unassigned.uae_relevance_reason
+    assert "no attribution asserted" in automatic.uae_relevance_reason
     assert unassigned.uae_relevance_confidence == confidence_for_rule(
-        "direct_emirate_name"
+        "text_emirate_mention"
     )
     assert automatic.uae_relevance_confidence == confidence_for_rule(
-        "direct_country_name"
+        "text_country_mention"
     )
 
 
@@ -391,3 +536,39 @@ def test_database_failure_rolls_back_and_sanitizes_error() -> None:
     assert str(exc_info.value) == "Database error while classifying UAE relevance."
     assert "private-password" not in str(exc_info.value)
     assert session.rollbacks == 1
+
+
+def test_controlled_tag_conflict_rolls_back_without_commit_or_partial_success() -> None:
+    item = make_item(title="Dubai defensive advisory")
+    original = (
+        item.geographic_scope,
+        item.uae_relevance_status,
+        item.uae_relevance_confidence,
+        item.uae_relevance_reason,
+        item.uae_relevance_method,
+    )
+    session = FakeSession([item])
+    session.tags["uae-emirate-dubai"] = Tag(
+        slug="uae-emirate-dubai",
+        display_name="Conflicting label",
+        tag_type="region",
+    )
+
+    with pytest.raises(UaeClassificationServiceError) as exc_info:
+        UaeClassificationService(session).classify_existing(  # type: ignore[arg-type]
+            max_items=1,
+            apply=True,
+        )
+
+    assert str(exc_info.value) == (
+        "Controlled UAE classification tag conflicts with stored metadata."
+    )
+    assert session.rollbacks == 1
+    assert session.commits == 0
+    assert (
+        item.geographic_scope,
+        item.uae_relevance_status,
+        item.uae_relevance_confidence,
+        item.uae_relevance_reason,
+        item.uae_relevance_method,
+    ) == original

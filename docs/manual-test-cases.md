@@ -265,7 +265,7 @@ deleted.<br>
 **Steps:**
 1. Open `/`.
 2. Locate the `Cyber OSINT Dashboard` level-one heading.
-3. Review `Recent trends`, `Vulnerabilities`, `Latest articles`, `Backend health`, `Operational status`, and `Source overview`.
+3. Review `Recent trends`, `Vulnerabilities`, `Latest articles`, and `Backend health`.
 
 **Expected result:** Every named section is present once, readable, and contained
 within the dashboard shell. No section is blank because of a rendering failure.<br>
@@ -273,7 +273,7 @@ within the dashboard shell. No section is blank because of a rendering failure.<
 **Status:** Not Run<br>
 **Evidence:** ______________________________<br>
 **Defect ID:** ______________________________<br>
-**Notes:** Preview sections must remain clearly identified.
+**Notes:** No preview, demo-only, or static operational state is permitted.
 
 ### P6-04-MT-008 — Verify sidebar, top header, and defensive-scope labels
 
@@ -283,18 +283,19 @@ within the dashboard shell. No section is blank because of a rendering failure.<
 **Preconditions:** Dashboard is open at desktop width.<br>
 **Test data:** None.<br>
 **Steps:**
-1. Locate `Alpha Data`, `Overview`, and the disabled `Coming soon` navigation items.
-2. Locate `Dashboard command center`, `Synthetic preview`, and `Defensive OSINT only`.
-3. Try to activate a disabled navigation item.
+1. Locate `Alpha Data`, `Overview`, `Threat Feed`, `Vulnerabilities`, `UAE Intelligence`, `IOC Search`, `Sources`, `Ingestion Operations`, and `Run History` as allowed by the signed-in role.
+2. Locate `Dashboard command center` and `Defensive OSINT only`.
+3. Activate each visible navigation item and use browser Back to return.
 
-**Expected result:** Overview is the active route; planned items do not navigate;
-the shell states its defensive and synthetic-preview boundaries; the top header
-does not imply the search placeholder is active.<br>
+**Expected result:** Overview is initially active; every visible item navigates
+to a functional authorized route; permission-restricted items are absent when
+the role lacks permission; the shell states its defensive boundary; no Coming
+Soon, dead search, synthetic-preview, or fake-status control is visible.<br>
 **Actual result:** ______________________________<br>
 **Status:** Not Run<br>
 **Evidence:** ______________________________<br>
 **Defect ID:** ______________________________<br>
-**Notes:** The `Search preview coming soon` control is intentionally read-only.
+**Notes:** B8-06 routes remain absent until their later approved bundle.
 
 ### P6-04-MT-009 — Verify health loading, available, and unavailable states
 

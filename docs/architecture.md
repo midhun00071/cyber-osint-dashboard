@@ -4,6 +4,8 @@ The C06 security boundary is documented in `c06-identity-auth-rbac-audit.md`: re
 
 C06 retains `GET /`, `GET /api/health`, and `GET /api/version`; protects `GET /api/v1/articles`, `GET /api/v1/articles/{public_id}`, `GET /api/v1/dashboard/summary`, `GET /api/v1/intelligence/items`, and `GET /api/v1/intelligence/items/{item_public_id}` with content permission; adds authenticated `GET /api/v1/auth/me`; and restricts `GET /api/v1/admin/users`, `GET /api/v1/admin/users/{user_public_id}`, and `GET /api/v1/audit/events` to Administrator permissions.
 
+C08 adds authenticated analyst read models at `GET /api/v1/analysis/threat-entities`, `GET /api/v1/analysis/threat-entities/{public_id}`, `GET /api/v1/analysis/indicators`, `GET /api/v1/analysis/indicators/{public_id}`, `GET /api/v1/analysis/items/{public_id}/provenance`, and `GET /api/v1/analysis/uae-intelligence`. Threat, provenance, and UAE views require `content.read`; indicator analysis requires `analysis.use`.
+
 ## C03A threat-knowledge boundary
 
 The implemented design includes metadata-only `threat_entities`,
@@ -566,6 +568,12 @@ FastAPI registers these implemented read-only routes:
 | `GET /api/v1/articles/{public_id}` | One active article by canonical public UUID |
 | `GET /api/v1/intelligence/items` | Intelligence/vulnerability list with item type, CVE, severity, source, geography/UAE, search, limit, and offset filters |
 | `GET /api/v1/intelligence/items/{item_public_id}` | One intelligence item by canonical public UUID |
+| `GET /api/v1/analysis/threat-entities` | Bounded validated threat metadata with source provenance |
+| `GET /api/v1/analysis/threat-entities/{public_id}` | One threat entity with bounded relationships |
+| `GET /api/v1/analysis/indicators` | Authenticated normalized indicator search |
+| `GET /api/v1/analysis/indicators/{public_id}` | One indicator with provenance and linked publications |
+| `GET /api/v1/analysis/items/{public_id}/provenance` | Publication source, content-hash, import-run, tag, and indicator evidence |
+| `GET /api/v1/analysis/uae-intelligence` | Evidence-labelled UAE and global intelligence metadata |
 
 Unknown or repeated query parameters are rejected. Search text, enums, source
 slugs, CVE identifiers, UUIDs, pagination, article date ranges, and incompatible
@@ -573,17 +581,17 @@ filter combinations have explicit bounds. Query services use SQLAlchemy
 expressions and serialize only Pydantic response fields; ORM source payloads,
 database errors, internal exceptions, and configuration are excluded.
 
-The application has no write, ingestion, administration, login, authentication,
-or authorization endpoint. Interactive OpenAPI documentation remains enabled,
-but it does not add privileged operations. Until an independently reviewed
-identity/access layer exists, this API must be treated as an unauthenticated
-read-only interface and protected by deployment network controls.
+The application now has the C06 authentication/RBAC and C07 bounded operations
+boundaries documented above. C08 routes are read-only, permission enforced,
+rate limited per authenticated session, and cannot trigger ingestion.
 
 ## Frontend architecture
 
 The frontend uses the Next.js App Router and React client components. Implemented
-routes are the dashboard `/`, article details `/articles/[publicId]`, and
-vulnerability details `/vulnerabilities/[publicId]`. Dashboard components load
+routes include the dashboard `/`, `/threat-feed`, `/vulnerabilities`,
+`/uae-intelligence`, `/ioc-search`, `/sources`, `/ingestion-operations`,
+`/run-history`, article details `/articles/[publicId]`, and vulnerability
+details `/vulnerabilities/[publicId]`. Dashboard components load
 backend KPI summaries, bounded trend samples, paginated/filterable
 vulnerabilities, paginated/filterable articles, and backend health. Detail pages
 provide loading, success, not-found, and sanitized error states.

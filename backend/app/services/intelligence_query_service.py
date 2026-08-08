@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, load_only, raiseload, selectinload
 
@@ -27,6 +27,7 @@ from app.models import (
 
 DEFAULT_ITEM_TYPE = "vulnerability"
 ACTIVE_STATUS = "active"
+SEARCH_ESCAPE = "\\"
 
 
 class IntelligenceQueryError(RuntimeError):
@@ -110,13 +111,43 @@ class IntelligenceQueryService:
         self,
         filters: IntelligenceQueryFilters,
     ) -> IntelligenceItemListResponse:
-        items = self._load_items(filters)
-        filtered = [item for item in items if self._matches_filters(item, filters)]
-        filtered.sort(key=self._sort_key, reverse=True)
-        page = filtered[filters.offset : filters.offset + filters.limit]
+        statement = self._filtered_statement(filters)
+        try:
+            total = int(
+                self._session.execute(
+                    select(func.count()).select_from(
+                        statement.order_by(None).subquery()
+                    )
+                ).scalar_one()
+                or 0
+            )
+            page = list(
+                self._session.execute(
+                    statement
+                    .options(*self._public_load_options())
+                    .order_by(
+                        func.coalesce(
+                            IntelligenceItem.source_modified_at,
+                            IntelligenceItem.last_seen_at,
+                            IntelligenceItem.created_at,
+                        ).desc(),
+                        IntelligenceItem.last_seen_at.desc(),
+                        IntelligenceItem.created_at.desc(),
+                        IntelligenceItem.public_id.desc(),
+                    )
+                    .limit(filters.limit)
+                    .offset(filters.offset)
+                )
+                .scalars()
+                .all()
+            )
+        except SQLAlchemyError as exc:
+            raise IntelligenceQueryError(
+                "Database error while loading stored intelligence items."
+            ) from exc
         return IntelligenceItemListResponse(
             items=[self._serialize_item(item) for item in page],
-            total=len(filtered),
+            total=total,
             limit=filters.limit,
             offset=filters.offset,
         )
@@ -149,27 +180,90 @@ class IntelligenceQueryService:
             return self._serialize_item(item)
         raise IntelligenceNotFoundError("Intelligence item not found.")
 
-    def _load_items(
-        self,
-        filters: IntelligenceQueryFilters | None = None,
-    ) -> list[IntelligenceItem]:
-        statement = (
-            select(IntelligenceItem)
-            .where(IntelligenceItem.status == ACTIVE_STATUS)
-            .options(*self._public_load_options())
+    @classmethod
+    def _filtered_statement(
+        cls,
+        filters: IntelligenceQueryFilters,
+    ):
+        statement = select(IntelligenceItem).where(
+            IntelligenceItem.status == ACTIVE_STATUS,
+            IntelligenceItem.item_type == filters.normalized_item_type,
         )
-        if filters is not None and filters.published_year is not None:
-            start, end = self._published_year_boundaries(filters.published_year)
+        if filters.published_year is not None:
+            start, end = cls._published_year_boundaries(filters.published_year)
             statement = statement.where(
                 IntelligenceItem.source_published_at >= start,
                 IntelligenceItem.source_published_at < end,
             )
-        try:
-            return list(self._session.execute(statement).scalars().all())
-        except SQLAlchemyError as exc:
-            raise IntelligenceQueryError(
-                "Database error while loading stored intelligence items."
-            ) from exc
+        if filters.normalized_severity is not None:
+            statement = statement.where(
+                select(Vulnerability.intelligence_item_id)
+                .where(
+                    Vulnerability.intelligence_item_id == IntelligenceItem.id,
+                    Vulnerability.severity == filters.normalized_severity,
+                )
+                .exists()
+            )
+        if filters.normalized_source_slug is not None:
+            statement = statement.where(
+                select(SourceRecord.id)
+                .join(
+                    IntelligenceSource,
+                    IntelligenceSource.id == SourceRecord.source_id,
+                )
+                .where(
+                    SourceRecord.intelligence_item_id == IntelligenceItem.id,
+                    IntelligenceSource.slug == filters.normalized_source_slug,
+                )
+                .exists()
+            )
+        if filters.normalized_cve_id is not None:
+            statement = statement.where(
+                select(IntelligenceItemIdentifier.id)
+                .where(
+                    IntelligenceItemIdentifier.intelligence_item_id
+                    == IntelligenceItem.id,
+                    IntelligenceItemIdentifier.namespace == "cve",
+                    IntelligenceItemIdentifier.normalized_value
+                    == filters.normalized_cve_id,
+                )
+                .exists()
+            )
+        if filters.normalized_geographic_scope is not None:
+            statement = statement.where(
+                IntelligenceItem.geographic_scope
+                == filters.normalized_geographic_scope
+            )
+        if filters.normalized_uae_relevance_status is not None:
+            statement = statement.where(
+                IntelligenceItem.uae_relevance_status
+                == filters.normalized_uae_relevance_status
+            )
+        if filters.normalized_query is not None:
+            pattern = f"%{cls._escape_like(filters.normalized_query)}%"
+            statement = statement.where(
+                or_(
+                    IntelligenceItem.canonical_title.ilike(
+                        pattern,
+                        escape=SEARCH_ESCAPE,
+                    ),
+                    IntelligenceItem.summary.ilike(
+                        pattern,
+                        escape=SEARCH_ESCAPE,
+                    ),
+                    select(IntelligenceItemIdentifier.id)
+                    .where(
+                        IntelligenceItemIdentifier.intelligence_item_id
+                        == IntelligenceItem.id,
+                        IntelligenceItemIdentifier.normalized_value.ilike(
+                            pattern,
+                            escape=SEARCH_ESCAPE,
+                        ),
+                    )
+                    .exists(),
+                )
+            )
+        return statement
 
     @staticmethod
     def _public_load_options() -> tuple:
@@ -240,66 +334,6 @@ class IntelligenceQueryService:
             ),
         )
 
-    def _matches_filters(
-        self,
-        item: IntelligenceItem,
-        filters: IntelligenceQueryFilters,
-    ) -> bool:
-        if item.status != ACTIVE_STATUS:
-            return False
-        if item.item_type != filters.normalized_item_type:
-            return False
-
-        if filters.published_year is not None:
-            start, end = self._published_year_boundaries(filters.published_year)
-            published_at = item.source_published_at
-            if published_at is None:
-                return False
-            if published_at.tzinfo is None:
-                published_at = published_at.replace(tzinfo=UTC)
-            if not start <= published_at < end:
-                return False
-
-        vulnerability = item.vulnerability
-        if filters.normalized_severity is not None:
-            if vulnerability is None or vulnerability.severity != filters.normalized_severity:
-                return False
-
-        primary_source = self._primary_source_record(item)
-        if filters.normalized_source_slug is not None:
-            if (
-                primary_source is None
-                or primary_source.source is None
-                or primary_source.source.slug.lower() != filters.normalized_source_slug
-            ):
-                return False
-
-        primary_identifier = self._primary_identifier(item)
-        if filters.normalized_cve_id is not None:
-            if (
-                primary_identifier is None
-                or primary_identifier.normalized_value != filters.normalized_cve_id
-            ):
-                return False
-
-        if filters.normalized_geographic_scope is not None:
-            if item.geographic_scope != filters.normalized_geographic_scope:
-                return False
-
-        if filters.normalized_uae_relevance_status is not None:
-            if item.uae_relevance_status != filters.normalized_uae_relevance_status:
-                return False
-
-        normalized_query = filters.normalized_query
-        if normalized_query is not None and not self._matches_query(
-            item,
-            primary_identifier,
-            normalized_query,
-        ):
-            return False
-
-        return True
-
     @staticmethod
     def _published_year_boundaries(year: int) -> tuple[datetime, datetime]:
         return (
@@ -308,28 +342,11 @@ class IntelligenceQueryService:
         )
 
     @staticmethod
-    def _matches_query(
-        item: IntelligenceItem,
-        primary_identifier: IntelligenceItemIdentifier | None,
-        normalized_query: str,
-    ) -> bool:
-        candidates = [
-            item.canonical_title,
-            item.summary,
-            primary_identifier.normalized_value if primary_identifier else None,
-        ]
-        for candidate in candidates:
-            if candidate is not None and normalized_query in candidate.lower():
-                return True
-        return False
-
-    @staticmethod
-    def _sort_key(item: IntelligenceItem) -> tuple:
+    def _escape_like(value: str) -> str:
         return (
-            item.source_modified_at or item.last_seen_at or item.created_at,
-            item.last_seen_at,
-            item.created_at,
-            str(item.public_id),
+            value.replace(SEARCH_ESCAPE, SEARCH_ESCAPE * 2)
+            .replace("%", SEARCH_ESCAPE + "%")
+            .replace("_", SEARCH_ESCAPE + "_")
         )
 
     @staticmethod

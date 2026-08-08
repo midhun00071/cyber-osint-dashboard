@@ -41,6 +41,7 @@ from app.models import (
     IntelligenceItemIdentifier,
     IntelligenceSource,
     SourceRecord,
+    Tag,
 )
 
 
@@ -1159,6 +1160,7 @@ class RealPipelineSession:
         self.runs: list[IngestionRun] = []
         self.run_records: list[IngestionRunRecord] = []
         self.errors: list[IngestionError] = []
+        self.tags: list[Tag] = []
         self.commits = 0
         self.rollbacks = 0
         self.unique_index_checks = 0
@@ -1172,6 +1174,7 @@ class RealPipelineSession:
             IngestionRun: self.runs,
             IngestionRunRecord: self.run_records,
             IngestionError: self.errors,
+            Tag: self.tags,
         }
         for record_type, collection in collections.items():
             if isinstance(record, record_type):
@@ -1189,6 +1192,7 @@ class RealPipelineSession:
             self.runs,
             self.run_records,
             self.errors,
+            self.tags,
         )
         for collection in collections:
             for index, record in enumerate(collection, start=1):
@@ -1278,6 +1282,9 @@ class RealPipelineSession:
                 and identifier.normalized_value == normalized_value
             ]
             return ScalarResult(matches[0] if matches else None)
+        if entity is Tag:
+            slug = criterion_value(criteria, "slug")
+            return ScalarResult(next((tag for tag in self.tags if tag.slug == slug), None))
         raise AssertionError(f"Unexpected select entity: {entity}")
 
     def begin_nested(self):

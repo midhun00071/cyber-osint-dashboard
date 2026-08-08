@@ -31,8 +31,9 @@ describe("DashboardOverviewPage", () => {
     expect(screen.getByText("Mock vulnerabilities table")).toBeVisible();
     expect(screen.getByText("Mock latest articles feed")).toBeVisible();
     expect(screen.getByText("Mock backend health state")).toBeVisible();
-    expect(screen.getByRole("heading", { name: "Operational status" })).toBeVisible();
-    expect(screen.getByRole("heading", { name: "Source overview" })).toBeVisible();
-    expect(screen.getByLabelText("Preview data scope")).toBeVisible();
+    expect(screen.getByLabelText("Dashboard data scope")).toHaveTextContent(
+      "Stored backend data · no live collection",
+    );
+    expect(screen.queryByText(/preview sections/i)).not.toBeInTheDocument();
   });
 });

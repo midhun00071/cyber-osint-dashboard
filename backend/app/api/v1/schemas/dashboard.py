@@ -5,10 +5,14 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
-class DashboardMetrics(BaseModel):
+class StrictDashboardModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class DashboardMetrics(StrictDashboardModel):
     """Compact KPI values used by the dashboard shell."""
 
     critical_vulnerability_count: int = Field(ge=0)
@@ -17,7 +21,7 @@ class DashboardMetrics(BaseModel):
     uae_related_item_count: int = Field(ge=0)
 
 
-class DashboardCounts(BaseModel):
+class DashboardCounts(StrictDashboardModel):
     """Expanded dashboard counts from the approved API contract."""
 
     active_intelligence_items: int = Field(ge=0)
@@ -29,19 +33,19 @@ class DashboardCounts(BaseModel):
     intelligence_items_collected_in_window: int = Field(ge=0)
 
 
-class DashboardThresholds(BaseModel):
+class DashboardThresholds(StrictDashboardModel):
     """Applied threshold values for dashboard classification counts."""
 
     high_epss_minimum: float
 
 
-class DashboardIngestionFreshness(BaseModel):
+class DashboardIngestionFreshness(StrictDashboardModel):
     """Safe source freshness metadata without checkpoint or operator details."""
 
     last_successful_ingestion_at: datetime | None
 
 
-class DashboardArticlePreview(BaseModel):
+class DashboardArticlePreview(StrictDashboardModel):
     """Safe latest article preview row."""
 
     public_id: UUID
@@ -54,7 +58,7 @@ class DashboardArticlePreview(BaseModel):
     last_seen_at: datetime
 
 
-class DashboardLatestFetch(BaseModel):
+class DashboardLatestFetch(StrictDashboardModel):
     """Safe latest ingestion-run status summary."""
 
     source_slug: str | None
@@ -67,7 +71,7 @@ class DashboardLatestFetch(BaseModel):
     failed_count: int = Field(ge=0)
 
 
-class DashboardSummaryResponse(BaseModel):
+class DashboardSummaryResponse(StrictDashboardModel):
     """Read-only database-backed dashboard summary."""
 
     window_days: int = Field(ge=1, le=365)

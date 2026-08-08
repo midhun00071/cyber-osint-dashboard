@@ -4,7 +4,9 @@
 
 P4-01 added deterministic offline classification for whether a normalized
 public cybersecurity intelligence record contains direct UAE-related evidence.
-P4-02 adds a fixed deterministic confidence mapping for automatic rule results.
+P4-02 added a fixed deterministic confidence mapping for automatic rule results.
+C08 B5-05 now separates authority-backed direct evidence from text-only
+potential relevance and adds controlled evidence tags.
 
 UAE relevance classification identifies whether a public cybersecurity
 intelligence record contains direct UAE-related evidence. The confidence value
@@ -29,19 +31,21 @@ values, or arbitrary user input.
 
 Rules are evaluated from strongest to weakest:
 
-1. approved UAE cybersecurity or government source slug;
-2. direct country phrase: `United Arab Emirates`;
-3. standalone UAE acronym, including safe `UAE` and `U.A.E.` variants;
-4. direct emirate name;
-5. no direct UAE evidence.
+1. approved UAE authority source slug: direct UAE evidence;
+2. country phrase, standalone UAE acronym, or emirate name: potential UAE
+   relevance only;
+3. existing structured UAE scope: potential UAE relevance;
+4. explicit global scope without UAE evidence: global relevance;
+5. otherwise: no demonstrated UAE relevance.
 
-The strongest matching rule wins. Direct country, acronym, emirate, and
-approved-source matches set `geographic_scope=uae`,
-`uae_relevance_status=confirmed`, and `uae_relevance_method=automatic`.
+The strongest matching rule wins. Only an approved authority source sets
+`uae_relevance_status=confirmed`. Text mentions set
+`uae_relevance_status=possible`; they never assert attribution, targeting, or
+authority publication. A structured UAE scope sets `probable`.
 
-When no direct UAE evidence is found, the classifier preserves the existing
-geographic scope and sets `uae_relevance_status=unknown` with an automatic
-explanation. It does not mark non-matches as definitively not relevant.
+An explicit global record without UAE evidence is `not_relevant` for the UAE
+view while remaining global intelligence. Other non-matches preserve scope and
+use `unknown`, meaning no demonstrated UAE relevance.
 
 ## Rule-Strength Confidence
 
@@ -54,9 +58,11 @@ The mapping is intentionally small and fixed:
 | Rule ID | Confidence | Meaning |
 |---|---:|---|
 | `approved_uae_source` | `0.950` | Approved UAE cybersecurity or government source identity. |
-| `direct_country_name` | `0.950` | Direct `United Arab Emirates` phrase in one safe text field. |
-| `direct_uae_acronym` | `0.900` | Standalone `UAE` or safe `U.A.E.` variant in one safe text field. |
-| `direct_emirate_name` | `0.850` | Direct emirate name in one safe text field. |
+| `structured_uae_scope` | `0.800` | Existing structured UAE geographic scope. |
+| `text_country_mention` | `0.650` | Potential relevance from a country phrase. |
+| `text_uae_acronym_mention` | `0.600` | Potential relevance from a standalone acronym. |
+| `text_emirate_mention` | `0.550` | Potential relevance from an emirate name. |
+| `explicit_global_scope` | `0.800` | Global intelligence with no demonstrated UAE evidence. |
 | `no_direct_uae_evidence` | `null` | No affirmative direct UAE evidence rule matched. |
 
 `null` means no automatic confidence was assigned because no direct UAE
@@ -99,6 +105,9 @@ Trusted-source classification uses only explicit canonical source slugs:
 - `ae-cert`
 - `uae-cert`
 - `uae-cyber-security-council`
+- `uae-cyber-security-council-nibras`
+- `desc-news`
+- `desc-published-research`
 
 The classifier does not trust source display names, arbitrary URLs, article
 text claiming official status, or substring look-alikes.
@@ -149,6 +158,17 @@ NVD updates, CERT-EU RSS updates, FIRST EPSS enrichment, CISA KEV enrichment,
 duplicate handling, and conflict handling must not overwrite protected
 classification data.
 
+## Controlled evidence tags
+
+C08 persists deterministic tags through the existing tag tables; it adds no
+schema or migration. System-controlled namespaces are `uae-authority-*`
+(`general`), `uae-emirate-*` (`region`), `uae-sector-*` (`sector`), and
+`language-*` (`theme`). Each API tag has a bounded label, confidence, and safe
+evidence explanation. Apply runs reconcile only system assignments in those
+namespaces and never delete or overwrite analyst-owned assignments. Sector and
+language matches add descriptive metadata; they do not increase UAE relevance
+or imply attribution.
+
 ## Manual CLI
 
 Dry-run is the default:
@@ -189,7 +209,7 @@ endpoint or confidence filter is added by P4-02.
 
 ## Security Boundaries
 
-P4-01/P4-02 do not add:
+C08 classification does not add:
 
 - network calls;
 - machine learning or LLM classification;

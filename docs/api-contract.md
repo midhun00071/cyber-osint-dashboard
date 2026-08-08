@@ -1480,3 +1480,36 @@ source pause/resume/disable/enable. See
 [C07 authenticated operations experience](c07-authenticated-operations-experience.md)
 for the authoritative schemas, limits, permissions, safe errors, transaction
 ownership, idempotency, and redaction contract.
+
+## 24. C08 analyst and UAE read extension
+
+C08 adds authenticated, no-store, read-only routes under `/api/v1/analysis`:
+
+| Route | Permission | Purpose |
+| --- | --- | --- |
+| `GET /threat-entities` and `/{public_id}` | `content.read` | Bounded threat entities, aliases, source evidence, and relationships. |
+| `GET /indicators` and `/{public_id}` | `analysis.use` | Normalized indicator lookup, provenance, and linked publications. |
+| `GET /items/{public_id}/provenance` | `content.read` | Source URLs, content hashes, import-run evidence, controlled tags, and linked indicators. |
+| `GET /uae-intelligence` | `content.read` | Evidence-labelled UAE/global intelligence with controlled tags and timestamps. |
+
+All list routes use allow-listed filters, `limit` 1-100, `offset` 0-10000,
+parameterized database expressions, deterministic ordering, and strict response
+models with unknown fields forbidden. Unknown or repeated query parameters,
+non-canonical UUIDs, invalid enums, and oversized searches fail with sanitized
+422 responses. A bounded per-session read throttle returns 429 with
+`Retry-After`; it is process-local and deployment-level shared throttling
+remains an accepted staging configuration responsibility.
+
+Responses expose public UUIDs and safe normalized metadata only. They exclude
+database IDs, raw payloads, credentials, headers, cookies, SQL, stack traces,
+and environment data. Not-found, validation, rate-limit, and storage failures
+use fixed client-safe messages. These routes never trigger ingestion or make an
+external request.
+
+Nested analyst evidence is SQL-bounded and deterministically ordered: threat
+entities expose at most 20 aliases and 100 relationships; indicator details
+expose at most 50 provenance records and 100 linked publications; item
+provenance exposes at most 25 source records, 20 import-run records per source,
+16 controlled classification tags, and 100 linked indicators. List indicator
+counts use SQL aggregates and do not load the counted relationships. The UAE
+list selects only one deterministic primary/fallback source record per item.

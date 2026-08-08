@@ -9,8 +9,9 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
 
-from app.models import IntelligenceItem, SourceRecord
+from app.models import IntelligenceItem, IntelligenceItemTag, SourceRecord, Tag
 from app.processing.uae_relevance_classifier import (
+    UaeEvidenceTag,
     UaeClassificationInput,
     UaeClassificationResult,
     classify_uae_relevance,
@@ -19,6 +20,18 @@ from app.processing.uae_relevance_classifier import (
 
 MAX_CLASSIFICATION_ITEMS = 500
 ELIGIBLE_METHODS = {"unassigned", "automatic"}
+_TAG_TYPE_BY_KIND = {
+    "authority": "general",
+    "emirate": "region",
+    "language": "theme",
+    "sector": "sector",
+}
+_CONTROLLED_TAG_PREFIXES = (
+    "language-",
+    "uae-authority-",
+    "uae-emirate-",
+    "uae-sector-",
+)
 
 
 class UaeClassificationServiceError(RuntimeError):
@@ -65,6 +78,7 @@ class UaeClassificationService:
 
     def __init__(self, session: Session) -> None:
         self._session = session
+        self._tag_cache: dict[str, Tag] = {}
 
     def classify_existing(
         self,
@@ -95,6 +109,7 @@ class UaeClassificationService:
                     continue
 
                 if apply:
+                    self._apply_classification_tags(item, result.tags)
                     self.apply_result(item, result)
                     counts.updated += 1
                 else:
@@ -110,6 +125,9 @@ class UaeClassificationService:
             raise UaeClassificationServiceError(
                 "Database error while classifying UAE relevance."
             ) from exc
+        except UaeClassificationServiceError:
+            self._session.rollback()
+            raise
 
     def classify_item(self, item: IntelligenceItem) -> UaeClassificationResult:
         return classify_uae_relevance(
@@ -141,6 +159,7 @@ class UaeClassificationService:
             return
         result = self.classify_item(item)
         if self._would_change(item, result):
+            self._apply_classification_tags(item, result.tags)
             self.apply_result(item, result)
 
     def _load_items(self, max_items: int) -> list[IntelligenceItem]:
@@ -166,7 +185,10 @@ class UaeClassificationService:
             .options(
                 selectinload(IntelligenceItem.source_records).selectinload(
                     SourceRecord.source
-                )
+                ),
+                selectinload(IntelligenceItem.tag_assignments).selectinload(
+                    IntelligenceItemTag.tag
+                ),
             )
             .where(IntelligenceItem.uae_relevance_method == method)
             .order_by(
@@ -184,7 +206,10 @@ class UaeClassificationService:
             .options(
                 selectinload(IntelligenceItem.source_records).selectinload(
                     SourceRecord.source
-                )
+                ),
+                selectinload(IntelligenceItem.tag_assignments).selectinload(
+                    IntelligenceItemTag.tag
+                ),
             )
             .order_by(
                 IntelligenceItem.source_published_at.asc().nulls_last(),
@@ -224,7 +249,7 @@ class UaeClassificationService:
         item: IntelligenceItem,
         result: UaeClassificationResult,
     ) -> bool:
-        return any(
+        fields_changed = any(
             (
                 item.geographic_scope != result.geographic_scope,
                 item.uae_relevance_status != result.uae_relevance_status,
@@ -234,6 +259,88 @@ class UaeClassificationService:
                 item.uae_relevance_method != result.uae_relevance_method,
             )
         )
+        desired = {tag.slug: tag.confidence for tag in result.tags}
+        system_controlled: dict[str, Decimal | None] = {}
+        protected_slugs: set[str] = set()
+        for assignment in item.tag_assignments:
+            if assignment.tag is None:
+                continue
+            slug = assignment.tag.slug
+            if not slug.startswith(_CONTROLLED_TAG_PREFIXES):
+                continue
+            if assignment.assigned_by == "system":
+                system_controlled[slug] = _decimal_or_none(assignment.confidence)
+            else:
+                protected_slugs.add(slug)
+
+        tags_changed = any(slug not in desired for slug in system_controlled)
+        if not tags_changed:
+            tags_changed = any(
+                slug not in protected_slugs
+                and system_controlled.get(slug) != confidence
+                for slug, confidence in desired.items()
+            )
+        return fields_changed or tags_changed
+
+    def _apply_classification_tags(
+        self,
+        item: IntelligenceItem,
+        tags: tuple[UaeEvidenceTag, ...],
+    ) -> None:
+        desired = {tag.slug: tag for tag in tags}
+        retained: list[IntelligenceItemTag] = []
+        existing_by_slug: dict[str, IntelligenceItemTag] = {}
+
+        for assignment in item.tag_assignments:
+            slug = assignment.tag.slug if assignment.tag is not None else ""
+            controlled = slug.startswith(_CONTROLLED_TAG_PREFIXES)
+            if assignment.assigned_by == "system" and controlled and slug not in desired:
+                continue
+            retained.append(assignment)
+            if slug:
+                existing_by_slug[slug] = assignment
+
+        item.tag_assignments[:] = retained
+        for evidence_tag in tags:
+            assignment = existing_by_slug.get(evidence_tag.slug)
+            if assignment is not None:
+                if assignment.assigned_by == "system":
+                    assignment.confidence = evidence_tag.confidence
+                continue
+
+            tag = self._load_or_create_tag(evidence_tag)
+            item.tag_assignments.append(
+                IntelligenceItemTag(
+                    tag=tag,
+                    assigned_by="system",
+                    confidence=evidence_tag.confidence,
+                )
+            )
+
+    def _load_or_create_tag(self, evidence_tag: UaeEvidenceTag) -> Tag:
+        cached = self._tag_cache.get(evidence_tag.slug)
+        if cached is not None:
+            return cached
+
+        tag = self._session.execute(
+            select(Tag).where(Tag.slug == evidence_tag.slug)
+        ).scalar_one_or_none()
+        expected_type = _TAG_TYPE_BY_KIND[evidence_tag.kind]
+        if tag is not None:
+            if tag.tag_type != expected_type or tag.display_name != evidence_tag.label:
+                raise UaeClassificationServiceError(
+                    "Controlled UAE classification tag conflicts with stored metadata."
+                )
+        else:
+            tag = Tag(
+                slug=evidence_tag.slug,
+                display_name=evidence_tag.label,
+                tag_type=expected_type,
+            )
+            self._session.add(tag)
+
+        self._tag_cache[evidence_tag.slug] = tag
+        return tag
 
 
 def _decimal_or_none(value: Decimal | None) -> Decimal | None:

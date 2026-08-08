@@ -57,10 +57,10 @@ def test_country_phrase_matches(text: str) -> None:
     result = classify(text)
 
     assert result.geographic_scope == "uae"
-    assert result.uae_relevance_status == "confirmed"
-    assert result.matched_rule_id == "direct_country_name"
-    assert result.uae_relevance_confidence == Decimal("0.950")
-    assert result.uae_relevance_reason == "Matched direct UAE country phrase."
+    assert result.uae_relevance_status == "possible"
+    assert result.matched_rule_id == "text_country_mention"
+    assert result.uae_relevance_confidence == Decimal("0.650")
+    assert "no attribution asserted" in result.uae_relevance_reason
 
 
 @pytest.mark.parametrize(
@@ -71,9 +71,9 @@ def test_standalone_uae_acronym_matches(text: str) -> None:
     result = classify(text)
 
     assert result.geographic_scope == "uae"
-    assert result.uae_relevance_status == "confirmed"
-    assert result.matched_rule_id == "direct_uae_acronym"
-    assert result.uae_relevance_confidence == Decimal("0.900")
+    assert result.uae_relevance_status == "possible"
+    assert result.matched_rule_id == "text_uae_acronym_mention"
+    assert result.uae_relevance_confidence == Decimal("0.600")
 
 
 @pytest.mark.parametrize(
@@ -97,10 +97,10 @@ def test_emirate_names_match(text: str) -> None:
     result = classify(text)
 
     assert result.geographic_scope == "uae"
-    assert result.uae_relevance_status == "confirmed"
-    assert result.matched_rule_id == "direct_emirate_name"
-    assert result.uae_relevance_confidence == Decimal("0.850")
-    assert result.uae_relevance_reason.startswith("Matched emirate name:")
+    assert result.uae_relevance_status == "possible"
+    assert result.matched_rule_id == "text_emirate_mention"
+    assert result.uae_relevance_confidence == Decimal("0.550")
+    assert "no attribution asserted" in result.uae_relevance_reason
 
 
 @pytest.mark.parametrize(
@@ -116,14 +116,14 @@ def test_emirate_names_match(text: str) -> None:
         "banking finance oil gas energy aviation telecommunications government critical infrastructure",
     ],
 )
-def test_regional_and_sector_terms_alone_remain_unknown(text: str) -> None:
+def test_global_content_without_direct_evidence_is_not_relevant(text: str) -> None:
     result = classify(text, geographic_scope="global")
 
     assert result.geographic_scope == "global"
-    assert result.uae_relevance_status == "unknown"
-    assert result.matched_rule_id == "no_direct_uae_evidence"
-    assert result.uae_relevance_confidence is None
-    assert result.uae_relevance_reason == "No direct UAE evidence found."
+    assert result.uae_relevance_status == "not_relevant"
+    assert result.matched_rule_id == "explicit_global_scope"
+    assert result.uae_relevance_confidence == Decimal("0.800")
+    assert result.uae_relevance_reason == "Global relevance with no demonstrated UAE-specific evidence."
 
 
 def test_approved_canonical_source_slug_matches_without_url_or_display_trust() -> None:
@@ -141,13 +141,14 @@ def test_approved_canonical_source_slug_matches_without_url_or_display_trust() -
 def test_classification_source_boundary_is_not_network_approval_or_registry_sync() -> None:
     assert UAE_CLASSIFICATION_SOURCE_SLUGS == {
         "ae-cert",
+        "desc-news",
+        "desc-published-research",
         "uae-cert",
         "uae-cyber-security-council",
+        "uae-cyber-security-council-nibras",
     }
     assert "uae-cert" in UAE_CLASSIFICATION_SOURCE_SLUGS
-    assert "uae-cyber-security-council-nibras" not in UAE_CLASSIFICATION_SOURCE_SLUGS
-    assert "desc-news" not in UAE_CLASSIFICATION_SOURCE_SLUGS
-    assert "desc-published-research" not in UAE_CLASSIFICATION_SOURCE_SLUGS
+    assert "uae-cyber-security-council-nibras" in UAE_CLASSIFICATION_SOURCE_SLUGS
 
 
 @pytest.mark.parametrize(
@@ -174,16 +175,17 @@ def test_strongest_rule_wins_and_output_is_stable() -> None:
     assert first == second
     assert first.matched_rule_id == "approved_uae_source"
     assert first.uae_relevance_confidence == Decimal("0.950")
-    assert first.uae_relevance_reason == "Matched approved UAE source."
+    assert first.uae_relevance_reason == "Direct UAE authority-source evidence."
 
 
 @pytest.mark.parametrize(
     ("rule_id", "expected"),
     [
         ("approved_uae_source", Decimal("0.950")),
-        ("direct_country_name", Decimal("0.950")),
-        ("direct_uae_acronym", Decimal("0.900")),
-        ("direct_emirate_name", Decimal("0.850")),
+        ("text_country_mention", Decimal("0.650")),
+        ("text_uae_acronym_mention", Decimal("0.600")),
+        ("text_emirate_mention", Decimal("0.550")),
+        ("explicit_global_scope", Decimal("0.800")),
         ("no_direct_uae_evidence", None),
     ],
 )
@@ -265,7 +267,7 @@ def test_repeated_mentions_do_not_inflate_confidence() -> None:
     once = classify("Dubai advisory")
     repeated = classify("Dubai Dubai Dubai advisory")
 
-    assert once.matched_rule_id == repeated.matched_rule_id == "direct_emirate_name"
+    assert once.matched_rule_id == repeated.matched_rule_id == "text_emirate_mention"
     assert once.uae_relevance_confidence == repeated.uae_relevance_confidence
 
 
@@ -274,8 +276,8 @@ def test_title_and_summary_order_does_not_change_confidence() -> None:
     summary_match = classify(title="General title", summary="UAE advisory")
 
     assert title_match.matched_rule_id == summary_match.matched_rule_id
-    assert title_match.uae_relevance_confidence == Decimal("0.900")
-    assert summary_match.uae_relevance_confidence == Decimal("0.900")
+    assert title_match.uae_relevance_confidence == Decimal("0.600")
+    assert summary_match.uae_relevance_confidence == Decimal("0.600")
 
 
 @pytest.mark.parametrize(
@@ -301,10 +303,10 @@ def test_direct_text_rules_do_not_match_across_field_boundaries(
 @pytest.mark.parametrize(
     ("text", "rule_id"),
     [
-        ("United_Arab_Emirates advisory", "direct_country_name"),
-        ("UAE_alert", "direct_uae_acronym"),
-        ("Abu_Dhabi advisory", "direct_emirate_name"),
-        ("Ras_Al_Khaimah advisory", "direct_emirate_name"),
+        ("United_Arab_Emirates advisory", "text_country_mention"),
+        ("UAE_alert", "text_uae_acronym_mention"),
+        ("Abu_Dhabi advisory", "text_emirate_mention"),
+        ("Ras_Al_Khaimah advisory", "text_emirate_mention"),
     ],
 )
 def test_underscores_are_safe_classification_separators(
@@ -313,7 +315,7 @@ def test_underscores_are_safe_classification_separators(
 ) -> None:
     result = classify(text)
 
-    assert result.uae_relevance_status == "confirmed"
+    assert result.uae_relevance_status == "possible"
     assert result.matched_rule_id == rule_id
     assert result.uae_relevance_confidence == confidence_for_rule(rule_id)
 

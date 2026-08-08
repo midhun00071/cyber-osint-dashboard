@@ -37,11 +37,22 @@ class FakeScalarResult:
 
 
 class FakeExecuteResult:
-    def __init__(self, items: list[IntelligenceItem]):
+    def __init__(
+        self,
+        items: list[IntelligenceItem],
+        *,
+        scalar_value: int | None = None,
+    ):
         self._items = items
+        self._scalar_value = scalar_value
 
     def scalars(self) -> FakeScalarResult:
         return FakeScalarResult(self._items)
+
+    def scalar_one(self) -> int:
+        if self._scalar_value is None:
+            raise AssertionError("This fake result does not contain a scalar value.")
+        return self._scalar_value
 
 
 class FakeSession:
@@ -55,13 +66,127 @@ class FakeSession:
         self.error_message = error_message
         self.execute_calls = 0
         self.last_statement = None
+        self.statements = []
 
     def execute(self, statement):
         self.execute_calls += 1
         self.last_statement = statement
+        self.statements.append(statement)
         if self.error_message is not None:
             raise SQLAlchemyError(self.error_message)
-        return FakeExecuteResult(self.items)
+        sql = str(statement)
+        params = statement.compile().params
+        filtered = self._filter_items(sql, params)
+        if "count(" in sql.lower():
+            return FakeExecuteResult([], scalar_value=len(filtered))
+        ordered = sorted(
+            filtered,
+            key=lambda item: (
+                item.source_modified_at or item.last_seen_at or item.created_at,
+                item.last_seen_at,
+                item.created_at,
+                str(item.public_id),
+            ),
+            reverse=True,
+        )
+        limit_clause = getattr(statement, "_limit_clause", None)
+        offset_clause = getattr(statement, "_offset_clause", None)
+        limit = getattr(limit_clause, "value", None)
+        offset = getattr(offset_clause, "value", None) or 0
+        page = ordered[offset : offset + limit] if limit is not None else ordered
+        return FakeExecuteResult(page)
+
+    def _filter_items(self, sql: str, params: dict[str, object]) -> list[IntelligenceItem]:
+        values = list(params.values())
+        item_type = next(
+            (value for key, value in params.items() if "item_type" in key),
+            None,
+        )
+        severity = next(
+            (value for key, value in params.items() if "severity" in key),
+            None,
+        )
+        source_slug = next(
+            (value for key, value in params.items() if key.startswith("slug_")),
+            None,
+        )
+        geographic_scope = next(
+            (value for key, value in params.items() if "geographic_scope" in key),
+            None,
+        )
+        relevance_status = next(
+            (value for key, value in params.items() if "uae_relevance_status" in key),
+            None,
+        )
+        boundaries = sorted(value for value in values if isinstance(value, datetime))
+        search_value = next(
+            (
+                str(value)[1:-1]
+                for value in values
+                if isinstance(value, str)
+                and value.startswith("%")
+                and value.endswith("%")
+            ),
+            None,
+        )
+        exact_cve = next(
+            (
+                value
+                for key, value in params.items()
+                if "normalized_value" in key
+                and isinstance(value, str)
+                and not value.startswith("%")
+            ),
+            None,
+        )
+
+        def matches(item: IntelligenceItem) -> bool:
+            if item.status != "active" or (item_type and item.item_type != item_type):
+                return False
+            if severity and (
+                item.vulnerability is None or item.vulnerability.severity != severity
+            ):
+                return False
+            if source_slug and not any(
+                record.source is not None and record.source.slug == source_slug
+                for record in item.source_records
+            ):
+                return False
+            if geographic_scope and item.geographic_scope != geographic_scope:
+                return False
+            if relevance_status and item.uae_relevance_status != relevance_status:
+                return False
+            if len(boundaries) == 2 and not (
+                item.source_published_at is not None
+                and boundaries[0] <= item.source_published_at < boundaries[1]
+            ):
+                return False
+            if exact_cve and not any(
+                identifier.namespace == "cve"
+                and identifier.normalized_value == exact_cve
+                for identifier in item.identifiers
+            ):
+                return False
+            if search_value is not None:
+                normalized_search = (
+                    search_value.replace("\\%", "%")
+                    .replace("\\_", "_")
+                    .replace("\\\\", "\\")
+                    .casefold()
+                )
+                candidates = [item.canonical_title, item.summary]
+                candidates.extend(
+                    identifier.normalized_value for identifier in item.identifiers
+                )
+                if not any(
+                    candidate is not None
+                    and normalized_search in candidate.casefold()
+                    for candidate in candidates
+                ):
+                    return False
+            return True
+
+        return [item for item in self.items if matches(item)]
 
 
 @pytest.fixture
@@ -619,11 +744,37 @@ def test_published_year_uses_utc_boundaries_and_filtered_total(client) -> None:
     sql = str(session.last_statement)
     assert "intelligence_items.source_published_at >=" in sql
     assert "intelligence_items.source_published_at <" in sql
-    assert set(session.last_statement.compile().params.values()) == {
+    assert {
         "active",
+        "vulnerability",
         start,
         next_year,
-    }
+    } <= set(session.last_statement.compile().params.values())
+
+
+def test_intelligence_list_filters_counts_and_pages_in_sql(client) -> None:
+    session = FakeSession(
+        [
+            make_vulnerability_item(cve_id=f"CVE-2026-{index:05d}")
+            for index in range(30)
+        ]
+    )
+
+    response = client(session).get(
+        "/api/v1/intelligence/items?q=example&severity=high&limit=5&offset=10"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 30
+    assert len(response.json()["items"]) == 5
+    assert len(session.statements) == 2
+    count_sql = str(session.statements[0]).lower()
+    page_sql = str(session.statements[1]).lower()
+    assert "count(" in count_sql
+    assert "vulnerabilities.severity" in count_sql
+    assert "intelligence_items.canonical_title" in count_sql
+    assert " limit " in f" {page_sql} "
+    assert " offset " in f" {page_sql} "
 
 
 def test_no_published_year_preserves_existing_results(client) -> None:

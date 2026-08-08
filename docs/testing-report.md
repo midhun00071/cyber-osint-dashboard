@@ -442,3 +442,72 @@ rerunning the relevant gate.
 - [Architecture](architecture.md)
 - [Data sources](data-sources.md)
 - [Source integration policy](source-integration-policy.md)
+
+## C08 automated-evidence addendum — 8 August 2026
+
+This addendum records the authoritative final post-hardening C08 evidence for
+B4-04, B5-05, B5-06, B8-01, B8-04, B8-05, and B8-07. The repository gate was `dev` at
+`cfef7477c26f568e738a966c26c03100e640e53e`, equal to refreshed `origin/dev`
+with divergence `0 0`. C08 changes remain unstaged and uncommitted for complete
+file review. The historical P8-04 snapshot above remains intact and should not
+be confused with this later evidence date.
+
+These 8 August 2026 final post-hardening results supersede all earlier
+pre-hardening C08 validation counts.
+
+### C08 result summary
+
+| Gate | Result |
+| --- | --- |
+| Full backend pytest | **PASS**; 5,267 collected, 5,014 passed, 253 skipped, 12 warnings |
+| Full frontend Vitest | **PASS**; 25 test files passed, 151 tests passed |
+| Frontend TypeScript check | **PASS** |
+| Frontend production build | **PASS** |
+| Alembic heads | Passed; single preserved head `c07a01b02c03` |
+| Alembic history | Passed; one linear history from base through `c07a01b02c03` |
+| Full project runner | **PASS**; `.\run.cmd test` exited with code 0 and its final output included `[OK] Command 'test' completed successfully.` |
+
+The full project runner required the declared `argon2-cffi` dependency to be
+installed into the stale backend virtual environment and a Windows-safe
+external pytest base-temp supplied through a process-only `PYTEST_ADDOPTS`
+override. The package was available from the local pip cache. The override was
+restored after the run. Earlier runner attempts failed only during dependency
+import or temporary-directory setup and are not counted as passing evidence.
+
+The 253 skips are environment/optional PostgreSQL and Windows capability gates
+already expressed by the test suite; they were not converted to passes. The 12
+warnings are the known Starlette/httpx and per-request cookie deprecations. No
+C08 test failed in the final full run.
+
+### C08 security and integrity evidence
+
+- New analyst routes enforce backend `content.read` or `analysis.use`, strict
+  response models, allow-listed queries, bounded pagination, canonical public
+  UUIDs, parameterized filters, sanitized errors, and per-session throttling.
+- Threat, indicator, item-provenance, and UAE responses expose safe public
+  metadata only; database IDs, raw payloads, SQL, stack traces, secrets,
+  credentials, cookies, and authorization headers remain excluded.
+- Text-only UAE or emirate mentions are `possible` and explicitly state that no
+  attribution is asserted. Direct evidence requires a controlled UAE authority
+  source. Global and no-demonstrated-evidence states remain distinct.
+- Controlled authority, emirate, sector, and language tags reuse existing tag
+  persistence. Protected analyst/source classifications and analyst-owned tag
+  assignments remain protected, while system-controlled assignments are
+  reconciled through the controlled relationship collection inside the
+  caller-owned transaction.
+- The UI renders normalized text through React and outbound links through the
+  existing safe-link component. IOC search reads stored metadata only and does
+  not probe, resolve, fetch, submit, or activate an indicator.
+- The preview dataset is retired, the nonfunctional header search is absent,
+  every visible C08 navigation item has a functional route, and later B8-06
+  routes remain absent rather than appearing as placeholders.
+- No migration, source registration, source activation, handler, schedule,
+  deployment, credential, database mutation, or live OSINT request was part of
+  C08 validation. `DEFAULT_SOURCE_HANDLERS` remains empty.
+
+Formal browser/manual execution, visual responsive inspection, live database
+content counts, staging deployment, source activation, and live provider
+validation were not performed. All 46 formal manual cases therefore remain
+`Not Run`. This automated C08 evidence supports final file review and controlled
+local demonstration; it is not public-production certification or a penetration
+test.

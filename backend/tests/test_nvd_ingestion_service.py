@@ -21,6 +21,7 @@ from app.models import (
     IntelligenceItemIdentifier,
     IntelligenceSource,
     SourceRecord,
+    Tag,
     Vulnerability,
 )
 from app.processing.uae_relevance_classifier import confidence_for_rule
@@ -49,6 +50,7 @@ class FakeSession:
         self.vulnerabilities: list[Vulnerability] = []
         self.source_records: list[SourceRecord] = []
         self.identifiers: list[IntelligenceItemIdentifier] = []
+        self.tags: list[Tag] = []
 
     def add(self, record: object) -> None:
         collection: list | None = None
@@ -62,6 +64,8 @@ class FakeSession:
             collection = self.source_records
         elif isinstance(record, IntelligenceItemIdentifier):
             collection = self.identifiers
+        elif isinstance(record, Tag):
+            collection = self.tags
         else:
             raise AssertionError(f"Unexpected record type: {type(record)}")
         if record not in collection:
@@ -79,6 +83,7 @@ class FakeSession:
             self.vulnerabilities,
             self.source_records,
             self.identifiers,
+            self.tags,
         ):
             for index, record in enumerate(collection, start=1):
                 if getattr(record, "id", None) is None:
@@ -121,6 +126,9 @@ class FakeSession:
                     None,
                 )
             )
+        if entity is Tag:
+            slug = criterion_value(criteria, "slug")
+            return ScalarResult(next((tag for tag in self.tags if tag.slug == slug), None))
         raise AssertionError(f"Unexpected select entity: {entity}")
 
     def commit(self) -> None:
@@ -214,10 +222,10 @@ def test_new_cve_creates_complete_normalized_record_graph() -> None:
     assert item.item_type == "vulnerability"
     assert item.collected_at == OBSERVED_AT
     assert item.geographic_scope == "global"
-    assert item.uae_relevance_status == "unknown"
-    assert item.uae_relevance_confidence is None
+    assert item.uae_relevance_status == "not_relevant"
+    assert item.uae_relevance_confidence == confidence_for_rule("explicit_global_scope")
     assert item.uae_relevance_method == "automatic"
-    assert item.uae_relevance_reason == "No direct UAE evidence found."
+    assert item.uae_relevance_reason == "Global relevance with no demonstrated UAE-specific evidence."
     assert item.analyst_review_status == "pending"
     assert vulnerability.intelligence_item is item
     assert identifier.intelligence_item is item
@@ -306,10 +314,15 @@ def test_new_nvd_record_receives_automatic_uae_classification() -> None:
     assert result.outcome == "created"
     item = session.items[0]
     assert item.geographic_scope == "uae"
-    assert item.uae_relevance_status == "confirmed"
-    assert item.uae_relevance_confidence == confidence_for_rule("direct_emirate_name")
+    assert item.uae_relevance_status == "possible"
+    assert item.uae_relevance_confidence == confidence_for_rule("text_emirate_mention")
     assert item.uae_relevance_method == "automatic"
-    assert item.uae_relevance_reason == "Matched emirate name: Dubai."
+    assert item.uae_relevance_reason == "Potential UAE relevance from a Dubai mention; no attribution asserted."
+    assert {assignment.tag.slug for assignment in item.tag_assignments} == {
+        "language-english",
+        "uae-emirate-dubai",
+    }
+    assert len(item.tag_assignments) == 2
 
 
 def test_automatic_nvd_update_refreshes_uae_confidence() -> None:
@@ -330,9 +343,9 @@ def test_automatic_nvd_update_refreshes_uae_confidence() -> None:
 
     assert result.outcome == "updated"
     assert item.geographic_scope == "uae"
-    assert item.uae_relevance_status == "confirmed"
-    assert item.uae_relevance_confidence == confidence_for_rule("direct_country_name")
-    assert item.uae_relevance_reason == "Matched direct UAE country phrase."
+    assert item.uae_relevance_status == "possible"
+    assert item.uae_relevance_confidence == confidence_for_rule("text_country_mention")
+    assert item.uae_relevance_reason == "Potential UAE relevance from a text mention; no attribution asserted."
 
 
 def test_update_repairs_missing_vulnerability_extension_without_duplicates() -> None:
