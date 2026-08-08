@@ -312,13 +312,43 @@ def test_apply_checkpoint_must_be_explicit_functionally() -> None:
 
 
 def test_apply_confirmation_is_exact_functionally() -> None:
+    script = source(POWERSHELL_PATH)
+    validator = script.split("function Assert-ApplyConfirmation", 1)[1].split(
+        "function Assert-ApplyInvocation", 1
+    )[0]
+    backup_gate = script.split("if ($BackupEvidencePath)", 1)[1].split(
+        'if ($Mode -eq "Preflight")', 1
+    )[0]
+    apply_gate = 'Assert-Gate "apply_mode_explicit"' + script.split(
+        'Assert-Gate "apply_mode_explicit"', 1
+    )[1].split("$plan = Get-RoleExecutionPlan", 1)[0]
+
     valid = run_safe_powershell("Assert-ApplyConfirmation -Confirmation 'APPLY C08-PRE-02'")
     assert valid.returncode == 0, valid.stderr
     assert valid.stdout.strip() == "True"
+    assert '$Confirmation -ceq "APPLY C08-PRE-02"' in validator
+    assert (
+        'Assert-ApplyConfirmation -Confirmation (Read-Host "Type APPLY C08-PRE-02 '
+        'to continue")'
+    ) in apply_gate
+    assert script.count("Assert-ApplyConfirmation -Confirmation") == 1
+    assert "APPLYC08-PRE-02" not in script
     assert_ps_fails(
         "Assert-ApplyConfirmation -Confirmation 'apply c08-pre-02'",
         "exact interactive confirmation",
     )
+    assert_ps_fails(
+        "Assert-ApplyConfirmation -Confirmation 'APPLYC08-PRE-02'",
+        "exact interactive confirmation",
+    )
+    for required_gate in (
+        '"apply_mode_explicit"',
+        '"apply_checkpoint_explicit"',
+        '"maintenance_session_present"',
+    ):
+        assert required_gate in apply_gate
+    assert '"backup_required_for_apply"' in backup_gate
+    assert "Apply requires verified backup evidence." in backup_gate
 
 
 def test_backup_artifact_and_evidence_are_verified_functionally(tmp_path: Path) -> None:
