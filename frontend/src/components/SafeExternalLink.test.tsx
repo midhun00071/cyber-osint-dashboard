@@ -4,10 +4,8 @@ import { describe, expect, test } from "vitest";
 import { SafeExternalLink } from "@/components/SafeExternalLink";
 
 describe("SafeExternalLink", () => {
-  test.each([
-    ["HTTP", "http://example.test/report"],
-    ["HTTPS", "https://example.test/report"],
-  ])("renders a protected external anchor for a valid %s URL", (_label, url) => {
+  test("renders a protected external anchor for a valid HTTPS URL", () => {
+    const url = "https://example.test/report";
     render(<SafeExternalLink url={url}>Open report</SafeExternalLink>);
 
     expect(screen.getByRole("link", { name: "Open report" })).toHaveAttribute(
@@ -27,6 +25,7 @@ describe("SafeExternalLink", () => {
   test.each([
     ["javascript scheme", "javascript:alert(1)"],
     ["data scheme", "data:text/html,unsafe"],
+    ["cleartext HTTP scheme", "http://example.test/report"],
     ["credentials", "https://user:password@example.test/report"],
     ["protocol-relative URL", "//example.test/report"],
   ])("renders %s as non-clickable text", (_label, url) => {

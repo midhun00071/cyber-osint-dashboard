@@ -1,0 +1,2296 @@
+{
+  "$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "metadata": {
+    "tools": {
+      "components": [
+        {
+          "type": "application",
+          "name": "npm",
+          "version": "11.6.2"
+        },
+        {
+          "type": "library",
+          "name": "cyclonedx-library",
+          "group": "@cyclonedx",
+          "version": "10.1.0",
+          "author": "Jan Kowalleck",
+          "description": "Core functionality of CycloneDX for JavaScript (Node.js or WebBrowser).",
+          "licenses": [
+            {
+              "license": {
+                "id": "Apache-2.0"
+              }
+            }
+          ],
+          "externalReferences": [
+            {
+              "url": "https://github.com/CycloneDX/cyclonedx-javascript-library/issues",
+              "type": "issue-tracker",
+              "comment": "as detected from PackageJson property \"bugs.url\""
+            },
+            {
+              "url": "git+https://github.com/CycloneDX/cyclonedx-javascript-library.git",
+              "type": "vcs",
+              "comment": "as detected from PackageJson property \"repository.url\""
+            },
+            {
+              "url": "https://github.com/CycloneDX/cyclonedx-javascript-library#readme",
+              "type": "website",
+              "comment": "as detected from PackageJson property \"homepage\""
+            }
+          ]
+        },
+        {
+          "type": "application",
+          "name": "cyclonedx-npm",
+          "group": "@cyclonedx",
+          "version": "6.0.0",
+          "author": "Jan Kowalleck",
+          "description": "Create CycloneDX Software Bill of Materials (SBOM) from NPM projects.",
+          "licenses": [
+            {
+              "license": {
+                "id": "Apache-2.0"
+              }
+            }
+          ],
+          "externalReferences": [
+            {
+              "url": "https://github.com/CycloneDX/cyclonedx-node-npm/issues",
+              "type": "issue-tracker",
+              "comment": "as detected from PackageJson property \"bugs.url\""
+            },
+            {
+              "url": "git+https://github.com/CycloneDX/cyclonedx-node-npm.git",
+              "type": "vcs",
+              "comment": "as detected from PackageJson property \"repository.url\""
+            },
+            {
+              "url": "https://github.com/CycloneDX/cyclonedx-node-npm#readme",
+              "type": "website",
+              "comment": "as detected from PackageJson property \"homepage\""
+            }
+          ]
+        }
+      ]
+    },
+    "component": {
+      "type": "application",
+      "name": "cyber-osint-dashboard-frontend",
+      "version": "0.1.0",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0",
+      "description": "Frontend dashboard for the Alpha Data Cyber OSINT Dashboard project.",
+      "purl": "pkg:npm/cyber-osint-dashboard-frontend@0.1.0",
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": ""
+        },
+        {
+          "name": "cdx:npm:package:private",
+          "value": "true"
+        }
+      ]
+    },
+    "properties": [
+      {
+        "name": "cdx:reproducible",
+        "value": "true"
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "library",
+      "name": "runtime",
+      "group": "@emnapi",
+      "version": "1.11.3",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@emnapi/runtime@1.11.3",
+      "scope": "optional",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40emnapi/runtime@1.11.3",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@emnapi/runtime/-/runtime-1.11.3.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "5f3e13a72922ed7caba5b50ad6347502174075a5f2861638959de778ba1d9a1a6e59fcb63c040de41e3ab00894e2588e5c62e41f2a67fea53e8ef7d64826182c"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@emnapi/runtime"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "colour",
+      "group": "@img",
+      "version": "1.1.0",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@img/colour@1.1.0",
+      "scope": "optional",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40img/colour@1.1.0",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@img/colour/-/colour-1.1.0.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "4ddefaabb8f9ee8fed2d57604bbe3a7180117d2cb193c8847d1c5ec0bf61e0e3336216d6e1301ca69974993e1ecaa5dd761e8bfe3c2833be66a3b8b16bfa4279"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@img/colour"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sharp-darwin-arm64",
+      "group": "@img",
+      "version": "0.35.3",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-darwin-arm64@0.35.3",
+      "scope": "optional",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40img/sharp-darwin-arm64@0.35.3",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@img/sharp-darwin-arm64/-/sharp-darwin-arm64-0.35.3.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "44c9c55fb610b0ca21ee559f70ce0d1071f29815ffacbb8a34f54cf385c4f4e34f71a4820e013b087207a5280f70edb1711b61801cb51df34edf5f66c2120092"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@img/sharp-darwin-arm64"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sharp-darwin-x64",
+      "group": "@img",
+      "version": "0.35.3",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-darwin-x64@0.35.3",
+      "scope": "optional",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40img/sharp-darwin-x64@0.35.3",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@img/sharp-darwin-x64/-/sharp-darwin-x64-0.35.3.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "5e8fb9b8506d2cdd012aa89e4f1885cc53d00149416db1f98812b2457ff3d49adb9d8b074df2899d47cbf3ea764cf5ebd695ea6a8e1e78be11975e38b83a4af7"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@img/sharp-darwin-x64"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sharp-freebsd-wasm32",
+      "group": "@img",
+      "version": "0.35.3",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-freebsd-wasm32@0.35.3",
+      "scope": "optional",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40img/sharp-freebsd-wasm32@0.35.3",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@img/sharp-freebsd-wasm32/-/sharp-freebsd-wasm32-0.35.3.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "954c5ca96223db0310f41af03639e072bd60594af9c606864e1051a8f3da9480b69faec2aa3d6e3e1f0d9c0fd984083c8546ca97e9151cac20508c1ee9960fae"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@img/sharp-freebsd-wasm32"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sharp-libvips-darwin-arm64",
+      "group": "@img",
+      "version": "1.3.2",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-darwin-arm64@1.3.2",
+      "scope": "optional",
+      "licenses": [
+        {
+          "license": {
+            "id": "LGPL-3.0-or-later",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40img/sharp-libvips-darwin-arm64@1.3.2",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@img/sharp-libvips-darwin-arm64/-/sharp-libvips-darwin-arm64-1.3.2.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "f49eb2a591694018f862778f1a8abf4b7f30ea7cfebea8395992eb2c663862e49e99d32ae3b18c2c13cee36333c1d1b0a60fda819ef1cd97051dae3cc65cb07e"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@img/sharp-libvips-darwin-arm64"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sharp-libvips-darwin-x64",
+      "group": "@img",
+      "version": "1.3.2",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-darwin-x64@1.3.2",
+      "scope": "optional",
+      "licenses": [
+        {
+          "license": {
+            "id": "LGPL-3.0-or-later",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40img/sharp-libvips-darwin-x64@1.3.2",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@img/sharp-libvips-darwin-x64/-/sharp-libvips-darwin-x64-1.3.2.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "9b6a56d67e9c9ecf556ae6cdc2c67e737091623c4d416809e603e59cbd676c1729901bc59ba48214de68d29b051c8f30f67d7534a84591e1039ecf7cb62a9b13"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@img/sharp-libvips-darwin-x64"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sharp-libvips-linux-arm",
+      "group": "@img",
+      "version": "1.3.2",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-linux-arm@1.3.2",
+      "scope": "optional",
+      "licenses": [
+        {
+          "license": {
+            "id": "LGPL-3.0-or-later",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40img/sharp-libvips-linux-arm@1.3.2",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@img/sharp-libvips-linux-arm/-/sharp-libvips-linux-arm-1.3.2.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "d5e30bcf2f7623827aae68b89804fcc82dc7c4eb678b21842e5cc66cd30b2dea9ed39d9a84543487a2c5abe961e43b0321d6158880ecb74f1a6ef49b70474b5d"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@img/sharp-libvips-linux-arm"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sharp-libvips-linux-arm64",
+      "group": "@img",
+      "version": "1.3.2",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-linux-arm64@1.3.2",
+      "scope": "optional",
+      "licenses": [
+        {
+          "license": {
+            "id": "LGPL-3.0-or-later",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40img/sharp-libvips-linux-arm64@1.3.2",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@img/sharp-libvips-linux-arm64/-/sharp-libvips-linux-arm64-1.3.2.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "76a5521729c2a31e02fc9f244f5e95ed2205027b3422380bc24bd84fba7c2d0566279392e5bead23d2067e5c537ae052fffcd77852146f0b79770c72675edc9c"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@img/sharp-libvips-linux-arm64"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sharp-libvips-linux-ppc64",
+      "group": "@img",
+      "version": "1.3.2",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-linux-ppc64@1.3.2",
+      "scope": "optional",
+      "licenses": [
+        {
+          "license": {
+            "id": "LGPL-3.0-or-later",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40img/sharp-libvips-linux-ppc64@1.3.2",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@img/sharp-libvips-linux-ppc64/-/sharp-libvips-linux-ppc64-1.3.2.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "df3d0d1c3c43ea7e48f60734e54d5e5b5032466f86ce7ceade768caed84f36a13aa18ca4728816d25fe37e925d8d89ee365f11ef223da4d6c4d578947b2ab403"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@img/sharp-libvips-linux-ppc64"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sharp-libvips-linux-riscv64",
+      "group": "@img",
+      "version": "1.3.2",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-linux-riscv64@1.3.2",
+      "scope": "optional",
+      "licenses": [
+        {
+          "license": {
+            "id": "LGPL-3.0-or-later",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40img/sharp-libvips-linux-riscv64@1.3.2",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@img/sharp-libvips-linux-riscv64/-/sharp-libvips-linux-riscv64-1.3.2.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "6ec6f8ac8f8d95d18eb17b9e8f6afc39d492f3ecd70d56825b1c96adcbfa9277933a58001ed640051cc1042c1db0f883f742789b2349b87a60ea4036d08996ff"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@img/sharp-libvips-linux-riscv64"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sharp-libvips-linux-s390x",
+      "group": "@img",
+      "version": "1.3.2",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-linux-s390x@1.3.2",
+      "scope": "optional",
+      "licenses": [
+        {
+          "license": {
+            "id": "LGPL-3.0-or-later",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40img/sharp-libvips-linux-s390x@1.3.2",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@img/sharp-libvips-linux-s390x/-/sharp-libvips-linux-s390x-1.3.2.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "fc006c8728fc802a7222b3579c79f82e8ac32741c79b55615cf065c59f3302d7d53c069269f5cf1a7fac5122118b0692072d269858d28e25c8e6691cc1d0a129"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@img/sharp-libvips-linux-s390x"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sharp-libvips-linux-x64",
+      "group": "@img",
+      "version": "1.3.2",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-linux-x64@1.3.2",
+      "scope": "optional",
+      "licenses": [
+        {
+          "license": {
+            "id": "LGPL-3.0-or-later",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40img/sharp-libvips-linux-x64@1.3.2",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@img/sharp-libvips-linux-x64/-/sharp-libvips-linux-x64-1.3.2.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "2133c4b607df189d12e86f5d472c3fdfaead250a8545c1d63c7842f92b6983767c00432b0eb4ebda585dcf87ff63f1cc6d187fffb679981cc4a55762eb639cdf"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@img/sharp-libvips-linux-x64"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sharp-libvips-linuxmusl-arm64",
+      "group": "@img",
+      "version": "1.3.2",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-linuxmusl-arm64@1.3.2",
+      "scope": "optional",
+      "licenses": [
+        {
+          "license": {
+            "id": "LGPL-3.0-or-later",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40img/sharp-libvips-linuxmusl-arm64@1.3.2",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@img/sharp-libvips-linuxmusl-arm64/-/sharp-libvips-linuxmusl-arm64-1.3.2.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "cc4f447625335268399834f96b5ae4e5f609e8658f9684f05816034b5e276aa1ec2fe11a3290e3d405a7a4b821deed1808e46fd93b79d30adcae962a90ff7b2b"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@img/sharp-libvips-linuxmusl-arm64"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sharp-libvips-linuxmusl-x64",
+      "group": "@img",
+      "version": "1.3.2",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-linuxmusl-x64@1.3.2",
+      "scope": "optional",
+      "licenses": [
+        {
+          "license": {
+            "id": "LGPL-3.0-or-later",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40img/sharp-libvips-linuxmusl-x64@1.3.2",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@img/sharp-libvips-linuxmusl-x64/-/sharp-libvips-linuxmusl-x64-1.3.2.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "9b496b2e252dfa50589c216bf2a57feb9c8c47813f73bff07fbf08e5e29376411a90502567d425cc433740886103055e5212c01cb702abb6bb56cceafe814d65"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@img/sharp-libvips-linuxmusl-x64"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sharp-linux-arm",
+      "group": "@img",
+      "version": "0.35.3",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-linux-arm@0.35.3",
+      "scope": "optional",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40img/sharp-linux-arm@0.35.3",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@img/sharp-linux-arm/-/sharp-linux-arm-0.35.3.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "69f7d55824cba28cbc4d2c5b0f1daa933b8379a58b355040f8ffff14d062ac7b17a4fd9fb81864e40b9ba18527ac39f3a177acf06163a53c7448114e09183e14"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@img/sharp-linux-arm"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sharp-linux-arm64",
+      "group": "@img",
+      "version": "0.35.3",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-linux-arm64@0.35.3",
+      "scope": "optional",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40img/sharp-linux-arm64@0.35.3",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@img/sharp-linux-arm64/-/sharp-linux-arm64-0.35.3.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "420283b291cf9eb53e190e795cf846c32842f1a70b54e392c80be8d6855f166ac85cb903366196cc07c3678c4af28480d6a050ac02dc1d7d06e546678bf4ae15"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@img/sharp-linux-arm64"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sharp-linux-ppc64",
+      "group": "@img",
+      "version": "0.35.3",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-linux-ppc64@0.35.3",
+      "scope": "optional",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40img/sharp-linux-ppc64@0.35.3",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@img/sharp-linux-ppc64/-/sharp-linux-ppc64-0.35.3.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "b0c77cac3c66a4b3b0bffecde38925163383e4350eec52dd8e25c3234868c5869fec0af6eb6750204928b04f7c6e9b3ee473cbb69fc4bcda9ea90b4ec9c3ff20"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@img/sharp-linux-ppc64"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sharp-linux-riscv64",
+      "group": "@img",
+      "version": "0.35.3",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-linux-riscv64@0.35.3",
+      "scope": "optional",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40img/sharp-linux-riscv64@0.35.3",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@img/sharp-linux-riscv64/-/sharp-linux-riscv64-0.35.3.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "d04a1befcca39583df2f9bcc356016e7997747d63a0504bf80e7ded1970ff66133f68861292b788a6d616b28a49d781ff005ab16a32f25c2887662e611eef279"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@img/sharp-linux-riscv64"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sharp-linux-s390x",
+      "group": "@img",
+      "version": "0.35.3",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-linux-s390x@0.35.3",
+      "scope": "optional",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40img/sharp-linux-s390x@0.35.3",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@img/sharp-linux-s390x/-/sharp-linux-s390x-0.35.3.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "2a00314340f1a4d3aad6b1b6b797204e04a1245192b94ed73b8e5ca82fb53553ae6673fab6581946e49839f36ea46907203d28ddc24eb30e0355e269328bdc1b"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@img/sharp-linux-s390x"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sharp-linux-x64",
+      "group": "@img",
+      "version": "0.35.3",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-linux-x64@0.35.3",
+      "scope": "optional",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40img/sharp-linux-x64@0.35.3",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@img/sharp-linux-x64/-/sharp-linux-x64-0.35.3.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "f29aafc6e6cbd8f19d8653f2e862eacc360c523c9198a03028760a8b1a5d2580542bb3c9d02d36f5776c9e91487604591baf1f66219d1d559c28fbed88f07870"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@img/sharp-linux-x64"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sharp-linuxmusl-arm64",
+      "group": "@img",
+      "version": "0.35.3",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-linuxmusl-arm64@0.35.3",
+      "scope": "optional",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40img/sharp-linuxmusl-arm64@0.35.3",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@img/sharp-linuxmusl-arm64/-/sharp-linuxmusl-arm64-0.35.3.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "573d22423cf37125f71c26dfc057c2486ffd48222ac8ed261f6b17ca21da0187c1934711b025974724185f4a2f08afcf01005b4f343476c3d01e1e4c0052f9f7"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@img/sharp-linuxmusl-arm64"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sharp-linuxmusl-x64",
+      "group": "@img",
+      "version": "0.35.3",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-linuxmusl-x64@0.35.3",
+      "scope": "optional",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40img/sharp-linuxmusl-x64@0.35.3",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@img/sharp-linuxmusl-x64/-/sharp-linuxmusl-x64-0.35.3.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "e8ed4d3ca703563f5011d83b1f1e78f445fc534ae9eb25d0111aabbbac9137b7c6067df652f2112549569e4fbcc430a21bbea15d505b5fcd8d67f64aaf47ae22"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@img/sharp-linuxmusl-x64"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sharp-wasm32",
+      "group": "@img",
+      "version": "0.35.3",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-wasm32@0.35.3",
+      "scope": "optional",
+      "licenses": [
+        {
+          "expression": "Apache-2.0 AND LGPL-3.0-or-later AND MIT",
+          "acknowledgement": "declared"
+        }
+      ],
+      "purl": "pkg:npm/%40img/sharp-wasm32@0.35.3",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@img/sharp-wasm32/-/sharp-wasm32-0.35.3.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "719d1791c606a47664a96ea20a4a93726502d020fd0e10f977fa9e6656647d1067e869c79e26572d4a39fbdc70f08bfbe9813a2d014df5834194a4447021bbeb"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@img/sharp-wasm32"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sharp-webcontainers-wasm32",
+      "group": "@img",
+      "version": "0.35.3",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-webcontainers-wasm32@0.35.3",
+      "scope": "optional",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40img/sharp-webcontainers-wasm32@0.35.3",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@img/sharp-webcontainers-wasm32/-/sharp-webcontainers-wasm32-0.35.3.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "dab9eaedb5f7373791d93e185a0cfcaa21b88774d274c7bebcdd62417a4995e489dd2339cd0f05cb64b2c9701695bc69119d98f99e2ed4178f8091186d2cbcd1"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@img/sharp-webcontainers-wasm32"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sharp-win32-arm64",
+      "group": "@img",
+      "version": "0.35.3",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-win32-arm64@0.35.3",
+      "scope": "optional",
+      "licenses": [
+        {
+          "expression": "Apache-2.0 AND LGPL-3.0-or-later",
+          "acknowledgement": "declared"
+        }
+      ],
+      "purl": "pkg:npm/%40img/sharp-win32-arm64@0.35.3",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@img/sharp-win32-arm64/-/sharp-win32-arm64-0.35.3.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "e1b3f015d31b782e0943c2fc2cec96a7a9ec1dc6e83f97f1929ea23ce5f3d95838f51e364ee32cdb08642793803f8fd4974df9a8ecf2d0079c385f553ac727e3"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@img/sharp-win32-arm64"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sharp-win32-ia32",
+      "group": "@img",
+      "version": "0.35.3",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-win32-ia32@0.35.3",
+      "scope": "optional",
+      "licenses": [
+        {
+          "expression": "Apache-2.0 AND LGPL-3.0-or-later",
+          "acknowledgement": "declared"
+        }
+      ],
+      "purl": "pkg:npm/%40img/sharp-win32-ia32@0.35.3",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@img/sharp-win32-ia32/-/sharp-win32-ia32-0.35.3.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "af9de65ec04dea51540e2493efae12be0c1474702a338acf0220f30267f87cba01e97feb91fc93acb0a0ebe835ef0249882981dc96201ee5257425942111525f"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@img/sharp-win32-ia32"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sharp-win32-x64",
+      "group": "@img",
+      "version": "0.35.3",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-win32-x64@0.35.3",
+      "scope": "optional",
+      "licenses": [
+        {
+          "expression": "Apache-2.0 AND LGPL-3.0-or-later",
+          "acknowledgement": "declared"
+        }
+      ],
+      "purl": "pkg:npm/%40img/sharp-win32-x64@0.35.3",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@img/sharp-win32-x64/-/sharp-win32-x64-0.35.3.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "0f8cb5bcd799ac820908dfae1da595b47f3a07e682add31862389ccbda571ef6c665e1982cb49ddf0755b82dfb171557954d4046c93ce1e2967d631719812abc"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@img/sharp-win32-x64"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "env",
+      "group": "@next",
+      "version": "16.3.0",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@next/env@16.3.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40next/env@16.3.0",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@next/env/-/env-16.3.0.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "a3daf54b404d88dade1cff55b3e427a9df64be20e4261f31200098ed41594a68866db411ccf041a2cbc7cc05384d42c7388b8e8ffd7c452b32cf6aab44498817"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@next/env"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "swc-darwin-arm64",
+      "group": "@next",
+      "version": "16.3.0",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@next/swc-darwin-arm64@16.3.0",
+      "scope": "optional",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40next/swc-darwin-arm64@16.3.0",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@next/swc-darwin-arm64/-/swc-darwin-arm64-16.3.0.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "e79869aaad7c6c454097179d953b77b45a9998a8369d45d3d649f51bf046132d11d778772f0b701cf573ce31ba3f82cb78e1c4df63c50d0515689116bc111907"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@next/swc-darwin-arm64"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "swc-darwin-x64",
+      "group": "@next",
+      "version": "16.3.0",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@next/swc-darwin-x64@16.3.0",
+      "scope": "optional",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40next/swc-darwin-x64@16.3.0",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@next/swc-darwin-x64/-/swc-darwin-x64-16.3.0.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "48e8bdea449a1794fed305b892888cd5b5b348fc23cd37ac0b5a7775ff858dd3a2e4b2109012bf6e5c61ec77682a736e2383d4445d4e3bb4d9aad7e76d60d283"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@next/swc-darwin-x64"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "swc-linux-arm64-gnu",
+      "group": "@next",
+      "version": "16.3.0",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@next/swc-linux-arm64-gnu@16.3.0",
+      "scope": "optional",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40next/swc-linux-arm64-gnu@16.3.0",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@next/swc-linux-arm64-gnu/-/swc-linux-arm64-gnu-16.3.0.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "3f48190283cc1787724d1ce19a45783eba95cd2381eade260b5a08ddce1daa28c9f8e544571e5c9485c0291e3fb90a6cab0d8a28cff40f9b55ba6711dabe5b96"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@next/swc-linux-arm64-gnu"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "swc-linux-arm64-musl",
+      "group": "@next",
+      "version": "16.3.0",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@next/swc-linux-arm64-musl@16.3.0",
+      "scope": "optional",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40next/swc-linux-arm64-musl@16.3.0",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@next/swc-linux-arm64-musl/-/swc-linux-arm64-musl-16.3.0.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "b575c6289c349b7eced1e2890115535ff4e178a3e1cf440556d55565798e8a0fbd60a2d03923fa86f7f6a71bf90ceec22c42724c7c773e0d38dc20d092fd46e1"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@next/swc-linux-arm64-musl"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "swc-linux-x64-gnu",
+      "group": "@next",
+      "version": "16.3.0",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@next/swc-linux-x64-gnu@16.3.0",
+      "scope": "optional",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40next/swc-linux-x64-gnu@16.3.0",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@next/swc-linux-x64-gnu/-/swc-linux-x64-gnu-16.3.0.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "a631b12b9118ef25a697bf002de8c59169a01ec53bc1b150ac84a2ba0a47e856d4261804bf0df1159fc4040b4b97b42d2f459d40a886f5e589de638a193ba41f"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@next/swc-linux-x64-gnu"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "swc-linux-x64-musl",
+      "group": "@next",
+      "version": "16.3.0",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@next/swc-linux-x64-musl@16.3.0",
+      "scope": "optional",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40next/swc-linux-x64-musl@16.3.0",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@next/swc-linux-x64-musl/-/swc-linux-x64-musl-16.3.0.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "b23a3ef97c7e9689a53ecdc746c1d68550f2186ea6b359065b912d1cb11174823c0321b58be7fa6aaebcc474443ba0043258634cd11605299f25faa6f68adfee"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@next/swc-linux-x64-musl"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "swc-win32-arm64-msvc",
+      "group": "@next",
+      "version": "16.3.0",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@next/swc-win32-arm64-msvc@16.3.0",
+      "scope": "optional",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40next/swc-win32-arm64-msvc@16.3.0",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@next/swc-win32-arm64-msvc/-/swc-win32-arm64-msvc-16.3.0.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "0b92528223b9e3051175ac5d114217aa4cf4e2e32a0bd5263d7d60b43ad5ff94dfd54a30756608f2e03985f15b3e8953969d2ae0a67ad3194778f3626dfd1523"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@next/swc-win32-arm64-msvc"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "swc-win32-x64-msvc",
+      "group": "@next",
+      "version": "16.3.0",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@next/swc-win32-x64-msvc@16.3.0",
+      "scope": "optional",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40next/swc-win32-x64-msvc@16.3.0",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@next/swc-win32-x64-msvc/-/swc-win32-x64-msvc-16.3.0.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "7c33a082cc1e35be524b0d1929593a53e8314b218516520163f2c1735afc1948f8bbfeadea802b2fe3e6920d0c067b2047e2a476c5118a5547e05dc65d419ea4"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@next/swc-win32-x64-msvc"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "helpers",
+      "group": "@swc",
+      "version": "0.5.15",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|@swc/helpers@0.5.15",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40swc/helpers@0.5.15",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@swc/helpers/-/helpers-0.5.15.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "250e53b8c8b8e4ec22e3f048300241a12428389bb5da83a4fe0003aa57142fd24474707cbf28d44acc6a78d5e79971e360a322d96718b5ecc610486a508fc4da"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/@swc/helpers"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "baseline-browser-mapping",
+      "version": "2.10.40",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|baseline-browser-mapping@2.10.40",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/baseline-browser-mapping@2.10.40",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/baseline-browser-mapping/-/baseline-browser-mapping-2.10.40.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "05248b67dfc28e3bfb1ad8f907af19cd7717520f2239fddf99ef850ae87cac2fc6a3e2a687c728c7b33703c768968bb5eaceb84232cf392767821ec6c57be44b"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/baseline-browser-mapping"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "caniuse-lite",
+      "version": "1.0.30001800",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|caniuse-lite@1.0.30001800",
+      "licenses": [
+        {
+          "license": {
+            "id": "CC-BY-4.0",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/caniuse-lite@1.0.30001800",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/caniuse-lite/-/caniuse-lite-1.0.30001800.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "30c1edb80cfd62cf38d33018e45e24e9f57919a8af67db0f93e9f3d2663e1985734419d890dd26a6a91247dda8591435f72416a381ef055fc59c2d7a0095fc30"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/caniuse-lite"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "client-only",
+      "version": "0.0.1",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|client-only@0.0.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/client-only@0.0.1",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/client-only/-/client-only-0.0.1.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "215dcebb48d233366b777a59e3c9cb913f4303b020d699cfcda8908695bb73745b72aab3bf3cd5bbe2fc81fa8ca7ff08336310b528aa682c6badc7eef08f2b30"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/client-only"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "detect-libc",
+      "version": "2.1.2",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|detect-libc@2.1.2",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/detect-libc@2.1.2",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/detect-libc/-/detect-libc-2.1.2.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "06d8f604e38ef37a375b21f9f5ef0c817b3111055c6ab9143a9118aee6c1d2eaf09cdd74c90dfae2bb22072535d67665a966199b4e62fe87fb8a8e26ce2841b5"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        },
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/detect-libc"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "nanoid",
+      "version": "3.3.17",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|nanoid@3.3.17",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/nanoid@3.3.17",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/nanoid/-/nanoid-3.3.17.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "c502dfd00dc738c9601ead27db8eff2d1b80398981edd5c9fc3bc0c46bec4818a3e395ed052990c9cbbe17c3836c7c27b3f5f21596a0c8bd7e27439f7f0d44d2"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/nanoid"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "next",
+      "version": "16.3.0",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|next@16.3.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/next@16.3.0",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/next/-/next-16.3.0.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "3447463b31fed3c7935cc529f5462403df4d862e4de9386b85cd6380539081f82718afdd036851c01a577a9f9ec5d150ae7c2545fff75a2c72a7c94b054a44d8"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/next"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "picocolors",
+      "version": "1.1.1",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|picocolors@1.1.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "ISC",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/picocolors@1.1.1",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/picocolors/-/picocolors-1.1.1.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "c5c787dac9e1b5be4cf658aa0ec984c39ea57b7efa993664117fe311bfd1c4d1727a036e97b78db250973fd1438ff2dcbb45fc284c8c71e3f69eda5a1eb0c454"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/picocolors"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "postcss",
+      "version": "8.5.23",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|postcss@8.5.23",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/postcss@8.5.23",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/postcss/-/postcss-8.5.23.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "839d39f3acebe1b666c0589395f94cbbc1346c34dbe48e607abb60c002a6b1d5254d022166dba7cd4943d564b3c1c5563e8015a6cac0eaf95f083ee85ef47082"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/postcss"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "react-dom",
+      "version": "19.2.7",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|react-dom@19.2.7",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/react-dom@19.2.7",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/react-dom/-/react-dom-19.2.7.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "b74051557bdb884fe8db41dfc3aebdacb6cc0835ad6192ef9898a0cb67f4331b1717eef5a71851df13a4b299ac3bc877665373ca26c09ad09ade5e2560a93a81"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/react-dom"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "react",
+      "version": "19.2.7",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|react@19.2.7",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/react@19.2.7",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/react/-/react-19.2.7.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "1cd7bd5ac9536d79852bca3c726c2001e245481bedd5b3dd1c254ab5a695f96940377ea6a53e21711a706dfddf639e9aaf6a085f3b01a4e0222111c0758d0e95"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/react"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "scheduler",
+      "version": "0.27.0",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|scheduler@0.27.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/scheduler@0.27.0",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/scheduler/-/scheduler-0.27.0.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "78dbfe5ab55b2aed5fdef6d8253ff1b62179b320391cf20cb5ff48818fe72a0d2c5aacc0504bea63fc66ece71973fa9a7cbc7f88ef4580e99e480a78bf9b62fd"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/scheduler"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sharp",
+      "version": "0.35.3",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|sharp@0.35.3",
+      "scope": "optional",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/sharp@0.35.3",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/sharp/-/sharp-0.35.3.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "7a3d33547b991870a20015dc3717988694673cd3c072f6c6f1131d0408430312ca9024554a92b7232bbba9bab0dc9333a23d1111e33a7f7b492ed570974d36dd"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/sharp"
+        }
+      ],
+      "components": [
+        {
+          "type": "library",
+          "name": "semver",
+          "version": "7.8.5",
+          "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|sharp@0.35.3|semver@7.8.5",
+          "scope": "optional",
+          "licenses": [
+            {
+              "license": {
+                "id": "ISC",
+                "acknowledgement": "declared"
+              }
+            }
+          ],
+          "purl": "pkg:npm/semver@7.8.5",
+          "externalReferences": [
+            {
+              "url": "https://registry.npmjs.org/semver/-/semver-7.8.5.tgz",
+              "type": "distribution",
+              "hashes": [
+                {
+                  "alg": "SHA-512",
+                  "content": "63bfca0ec6fc2e3a28669c1aa86cae94ee8342592c8029dc7211c693eb19218e1206f52870c044147e54af57c8e1d57e26f974c3a723bee71a222e34a6e462a0"
+                }
+              ],
+              "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+            }
+          ],
+          "properties": [
+            {
+              "name": "cdx:npm:package:path",
+              "value": "node_modules/sharp/node_modules/semver"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "source-map-js",
+      "version": "1.2.1",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|source-map-js@1.2.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/source-map-js@1.2.1",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/source-map-js/-/source-map-js-1.2.1.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "51758c2a12cec1529bef6f0852d40f5f17d853ebac7726ed52b2bff2e184f0240cbeb84ea70bf30c1c23d108522fb31073bbc8b084811bc550f3e203431a5f40"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/source-map-js"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "styled-jsx",
+      "version": "5.1.6",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|styled-jsx@5.1.6",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/styled-jsx@5.1.6",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/styled-jsx/-/styled-jsx-5.1.6.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "a925720d378ca2d76f418a0758b346c111491c2fa2f99bdd051628b0e1600be5a0d6fc787eb376fd11bf340ed262aaaf28d2dfdfd3f62d2440da9bba9f45d864"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/styled-jsx"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "tslib",
+      "version": "2.8.1",
+      "bom-ref": "cyber-osint-dashboard-frontend@0.1.0|tslib@2.8.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "0BSD",
+            "acknowledgement": "declared"
+          }
+        }
+      ],
+      "purl": "pkg:npm/tslib@2.8.1",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/tslib/-/tslib-2.8.1.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "a0916ef781d06fe29576e49440bef09e99aa9df98bb0e03f9c087a6fa107d30084a0ad3f98f79753a737c0a0d5f373243ae1cf447b525ca294f7d2016b34bfdb"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "cdx:npm:package:path",
+          "value": "node_modules/tslib"
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0",
+      "dependsOn": [
+        "cyber-osint-dashboard-frontend@0.1.0|next@16.3.0",
+        "cyber-osint-dashboard-frontend@0.1.0|react-dom@19.2.7",
+        "cyber-osint-dashboard-frontend@0.1.0|react@19.2.7"
+      ]
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@emnapi/runtime@1.11.3",
+      "dependsOn": [
+        "cyber-osint-dashboard-frontend@0.1.0|tslib@2.8.1"
+      ]
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@img/colour@1.1.0"
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-darwin-arm64@0.35.3",
+      "dependsOn": [
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-darwin-arm64@1.3.2"
+      ]
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-darwin-x64@0.35.3",
+      "dependsOn": [
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-darwin-x64@1.3.2"
+      ]
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-freebsd-wasm32@0.35.3",
+      "dependsOn": [
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-wasm32@0.35.3"
+      ]
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-darwin-arm64@1.3.2"
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-darwin-x64@1.3.2"
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-linux-arm@1.3.2"
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-linux-arm64@1.3.2"
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-linux-ppc64@1.3.2"
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-linux-riscv64@1.3.2"
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-linux-s390x@1.3.2"
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-linux-x64@1.3.2"
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-linuxmusl-arm64@1.3.2"
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-linuxmusl-x64@1.3.2"
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-linux-arm@0.35.3",
+      "dependsOn": [
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-linux-arm@1.3.2"
+      ]
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-linux-arm64@0.35.3",
+      "dependsOn": [
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-linux-arm64@1.3.2"
+      ]
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-linux-ppc64@0.35.3",
+      "dependsOn": [
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-linux-ppc64@1.3.2"
+      ]
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-linux-riscv64@0.35.3",
+      "dependsOn": [
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-linux-riscv64@1.3.2"
+      ]
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-linux-s390x@0.35.3",
+      "dependsOn": [
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-linux-s390x@1.3.2"
+      ]
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-linux-x64@0.35.3",
+      "dependsOn": [
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-linux-x64@1.3.2"
+      ]
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-linuxmusl-arm64@0.35.3",
+      "dependsOn": [
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-linuxmusl-arm64@1.3.2"
+      ]
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-linuxmusl-x64@0.35.3",
+      "dependsOn": [
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-linuxmusl-x64@1.3.2"
+      ]
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-wasm32@0.35.3",
+      "dependsOn": [
+        "cyber-osint-dashboard-frontend@0.1.0|@emnapi/runtime@1.11.3"
+      ]
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-webcontainers-wasm32@0.35.3",
+      "dependsOn": [
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-wasm32@0.35.3"
+      ]
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-win32-arm64@0.35.3"
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-win32-ia32@0.35.3"
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-win32-x64@0.35.3"
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@next/env@16.3.0"
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@next/swc-darwin-arm64@16.3.0"
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@next/swc-darwin-x64@16.3.0"
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@next/swc-linux-arm64-gnu@16.3.0"
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@next/swc-linux-arm64-musl@16.3.0"
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@next/swc-linux-x64-gnu@16.3.0"
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@next/swc-linux-x64-musl@16.3.0"
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@next/swc-win32-arm64-msvc@16.3.0"
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@next/swc-win32-x64-msvc@16.3.0"
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|@swc/helpers@0.5.15",
+      "dependsOn": [
+        "cyber-osint-dashboard-frontend@0.1.0|tslib@2.8.1"
+      ]
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|baseline-browser-mapping@2.10.40"
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|caniuse-lite@1.0.30001800"
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|client-only@0.0.1"
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|detect-libc@2.1.2"
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|nanoid@3.3.17"
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|next@16.3.0",
+      "dependsOn": [
+        "cyber-osint-dashboard-frontend@0.1.0|@next/env@16.3.0",
+        "cyber-osint-dashboard-frontend@0.1.0|@next/swc-darwin-arm64@16.3.0",
+        "cyber-osint-dashboard-frontend@0.1.0|@next/swc-darwin-x64@16.3.0",
+        "cyber-osint-dashboard-frontend@0.1.0|@next/swc-linux-arm64-gnu@16.3.0",
+        "cyber-osint-dashboard-frontend@0.1.0|@next/swc-linux-arm64-musl@16.3.0",
+        "cyber-osint-dashboard-frontend@0.1.0|@next/swc-linux-x64-gnu@16.3.0",
+        "cyber-osint-dashboard-frontend@0.1.0|@next/swc-linux-x64-musl@16.3.0",
+        "cyber-osint-dashboard-frontend@0.1.0|@next/swc-win32-arm64-msvc@16.3.0",
+        "cyber-osint-dashboard-frontend@0.1.0|@next/swc-win32-x64-msvc@16.3.0",
+        "cyber-osint-dashboard-frontend@0.1.0|@swc/helpers@0.5.15",
+        "cyber-osint-dashboard-frontend@0.1.0|baseline-browser-mapping@2.10.40",
+        "cyber-osint-dashboard-frontend@0.1.0|caniuse-lite@1.0.30001800",
+        "cyber-osint-dashboard-frontend@0.1.0|postcss@8.5.23",
+        "cyber-osint-dashboard-frontend@0.1.0|react-dom@19.2.7",
+        "cyber-osint-dashboard-frontend@0.1.0|react@19.2.7",
+        "cyber-osint-dashboard-frontend@0.1.0|sharp@0.35.3",
+        "cyber-osint-dashboard-frontend@0.1.0|styled-jsx@5.1.6"
+      ]
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|picocolors@1.1.1"
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|postcss@8.5.23",
+      "dependsOn": [
+        "cyber-osint-dashboard-frontend@0.1.0|nanoid@3.3.17",
+        "cyber-osint-dashboard-frontend@0.1.0|picocolors@1.1.1",
+        "cyber-osint-dashboard-frontend@0.1.0|source-map-js@1.2.1"
+      ]
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|react-dom@19.2.7",
+      "dependsOn": [
+        "cyber-osint-dashboard-frontend@0.1.0|react@19.2.7",
+        "cyber-osint-dashboard-frontend@0.1.0|scheduler@0.27.0"
+      ]
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|react@19.2.7"
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|scheduler@0.27.0"
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|sharp@0.35.3",
+      "dependsOn": [
+        "cyber-osint-dashboard-frontend@0.1.0|@img/colour@1.1.0",
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-darwin-arm64@0.35.3",
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-darwin-x64@0.35.3",
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-freebsd-wasm32@0.35.3",
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-darwin-arm64@1.3.2",
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-darwin-x64@1.3.2",
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-linux-arm@1.3.2",
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-linux-arm64@1.3.2",
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-linux-ppc64@1.3.2",
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-linux-riscv64@1.3.2",
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-linux-s390x@1.3.2",
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-linux-x64@1.3.2",
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-linuxmusl-arm64@1.3.2",
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-libvips-linuxmusl-x64@1.3.2",
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-linux-arm@0.35.3",
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-linux-arm64@0.35.3",
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-linux-ppc64@0.35.3",
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-linux-riscv64@0.35.3",
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-linux-s390x@0.35.3",
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-linux-x64@0.35.3",
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-linuxmusl-arm64@0.35.3",
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-linuxmusl-x64@0.35.3",
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-webcontainers-wasm32@0.35.3",
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-win32-arm64@0.35.3",
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-win32-ia32@0.35.3",
+        "cyber-osint-dashboard-frontend@0.1.0|@img/sharp-win32-x64@0.35.3",
+        "cyber-osint-dashboard-frontend@0.1.0|detect-libc@2.1.2",
+        "cyber-osint-dashboard-frontend@0.1.0|sharp@0.35.3|semver@7.8.5"
+      ]
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|sharp@0.35.3|semver@7.8.5"
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|source-map-js@1.2.1"
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|styled-jsx@5.1.6",
+      "dependsOn": [
+        "cyber-osint-dashboard-frontend@0.1.0|client-only@0.0.1",
+        "cyber-osint-dashboard-frontend@0.1.0|react@19.2.7"
+      ]
+    },
+    {
+      "ref": "cyber-osint-dashboard-frontend@0.1.0|tslib@2.8.1"
+    }
+  ]
+}

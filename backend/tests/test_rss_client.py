@@ -6,7 +6,6 @@ import pytest
 from app.ingestion.collectors.rss_client import (
     CERT_EU_FEED_URL,
     DEFAULT_TIMEOUT,
-    MAX_REDIRECTS,
     MAX_RESPONSE_BYTES,
     USER_AGENT,
     RssClient,
@@ -56,68 +55,34 @@ def test_default_timeout_is_bounded() -> None:
         client.close()
 
 
-def test_same_host_redirect_is_followed_safely() -> None:
+@pytest.mark.parametrize(
+    "location",
+    [
+        "https://cert.europa.eu/publications/alternate.xml",
+        "https://cert.europa.eu/publications/alternate.xml?token=REDIRECT_SECRET_CANARY",
+        "https://cert.europa.eu:444/publications/alternate.xml",
+        "http://cert.europa.eu/feed.xml",
+        "https://example.com/feed.xml",
+        "https://user:pass@cert.europa.eu/feed.xml",
+    ],
+)
+def test_every_redirect_is_rejected_without_second_request_or_disclosure(
+    location: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     seen: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(str(request.url))
-        if len(seen) == 1:
-            return httpx.Response(302, headers={"location": "/publications/feed.xml"})
-        return httpx.Response(200, headers={"content-type": "application/xml"}, content=RSS_BYTES)
-
-    result = client_for(handler).fetch_cert_eu_security_advisories()
-
-    assert result.final_url == "https://cert.europa.eu/publications/feed.xml"
-    assert seen == [CERT_EU_FEED_URL, "https://cert.europa.eu/publications/feed.xml"]
-
-
-@pytest.mark.parametrize(
-    "location",
-    [
-        "http://cert.europa.eu/feed.xml",
-        "https://example.com/feed.xml",
-        "https://user:pass@cert.europa.eu/feed.xml",
-        "https://@cert.europa.eu/feed.xml",
-        "https://:password@cert.europa.eu/feed.xml",
-        "https://cert.europa.eu:444/feed.xml",
-        "https://cert.europa.eu/feed.xml#frag",
-    ],
-)
-def test_unsafe_redirect_targets_are_rejected(location: str) -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        del request
         return httpx.Response(302, headers={"location": location})
 
-    with pytest.raises(RssRedirectError) as exc_info:
+    with pytest.raises(RssRedirectError, match="does not permit redirects") as exc_info:
         client_for(handler).fetch_cert_eu_security_advisories()
+
+    assert seen == [CERT_EU_FEED_URL]
     assert location not in str(exc_info.value)
-
-
-@pytest.mark.parametrize(
-    "location",
-    [
-        "https://cert.europa.eu:bad/feed",
-        "https://cert.europa.eu:999999/feed",
-        "https://[invalid/feed",
-    ],
-)
-def test_malformed_redirect_targets_are_rejected_safely(location: str) -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        del request
-        return httpx.Response(302, headers={"location": location})
-
-    with pytest.raises(RssRedirectError) as exc_info:
-        client_for(handler).fetch_cert_eu_security_advisories()
-    assert location not in str(exc_info.value)
-
-
-def test_redirect_limit_is_enforced() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(302, headers={"location": str(request.url)})
-
-    with pytest.raises(RssRedirectError, match="limit"):
-        client_for(handler).fetch_cert_eu_security_advisories()
-    assert MAX_REDIRECTS == 3
+    assert "REDIRECT_SECRET_CANARY" not in str(exc_info.value)
+    assert "REDIRECT_SECRET_CANARY" not in caplog.text
 
 
 @pytest.mark.parametrize(

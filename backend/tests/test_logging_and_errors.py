@@ -430,10 +430,11 @@ def test_invalid_logging_configuration_does_not_change_handlers_or_leak() -> Non
 def test_middleware_order_preserves_security_request_context_and_cors() -> None:
     middleware_names = [middleware.cls.__name__ for middleware in app.user_middleware]
 
-    assert middleware_names[:5] == [
+    assert middleware_names[:6] == [
         "SecurityHeadersMiddleware",
         "RequestContextMiddleware",
         "ExactHostMiddleware",
+        "RequestBodyLimitMiddleware",
         "CORSMiddleware",
         "UnexpectedExceptionMiddleware",
     ]

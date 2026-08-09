@@ -21,8 +21,15 @@ def test_only_edge_publishes_host_ports() -> None:
 def test_caddy_derivative_is_pinned_non_root_and_needs_no_linux_capability() -> None:
     service = COMPOSE["services"]["reverse-proxy"]
 
-    assert CADDY_DOCKERFILE.startswith("FROM caddy:2.10.2-alpine@sha256:")
+    assert CADDY_DOCKERFILE.startswith(
+        "FROM caddy:2.11.4-alpine@sha256:"
+        "5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648"
+    )
+    assert "apk upgrade" not in CADDY_DOCKERFILE.lower()
+    assert ":latest" not in CADDY_DOCKERFILE.lower()
     assert "setcap -r /usr/bin/caddy" in CADDY_DOCKERFILE
+    assert "addgroup -S -g 10001" in CADDY_DOCKERFILE
+    assert "adduser -S -D -H -u 10001" in CADDY_DOCKERFILE
     assert "USER 10001:10001" in CADDY_DOCKERFILE
     assert service["user"] == "10001:10001"
     assert service["cap_drop"] == ["ALL"]

@@ -75,7 +75,11 @@ class NvdClient:
         )
         self._sleeper = sleeper
         self._owns_http_client = http_client is None
-        self._http_client = http_client or httpx.Client(timeout=DEFAULT_TIMEOUT)
+        self._http_client = http_client or httpx.Client(
+            timeout=DEFAULT_TIMEOUT,
+            follow_redirects=False,
+            trust_env=False,
+        )
 
     def fetch_page(
         self,
@@ -260,6 +264,13 @@ class NvdClient:
                         f"The NVD API returned HTTP {response.status_code}."
                     )
 
+                if not self._acceptable_content_type(
+                    response.headers.get("Content-Type")
+                ):
+                    raise NvdResponseError(
+                        "The NVD API returned an unsupported content type."
+                    )
+
                 content_length = self._valid_content_length(
                     response.headers.get("Content-Length")
                 )
@@ -299,6 +310,13 @@ class NvdClient:
         if not normalized.isascii() or not normalized.isdecimal():
             return None
         return int(normalized)
+
+    @staticmethod
+    def _acceptable_content_type(value: str | None) -> bool:
+        if value is None:
+            return True
+        media_type = value.split(";", maxsplit=1)[0].strip().lower()
+        return media_type == "application/json" or media_type.endswith("+json")
 
     @staticmethod
     def _format_datetime(value: datetime) -> str:

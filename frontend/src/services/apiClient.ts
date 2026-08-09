@@ -16,6 +16,9 @@ type ApiRequestOptions = RequestInit & Readonly<{
   notifyAuthentication?: boolean;
 }>;
 
+const UNSAFE_LOCAL_PATH_CHARACTER = /[\\\s\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}]/u;
+const MALFORMED_PERCENT_ESCAPE = /%(?![0-9a-f]{2})/i;
+
 function csrfToken(): string | null {
   if (typeof document === "undefined") {
     return null;
@@ -44,7 +47,12 @@ export async function apiFetch(
   path: string,
   options: ApiRequestOptions = {},
 ): Promise<Response> {
-  if (!path.startsWith("/api/")) {
+  if (
+    !path.startsWith("/api/") ||
+    path.includes("#") ||
+    UNSAFE_LOCAL_PATH_CHARACTER.test(path) ||
+    MALFORMED_PERCENT_ESCAPE.test(path)
+  ) {
     throw new Error("Only local API paths are permitted.");
   }
   const { notifyAuthentication = true, ...requestOptions } = options;

@@ -6,7 +6,6 @@ import pytest
 from app.ingestion.collectors.google_threat_intelligence_rss_client import (
     DEFAULT_TIMEOUT,
     GOOGLE_THREAT_INTELLIGENCE_FEED_URL,
-    MAX_REDIRECTS,
     MAX_RESPONSE_BYTES,
     USER_AGENT,
     GoogleThreatIntelligenceRssClient,
@@ -129,24 +128,6 @@ def test_chunked_response_crossing_two_mebibytes_is_rejected() -> None:
     assert "overflow" not in str(exc_info.value)
 
 
-def test_same_feedburner_host_redirect_is_followed_safely() -> None:
-    seen: list[str] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        seen.append(str(request.url))
-        if len(seen) == 1:
-            return httpx.Response(302, headers={"location": "/threatintelligence/next"})
-        return httpx.Response(200, headers={"content-type": "application/xml"}, content=RSS_BYTES)
-
-    result = client_for(handler).fetch_publications()
-
-    assert result.final_url == "https://feeds.feedburner.com/threatintelligence/next"
-    assert seen == [
-        GOOGLE_THREAT_INTELLIGENCE_FEED_URL,
-        "https://feeds.feedburner.com/threatintelligence/next",
-    ]
-
-
 @pytest.mark.parametrize(
     "content_type",
     ["application/atom+xml", "application/vnd.example.feed+xml", "text/xml"],
@@ -169,53 +150,34 @@ def test_xml_compatible_content_types_are_accepted(content_type: str) -> None:
 @pytest.mark.parametrize(
     "location",
     [
+        "https://feeds.feedburner.com/threatintelligence/alternate",
+        "https://feeds.feedburner.com/threatintelligence/alternate?token=REDIRECT_SECRET_CANARY",
+        "https://feeds.feedburner.com:444/threatintelligence/alternate",
         "http://feeds.feedburner.com/threatintelligence/next",
-        "https://cloud.google.com/blog/topics/threat-intelligence/post",
         "https://example.com/feed.xml",
         "https://user:pass@feeds.feedburner.com/feed.xml",
-        "https://@feeds.feedburner.com/feed.xml",
-        "https://feeds.feedburner.com:444/feed.xml",
-        "https://feeds.feedburner.com/feed.xml#frag",
-        "https://feeds.feedburner.com/feed.xml?token=secret",
     ],
 )
-def test_unsafe_redirect_targets_are_rejected(location: str) -> None:
+def test_every_redirect_is_rejected_without_second_request_or_disclosure(
+    location: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    seen: list[str] = []
+
     def handler(request: httpx.Request) -> httpx.Response:
-        del request
+        seen.append(str(request.url))
         return httpx.Response(302, headers={"location": location})
 
-    with pytest.raises(GoogleThreatRssRedirectError) as exc_info:
+    with pytest.raises(
+        GoogleThreatRssRedirectError,
+        match="does not permit redirects",
+    ) as exc_info:
         client_for(handler).fetch_publications()
+
+    assert seen == [GOOGLE_THREAT_INTELLIGENCE_FEED_URL]
     assert location not in str(exc_info.value)
-
-
-def test_sensitive_redirect_query_is_rejected_without_disclosure() -> None:
-    location = "https://feeds.feedburner.com/feed.xml?token=private-secret"
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        del request
-        return httpx.Response(302, headers={"location": location})
-
-    with pytest.raises(GoogleThreatRssRedirectError) as exc_info:
-        client_for(handler).fetch_publications()
-
-    assert "private-secret" not in str(exc_info.value)
-
-
-def test_missing_redirect_location_and_redirect_limit_are_rejected() -> None:
-    def missing_location(request: httpx.Request) -> httpx.Response:
-        del request
-        return httpx.Response(302)
-
-    with pytest.raises(GoogleThreatRssRedirectError, match="destination"):
-        client_for(missing_location).fetch_publications()
-
-    def loop(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(302, headers={"location": str(request.url)})
-
-    with pytest.raises(GoogleThreatRssRedirectError, match="limit"):
-        client_for(loop).fetch_publications()
-    assert MAX_REDIRECTS == 3
+    assert "REDIRECT_SECRET_CANARY" not in str(exc_info.value)
+    assert "REDIRECT_SECRET_CANARY" not in caplog.text
 
 
 @pytest.mark.parametrize(

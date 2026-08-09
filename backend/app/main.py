@@ -6,7 +6,7 @@ from fastapi import Depends, FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.api.v1.query_validation import (
     VALIDATION_ERROR_DETAIL,
@@ -39,6 +39,10 @@ configure_logging(settings.log_level)
 
 logger = logging.getLogger(__name__)
 INVALID_HOST_RESPONSE = "Invalid host header"
+MAX_REQUEST_BODY_BYTES = 1_000_000
+MAX_REQUEST_BODY_MESSAGES = 1_024
+REQUEST_BODY_TOO_LARGE_DETAIL = "The request body exceeds the configured limit."
+INVALID_REQUEST_BODY_DETAIL = "The request body is invalid."
 
 
 class ExactHostMiddleware:
@@ -88,6 +92,160 @@ class ExactHostMiddleware:
         await self.app(scope, receive, send)
 
 
+class RequestBodyLimitMiddleware:
+    """Bound every HTTP body before route parsing, including streamed bodies."""
+
+    def __init__(
+        self,
+        app: ASGIApp,
+        max_body_bytes: int,
+        max_body_messages: int = MAX_REQUEST_BODY_MESSAGES,
+    ) -> None:
+        if type(max_body_bytes) is not int or max_body_bytes < 1:
+            raise ValueError("The request body limit must be a positive integer.")
+        if type(max_body_messages) is not int or max_body_messages < 1:
+            raise ValueError("The request message limit must be a positive integer.")
+        self.app = app
+        self.max_body_bytes = max_body_bytes
+        self.max_body_messages = max_body_messages
+
+    async def __call__(
+        self,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+    ) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        declared_lengths = [
+            value
+            for name, value in scope.get("headers", [])
+            if name.lower() == b"content-length"
+        ]
+        if len(declared_lengths) > 1:
+            await self._reject(
+                scope,
+                receive,
+                send,
+                status.HTTP_400_BAD_REQUEST,
+                INVALID_REQUEST_BODY_DETAIL,
+            )
+            return
+        declared_length: int | None = None
+        if declared_lengths:
+            declared = declared_lengths[0]
+            if (
+                not isinstance(declared, bytes)
+                or len(declared) > 20
+                or not declared.isascii()
+                or not declared.isdigit()
+            ):
+                await self._reject(
+                    scope,
+                    receive,
+                    send,
+                    status.HTTP_400_BAD_REQUEST,
+                    INVALID_REQUEST_BODY_DETAIL,
+                )
+                return
+            declared_length = int(declared)
+            if declared_length > self.max_body_bytes:
+                await self._reject(
+                    scope,
+                    receive,
+                    send,
+                    status.HTTP_413_CONTENT_TOO_LARGE,
+                    REQUEST_BODY_TOO_LARGE_DETAIL,
+                )
+                return
+
+        body = bytearray()
+        message_count = 0
+        while True:
+            message = await receive()
+            message_count += 1
+            if message_count > self.max_body_messages:
+                await self._reject(
+                    scope,
+                    receive,
+                    send,
+                    status.HTTP_413_CONTENT_TOO_LARGE,
+                    REQUEST_BODY_TOO_LARGE_DETAIL,
+                )
+                return
+            if not isinstance(message, dict) or message.get("type") != "http.request":
+                await self._reject(
+                    scope,
+                    receive,
+                    send,
+                    status.HTTP_400_BAD_REQUEST,
+                    INVALID_REQUEST_BODY_DETAIL,
+                )
+                return
+            chunk = message.get("body", b"")
+            more_body = message.get("more_body", False)
+            if not isinstance(chunk, bytes) or not isinstance(more_body, bool):
+                await self._reject(
+                    scope,
+                    receive,
+                    send,
+                    status.HTTP_400_BAD_REQUEST,
+                    INVALID_REQUEST_BODY_DETAIL,
+                )
+                return
+            if len(body) + len(chunk) > self.max_body_bytes:
+                await self._reject(
+                    scope,
+                    receive,
+                    send,
+                    status.HTTP_413_CONTENT_TOO_LARGE,
+                    REQUEST_BODY_TOO_LARGE_DETAIL,
+                )
+                return
+            body.extend(chunk)
+            if not more_body:
+                break
+
+        if declared_length is not None and declared_length != len(body):
+            await self._reject(
+                scope,
+                receive,
+                send,
+                status.HTTP_400_BAD_REQUEST,
+                INVALID_REQUEST_BODY_DETAIL,
+            )
+            return
+
+        complete_body = bytes(body)
+        replayed = False
+
+        async def replay() -> Message:
+            nonlocal replayed
+            if not replayed:
+                replayed = True
+                return {
+                    "type": "http.request",
+                    "body": complete_body,
+                    "more_body": False,
+                }
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        await self.app(scope, replay, send)
+
+    @staticmethod
+    async def _reject(
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+        status_code: int,
+        detail: str,
+    ) -> None:
+        response = JSONResponse(status_code=status_code, content={"detail": detail})
+        await response(scope, receive, send)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     """Run application startup and shutdown tasks."""
@@ -117,7 +275,14 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
     allow_headers=["Content-Type", "X-CSRF-Token"],
 )
-# Exact Host validation is independent of CORS and protects non-browser clients.
+# The edge applies the same ceiling, but the backend remains safe when reached
+# directly on its private network.
+app.add_middleware(
+    RequestBodyLimitMiddleware,
+    max_body_bytes=MAX_REQUEST_BODY_BYTES,
+)
+# Exact Host validation is independent of CORS, protects non-browser clients,
+# and rejects unknown authorities before the request body is buffered.
 app.add_middleware(
     ExactHostMiddleware,
     allowed_hosts=settings.trusted_hosts_list,
