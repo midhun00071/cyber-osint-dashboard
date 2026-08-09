@@ -22,6 +22,7 @@ const ALLOWED_RETURN_PATHS = new Set([
   "/", "/threat-feed", "/vulnerabilities", "/uae-intelligence",
   "/ioc-search", "/sources", "/operations", "/ingestion-operations",
   "/run-history", "/admin/users",
+  "/reports", "/system-health", "/audit-log", "/methodology",
 ]);
 const DETAIL_RETURN_PATH = /^\/(?:articles|vulnerabilities)\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

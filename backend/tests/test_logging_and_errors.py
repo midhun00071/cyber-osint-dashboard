@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import json
 from collections.abc import Iterator
 from contextlib import contextmanager
 from uuid import UUID, uuid4
@@ -16,6 +17,7 @@ from app.core.logging_config import (
     APPLICATION_HANDLER_MARKER,
     APPLICATION_LOGGER_NAME,
     configure_logging,
+    UtcJsonFormatter,
 )
 from app.core.request_context import REQUEST_ID_HEADER, UNEXPECTED_ERROR_DETAIL
 from app.core.security_headers import API_CONTENT_SECURITY_POLICY, SECURITY_HEADERS
@@ -369,6 +371,38 @@ def test_repeated_logging_configuration_keeps_one_managed_handler() -> None:
     assert managed_handlers[0].level == logging.INFO
     assert third.propagate is False
     assert logging.getLogger("uvicorn.access").disabled is True
+
+
+def test_json_formatter_emits_only_allow_listed_structured_fields() -> None:
+    record = logging.LogRecord(
+        "app.request",
+        logging.INFO,
+        __file__,
+        1,
+        (
+            "event=request_completed request_id=00000000-0000-4000-8000-000000000000 "
+            "method=GET route=/api/health status_code=200 duration_ms=1.25 "
+            f"authorization={TOKEN_CANARY}"
+        ),
+        (),
+        None,
+    )
+
+    document = json.loads(UtcJsonFormatter().format(record))
+
+    assert document == {
+        "duration_ms": "1.25",
+        "event": "request_completed",
+        "level": "INFO",
+        "logger": "app.request",
+        "method": "GET",
+        "request_id": "00000000-0000-4000-8000-000000000000",
+        "route": "/api/health",
+        "status_code": "200",
+        "timestamp": document["timestamp"],
+    }
+    assert document["timestamp"].endswith("Z")
+    assert TOKEN_CANARY not in json.dumps(document)
 
 
 def test_invalid_logging_configuration_does_not_change_handlers_or_leak() -> None:

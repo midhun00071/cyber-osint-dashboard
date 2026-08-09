@@ -54,4 +54,17 @@ describe("API client public configuration", () => {
 
     expect(API_BASE_URL).toBe("http://localhost:8000");
   });
+
+  test("preserves an explicit bounded Accept header for binary reports", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    vi.stubEnv("NEXT_PUBLIC_APP_ENV", "test");
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "http://localhost:8000");
+    const fetchMock = vi.fn().mockResolvedValue(new Response("safe", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { apiFetch } = await import("@/services/apiClient");
+    await apiFetch("/api/v1/reports/export", { method: "POST", headers: { Accept: "application/pdf" }, body: "{}" });
+    const headers = fetchMock.mock.calls[0][1].headers as Headers;
+    expect(headers.get("Accept")).toBe("application/pdf");
+    expect(headers.get("Content-Type")).toBe("application/json");
+  });
 });

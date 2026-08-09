@@ -1,11 +1,13 @@
 name: alpha-data-production
 
-x-application-security: &application-security
+x-runtime-security: &runtime-security
   init: true
+  restart: unless-stopped
   security_opt:
     - no-new-privileges:true
   cap_drop:
     - ALL
+  pids_limit: 256
   logging:
     driver: local
     options:
@@ -14,7 +16,8 @@ x-application-security: &application-security
 
 services:
   db:
-    image: postgres:17-alpine
+    image: "alpha-data-postgres:${IMAGE_TAG:-c09}"
+    build: { context: ./database, dockerfile: Dockerfile.prod }
     user: postgres
     restart: unless-stopped
     environment:
@@ -26,47 +29,39 @@ services:
       POSTGRES_MIGRATION_USER: "${POSTGRES_MIGRATION_USER:?POSTGRES_MIGRATION_USER must be set}"
       POSTGRES_MIGRATION_PASSWORD_FILE: /run/secrets/postgres_migration_password
       POSTGRES_APP_SCHEMA: public
-    secrets:
-      - postgres_bootstrap_password
-      - postgres_app_password
-      - postgres_migration_password
+    secrets: [postgres_bootstrap_password, postgres_app_password, postgres_migration_password]
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./database/init/10-provision-database-roles.sh:/docker-entrypoint-initdb.d/10-provision-database-roles.sh:ro
-      - ./database/init/11-apply-database-grants.sql:/opt/alpha-data/database/11-apply-database-grants.sql:ro
     healthcheck:
-      test:
-        - CMD-SHELL
-        - 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"'
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 10s
       timeout: 5s
       retries: 10
       start_period: 10s
-    networks:
-      - database
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    logging:
-      driver: local
-      options:
-        max-size: "10m"
-        max-file: "3"
+    networks: [database]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    pids_limit: 256
+    mem_limit: 1g
+    cpus: 1.0
+    logging: { driver: local, options: { max-size: "10m", max-file: "3" } }
 
   backend:
-    <<: *application-security
-    image: "alpha-data-backend:${IMAGE_TAG:-p7-01}"
-    build:
-      context: ./backend
-      dockerfile: Dockerfile.prod
-    restart: unless-stopped
+    <<: *runtime-security
+    image: "alpha-data-backend:${IMAGE_TAG:-c09}"
+    build: { context: ./backend, dockerfile: Dockerfile.prod }
+    read_only: true
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    mem_limit: 1g
+    cpus: 1.0
     environment:
       APP_NAME: "${APP_NAME:-Cyber OSINT Dashboard}"
       APP_VERSION: "${APP_VERSION:-0.1.0}"
+      APP_COMMIT_SHA: "${APP_COMMIT_SHA:?APP_COMMIT_SHA must be set}"
       APP_ENV: production
       DEBUG: "false"
       LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      PREFECT_HOME: /tmp/prefect
       POSTGRES_HOST: db
       POSTGRES_PORT: "5432"
       POSTGRES_DB: "${POSTGRES_DB:?POSTGRES_DB must be set}"
@@ -77,8 +72,9 @@ services:
       DATABASE_POOL_TIMEOUT_SECONDS: "${DATABASE_POOL_TIMEOUT_SECONDS:-30}"
       DATABASE_POOL_RECYCLE_SECONDS: "${DATABASE_POOL_RECYCLE_SECONDS:-1800}"
       DATABASE_CONNECT_TIMEOUT_SECONDS: "${DATABASE_CONNECT_TIMEOUT_SECONDS:-10}"
+      STORAGE_CAPACITY_BYTES: "${STORAGE_CAPACITY_BYTES:-}"
       BACKEND_CORS_ALLOWED_ORIGINS: "${BACKEND_CORS_ALLOWED_ORIGINS:?BACKEND_CORS_ALLOWED_ORIGINS must be set}"
-      BACKEND_TRUSTED_HOSTS: "${BACKEND_TRUSTED_HOSTS:?BACKEND_TRUSTED_HOSTS must be set}"
+      BACKEND_TRUSTED_HOSTS: "${BACKEND_TRUSTED_HOSTS:?BACKEND_TRUSTED_HOSTS must be set},backend"
       AUTH_COOKIE_SECURE: "true"
       AUTH_SESSION_TTL_MINUTES: "${AUTH_SESSION_TTL_MINUTES:-60}"
       AUTH_SESSION_ABSOLUTE_TTL_MINUTES: "${AUTH_SESSION_ABSOLUTE_TTL_MINUTES:-480}"
@@ -87,71 +83,54 @@ services:
       AUTH_LOGIN_FAILURE_WINDOW_SECONDS: "${AUTH_LOGIN_FAILURE_WINDOW_SECONDS:-900}"
       AUTH_LOGIN_BLOCK_SECONDS: "${AUTH_LOGIN_BLOCK_SECONDS:-900}"
       ENABLE_ADMIN_INGESTION: "false"
-    ports:
-      - "${BACKEND_BIND_ADDRESS:-127.0.0.1}:${BACKEND_PORT:-8000}:8000"
     depends_on:
-      db:
-        condition: service_healthy
-        restart: true
+      db: { condition: service_healthy, restart: true }
+      prefect-server: { condition: service_healthy, restart: true }
     healthcheck:
-      test:
-        - CMD
-        - python
-        - -c
-        - "import urllib.request; from app.core.config import get_settings; request = urllib.request.Request('http://127.0.0.1:8000/api/health', headers={'Host': get_settings().trusted_hosts_list[0]}); urllib.request.urlopen(request, timeout=3).read()"
+      test: ["CMD", "python", "-c", "import urllib.request; from app.core.config import get_settings; request = urllib.request.Request('http://127.0.0.1:8000/api/health', headers={'Host': get_settings().trusted_hosts_list[0]}); urllib.request.urlopen(request, timeout=3).read()"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 10s
-    networks:
-      - application
-      - database
-    secrets:
-      - postgres_app_password
+    networks: [edge, database, orchestration, monitoring]
+    secrets: [postgres_app_password]
 
   frontend:
-    <<: *application-security
-    image: "alpha-data-frontend:${IMAGE_TAG:-p7-01}"
+    <<: *runtime-security
+    image: "alpha-data-frontend:${IMAGE_TAG:-c09}"
     build:
       context: ./frontend
       dockerfile: Dockerfile.prod
       args:
         APP_ENV: production
         NEXT_PUBLIC_API_BASE_URL: "${NEXT_PUBLIC_API_BASE_URL:?NEXT_PUBLIC_API_BASE_URL must be set}"
-    restart: unless-stopped
-    ports:
-      - "${FRONTEND_BIND_ADDRESS:-127.0.0.1}:${FRONTEND_PORT:-3000}:3000"
+    read_only: true
+    tmpfs: ["/tmp:size=32m,mode=1777"]
+    mem_limit: 512m
+    cpus: 0.75
     depends_on:
-      backend:
-        condition: service_healthy
-        restart: true
+      backend: { condition: service_healthy, restart: true }
     healthcheck:
-      test:
-        - CMD
-        - node
-        - -e
-        - "fetch('http://127.0.0.1:3000/').then(response => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1))"
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 10s
-    networks:
-      - application
+    networks: [edge]
 
   migrate:
-    <<: *application-security
-    image: "alpha-data-backend:${IMAGE_TAG:-p7-01}"
-    profiles:
-      - migration
+    <<: *runtime-security
+    image: "alpha-data-backend:${IMAGE_TAG:-c09}"
+    profiles: [migration]
     restart: "no"
-    command:
-      - alembic
-      - -c
-      - /app/alembic.ini
-      - upgrade
-      - head
+    read_only: true
+    tmpfs: ["/tmp:size=32m,mode=1777"]
+    mem_limit: 512m
+    cpus: 0.5
+    command: ["alembic", "-c", "/app/alembic.ini", "upgrade", "head"]
     environment:
       APP_ENV: production
+      APP_COMMIT_SHA: "${APP_COMMIT_SHA:?APP_COMMIT_SHA must be set}"
       DEBUG: "false"
       LOG_LEVEL: "${LOG_LEVEL:-INFO}"
       POSTGRES_HOST: db
@@ -168,62 +147,45 @@ services:
       BACKEND_TRUSTED_HOSTS: "${BACKEND_TRUSTED_HOSTS:?BACKEND_TRUSTED_HOSTS must be set}"
       AUTH_COOKIE_SECURE: "true"
       ENABLE_ADMIN_INGESTION: "false"
-    depends_on:
-      db:
-        condition: service_healthy
-    networks:
-      - database
-    secrets:
-      - postgres_migration_password
+    depends_on: { db: { condition: service_healthy } }
+    networks: [database]
+    secrets: [postgres_migration_password]
 
   prefect-server:
-    <<: *application-security
+    <<: *runtime-security
     image: alpha-data-prefect:3.8.1-python3.13
-    build:
-      context: .
-      dockerfile: prefect/Dockerfile
+    build: { context: ., dockerfile: prefect/Dockerfile }
     user: "10001:10001"
-    restart: unless-stopped
+    read_only: true
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    mem_limit: 1g
+    cpus: 1.0
     command: ["prefect", "server", "start", "--host", "0.0.0.0", "--port", "4200"]
-    environment:
-      PREFECT_HOME: /var/lib/prefect
-    volumes:
-      - prefect_data:/var/lib/prefect
+    environment: { PREFECT_HOME: /var/lib/prefect }
+    volumes: ["prefect_data:/var/lib/prefect"]
     healthcheck:
-      test:
-        - CMD
-        - python
-        - -c
-        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4200/api/health', timeout=3).read()"
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4200/api/health',timeout=3).read()"]
       interval: 10s
       timeout: 5s
       retries: 12
       start_period: 20s
-    networks:
-      - orchestration
+    networks: [orchestration]
 
   prefect-worker:
-    <<: *application-security
+    <<: *runtime-security
     image: alpha-data-prefect:3.8.1-python3.13
-    build:
-      context: .
-      dockerfile: prefect/Dockerfile
+    build: { context: ., dockerfile: prefect/Dockerfile }
     user: "10001:10001"
-    restart: unless-stopped
-    command:
-      - prefect
-      - worker
-      - start
-      - --pool
-      - alpha-data-process
-      - --type
-      - process
-      - --with-healthcheck
-      - --create-pool-if-not-found
+    read_only: true
+    tmpfs: ["/tmp:size=64m,mode=1777", "/var/lib/prefect:size=64m,uid=10001,gid=10001,mode=0700"]
+    mem_limit: 1g
+    cpus: 1.0
+    command: ["prefect", "worker", "start", "--pool", "alpha-data-process", "--type", "process", "--with-healthcheck", "--create-pool-if-not-found"]
     environment:
       PREFECT_HOME: /var/lib/prefect
       PREFECT_API_URL: http://prefect-server:4200/api
       APP_ENV: production
+      APP_COMMIT_SHA: "${APP_COMMIT_SHA:?APP_COMMIT_SHA must be set}"
       DEBUG: "false"
       POSTGRES_HOST: db
       POSTGRES_PORT: "5432"
@@ -238,29 +200,94 @@ services:
       BACKEND_CORS_ALLOWED_ORIGINS: "${BACKEND_CORS_ALLOWED_ORIGINS:?BACKEND_CORS_ALLOWED_ORIGINS must be set}"
       BACKEND_TRUSTED_HOSTS: "${BACKEND_TRUSTED_HOSTS:?BACKEND_TRUSTED_HOSTS must be set}"
       AUTH_COOKIE_SECURE: "true"
-    depends_on:
-      prefect-server:
-        condition: service_healthy
-        restart: true
+    depends_on: { prefect-server: { condition: service_healthy, restart: true } }
     healthcheck:
-      test:
-        - CMD
-        - python
-        - -c
-        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3).read()"
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health',timeout=3).read()"]
       interval: 10s
       timeout: 5s
       retries: 6
       start_period: 20s
-    networks:
-      - orchestration
-      - database
-    secrets:
-      - postgres_app_password
+    networks: [orchestration, database]
+    secrets: [postgres_app_password]
+
+  reverse-proxy:
+    <<: *runtime-security
+    image: "alpha-data-caddy:${IMAGE_TAG:-c09}"
+    build: { context: ./ops/caddy, dockerfile: Dockerfile }
+    user: "10001:10001"
+    read_only: true
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+    environment:
+      EDGE_HOST: "${EDGE_HOST:?EDGE_HOST must be set}"
+      EDGE_HTTPS_PORT: "${EDGE_HTTPS_PORT:?EDGE_HTTPS_PORT must be set}"
+      EDGE_TLS_MODE: "${EDGE_TLS_MODE:-}"
+    ports:
+      - "${EDGE_BIND_ADDRESS:?EDGE_BIND_ADDRESS must be set}:${EDGE_HTTP_PORT:?EDGE_HTTP_PORT must be set}:8080"
+      - "${EDGE_BIND_ADDRESS:?EDGE_BIND_ADDRESS must be set}:${EDGE_HTTPS_PORT:?EDGE_HTTPS_PORT must be set}:8443"
+    volumes:
+      - ./ops/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    tmpfs: ["/tmp:size=32m,mode=1777"]
+    depends_on:
+      frontend: { condition: service_healthy, restart: true }
+      backend: { condition: service_healthy, restart: true }
+    healthcheck:
+      test: ["CMD", "caddy", "validate", "--config", "/etc/caddy/Caddyfile"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks: [edge]
+
+  prometheus:
+    <<: *runtime-security
+    image: prom/prometheus:v3.7.3@sha256:49214755b6153f90a597adcbff0252cc61069f8ab69ce8411285cd4a560e8038
+    user: nobody
+    read_only: true
+    mem_limit: 512m
+    cpus: 0.5
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus", "--storage.tsdb.retention.time=15d", "--storage.tsdb.retention.size=2GB"]
+    volumes:
+      - ./ops/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./ops/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    healthcheck:
+      test: ["CMD", "/bin/promtool", "check", "config", "/etc/prometheus/prometheus.yml"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      backend: { condition: service_healthy, restart: true }
+      alertmanager: { condition: service_healthy, restart: true }
+    networks: [monitoring]
+
+  alertmanager:
+    <<: *runtime-security
+    image: prom/alertmanager:v0.28.1@sha256:27c475db5fb156cab31d5c18a4251ac7ed567746a2483ff264516437a39b15ba
+    user: nobody
+    read_only: true
+    mem_limit: 256m
+    cpus: 0.25
+    pids_limit: 128
+    command: ["--config.file=/etc/alertmanager/alertmanager.yml", "--storage.path=/alertmanager"]
+    volumes: ["./ops/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro"]
+    tmpfs: ["/alertmanager:size=32m,uid=65534,gid=65534,mode=0700", "/tmp:size=16m,mode=1777"]
+    healthcheck:
+      test: ["CMD", "/bin/amtool", "check-config", "/etc/alertmanager/alertmanager.yml"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks: [monitoring]
 
 volumes:
   postgres_data:
   prefect_data:
+  caddy_data:
+  caddy_config:
+  prometheus_data:
 
 secrets:
   postgres_bootstrap_password:
@@ -269,13 +296,15 @@ secrets:
     file: "${POSTGRES_APP_PASSWORD_SECRET_FILE:?POSTGRES_APP_PASSWORD_SECRET_FILE must be set}"
   postgres_migration_password:
     file: "${POSTGRES_MIGRATION_PASSWORD_SECRET_FILE:?POSTGRES_MIGRATION_PASSWORD_SECRET_FILE must be set}"
+  postgres_backup_password:
+    file: "${POSTGRES_BACKUP_PASSWORD_SECRET_FILE:?POSTGRES_BACKUP_PASSWORD_SECRET_FILE must be set}"
+  age_recipient:
+    file: "${AGE_RECIPIENT_FILE:?AGE_RECIPIENT_FILE must be set}"
+  age_identity:
+    file: "${AGE_IDENTITY_FILE:?AGE_IDENTITY_FILE must be set}"
 
 networks:
-  application:
-    driver: bridge
-  database:
-    driver: bridge
-    internal: true
-  orchestration:
-    driver: bridge
-    internal: true
+  edge: { driver: bridge }
+  database: { driver: bridge, internal: true }
+  orchestration: { driver: bridge }
+  monitoring: { driver: bridge, internal: true }

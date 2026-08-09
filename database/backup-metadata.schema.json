@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://alpha-data.invalid/schemas/backup-metadata-v1.schema.json",
+  "$id": "https://alpha-data.invalid/schemas/backup-metadata-v2.schema.json",
   "title": "Alpha Data logical backup metadata",
-  "description": "Non-secret metadata contract for future B9-05 logical backup evidence. Conformance does not prove backup success or recoverability.",
+  "description": "Non-secret metadata contract for C09 encrypted PostgreSQL logical backup evidence. Conformance alone does not prove recoverability.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -19,11 +19,12 @@
     "checksum_value",
     "artifact_size_bytes",
     "artifact_reference",
+    "row_counts",
     "safe_summary"
   ],
   "properties": {
     "metadata_format_version": {
-      "const": "1.0"
+      "const": "2.0"
     },
     "backup_identifier": {
       "type": "string",
@@ -74,6 +75,16 @@
       "minLength": 21,
       "maxLength": 110,
       "pattern": "^artifact_ref_[A-Za-z0-9][A-Za-z0-9_-]{8,96}$"
+    },
+    "row_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["intelligence_items", "ingestion_cycles", "ingestion_runs"],
+      "properties": {
+        "intelligence_items": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
+        "ingestion_cycles": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
+        "ingestion_runs": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807}
+      }
     },
     "safe_summary": {
       "type": "string",

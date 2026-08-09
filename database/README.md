@@ -50,19 +50,29 @@ for runtime, read-only, backup, or retention roles; rerunning provisioning
 grants access only to the recognized current tables and owned sequences.
 
 The bootstrap identity administers initialization only. Migration owns/manages
-schema objects. Runtime receives required DML but no DDL, truncate, role
+schema objects. Runtime receives required DML, including the C07 threat-graph
+tables, and read-only migration-head evidence, but no DDL, truncate, role
 administration, ownership, or deletion. Read-only and logical-backup roles can
-select only. Retention can read only the operational evidence needed for dry-run
-planning and has no destructive privilege.
+select only; logical backup can also read migration-head evidence and application
+sequence state required for a complete dump. Retention can read only the
+operational evidence needed for dry-run planning and has no destructive
+privilege. An isolated restore reapplies this fixed grant contract as the
+migration owner before the distinct runtime identity proves readability.
 
 ## Backup metadata
 
 `backup-metadata.schema.json` is a strict, versioned, non-secret metadata
-contract for future B9-05 evidence. It does not create a backup and does not
-prove restore, recoverability, RPO, or RTO. APR-11 remains pending.
+contract used by the C09 encrypted logical-backup tool. Version 2 records only
+safe identifiers, encryption/checksum state, Alembic revision, bounded row
+counts, artifact size/reference, and a sanitized summary. Schema conformance
+alone does not prove restore, recoverability, RPO, or RTO.
 
 ## Current status
 
-B1-05 implementation is dry-run and review-oriented. No staging or production
-role provisioning, retention deletion, backup, or restore is claimed. APR-09,
-APR-10, and APR-11 remain approval dependencies.
+B1-05 role boundaries remain unchanged. `alpha_data_backup` stays NOLOGIN and
+SELECT-only. C09 production backup requires a separately and externally
+provisioned least-privilege BACKUP LOGIN whose credential is supplied only by
+file reference; the tool rejects obvious privileged-role flags. Automated
+restore is isolated and never targets the active database. No production
+backup/restore or off-host transfer is claimed; APR-09, APR-10, and APR-11
+remain approval dependencies.

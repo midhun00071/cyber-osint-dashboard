@@ -21,6 +21,9 @@ from app.api.v1.routes.dashboard import router as dashboard_router
 from app.api.v1.routes.health import router as health_router
 from app.api.v1.routes.intelligence import router as intelligence_router
 from app.api.v1.routes.operations import router as operations_router
+from app.api.v1.routes.reports import router as reports_router
+from app.api.v1.routes.system import router as system_router
+from app.api.v1.routes.internal_metrics import router as internal_metrics_router
 from app.api.v1.routes.version import router as version_router
 from app.core.config import MAX_HTTP_HOST_HEADER_BYTES, Settings, get_settings
 from app.core.logging_config import configure_logging
@@ -134,6 +137,9 @@ app.include_router(auth_router, prefix="/api/v1")
 app.include_router(admin_users_router, prefix="/api/v1")
 app.include_router(audit_router, prefix="/api/v1")
 app.include_router(operations_router, prefix="/api/v1")
+app.include_router(reports_router, prefix="/api/v1")
+app.include_router(system_router, prefix="/api/v1")
+app.include_router(internal_metrics_router)
 validate_no_query_parameters = validate_query_parameters(set())
 
 

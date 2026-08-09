@@ -168,6 +168,116 @@
   border-bottom: 1px solid var(--border-color, #243752);
 }
 
+/* C09 reporting, health, audit, and methodology */
+.c09Form,
+.auditFilters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 1rem;
+  align-items: end;
+  padding: 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--surface-soft);
+}
+
+.c09Form label,
+.auditFilters label {
+  display: grid;
+  gap: 0.4rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.c09Form input,
+.c09Form select,
+.auditFilters input,
+.auditFilters select,
+.c09Form button,
+.auditFilters button {
+  min-height: 2.7rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: #0b1a2f;
+  color: var(--text);
+}
+
+.c09Form button,
+.auditFilters button {
+  cursor: pointer;
+  background: #173b6d;
+}
+
+.healthSummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.5rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--surface-soft);
+}
+
+.healthComponentGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 1rem;
+}
+
+.healthComponent {
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-left-width: 0.35rem;
+  border-radius: 0.75rem;
+  background: var(--surface-soft);
+}
+
+.healthComponent h2 {
+  font-size: 1rem;
+  text-transform: capitalize;
+}
+
+.healthComponent p,
+.healthComponent dl {
+  margin-top: 0.6rem;
+  color: var(--text-muted);
+}
+
+.healthComponent dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.health-healthy { border-color: var(--success); }
+.health-degraded,
+.health-stale { border-color: var(--warning); }
+.health-unhealthy { border-color: var(--critical); }
+.health-disabled,
+.health-unknown { border-color: var(--text-muted); }
+
+.methodologyPage {
+  display: grid;
+  gap: 1.25rem;
+  max-width: 72rem;
+}
+
+.methodologyPage section {
+  display: grid;
+  gap: 0.65rem;
+  padding: 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--surface-soft);
+}
+
+.methodologyPage ul {
+  display: grid;
+  gap: 0.5rem;
+}
+
 * {
   box-sizing: border-box;
 }

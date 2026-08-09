@@ -44,6 +44,14 @@ HISTORY_STATUSES = frozenset(
 TRIGGER_TYPES = frozenset({"scheduled", "manual", "retry"})
 CYCLE_STATUSES = frozenset({"running", "success", "partial", "failed", "cancelled"})
 CYCLE_TRIGGERS = frozenset({"scheduled", "manual", "legacy_import"})
+MAX_DERIVED_SOURCE_SCAN = 500
+SOURCE_EFFECTIVE_STATES = frozenset(
+    {
+        "not_implemented", "policy_disabled", "disabled", "paused",
+        "licence_required", "credentials_required", "quota_unavailable",
+        "rate_limited", "active", "eligible",
+    }
+)
 
 
 class OperationsQueryError(RuntimeError):
@@ -82,25 +90,32 @@ class OperationsQueryService:
         _page(limit, offset, maximum=100)
         if operator_state is not None and operator_state not in {"enabled", "paused", "disabled"}:
             raise OperationsQueryInputError("Invalid source query.")
+        if effective_state is not None and effective_state not in SOURCE_EFFECTIVE_STATES:
+            raise OperationsQueryInputError("Invalid source query.")
         query = select(IntelligenceSource)
+        count_query = select(func.count(IntelligenceSource.id))
         if operator_state is not None:
             query = query.where(IntelligenceSource.operator_state == operator_state)
+            count_query = count_query.where(IntelligenceSource.operator_state == operator_state)
         try:
+            inventory_count = int(self._session.scalar(count_query) or 0)
+            ordered = query.order_by(IntelligenceSource.slug)
+            if effective_state is None:
+                rows = self._session.scalars(
+                    ordered.offset(offset).limit(limit)
+                ).all()
+                return [self._source_record(row, permissions) for row in rows], inventory_count
+            if inventory_count > MAX_DERIVED_SOURCE_SCAN:
+                raise OperationsQueryError(
+                    "Source operations exceed the bounded derived-state inventory limit."
+                )
             rows = self._session.scalars(
-                query.order_by(IntelligenceSource.slug)
+                ordered.limit(MAX_DERIVED_SOURCE_SCAN)
             ).all()
             items = [self._source_record(row, permissions) for row in rows]
         except (SQLAlchemyError, SourceRegistryError):
             raise OperationsQueryError("Source operations could not be loaded.") from None
-        if effective_state is not None:
-            allowed = {
-                "not_implemented", "policy_disabled", "disabled", "paused",
-                "licence_required", "credentials_required", "quota_unavailable",
-                "rate_limited", "active", "eligible",
-            }
-            if effective_state not in allowed:
-                raise OperationsQueryInputError("Invalid source query.")
-            items = [item for item in items if item["effective_state"] == effective_state]
+        items = [item for item in items if item["effective_state"] == effective_state]
         total = len(items)
         return items[offset : offset + limit], total
 

@@ -1513,3 +1513,21 @@ provenance exposes at most 25 source records, 20 import-run records per source,
 16 controlled classification tags, and 100 linked indicators. List indicator
 counts use SQL aggregates and do not load the counted relationships. The UAE
 list selects only one deterministic primary/fallback source record per item.
+
+## 25. C09 reports, system health, and private metrics
+
+`GET /api/v1/reports/catalog` requires `report.read`. `POST
+/api/v1/reports/export` requires `report.export` plus existing Origin/CSRF
+validation and accepts only `uae_intelligence|source_operations`, `csv|pdf`,
+and a strict integer limit of 1–100. Exports use allow-listed fields, 500-character
+cells, a 2 MiB output ceiling, server filenames, `no-store`, and `nosniff`.
+Successful output is returned only after audit evidence commits.
+
+`GET /api/v1/system/health` requires `source.read`, is `no-store`, and returns
+eight bounded components with `healthy|degraded|unhealthy|stale|disabled|unknown`
+states plus version, full commit SHA, and UTC generation time. Internal Prefect
+probe URLs are fixed in code and never caller-controlled.
+
+`GET /internal/metrics` is private, excluded from OpenAPI, and not routed by
+Caddy. `/api/v1/audit/events` remains the existing administrator-only bounded
+search contract; C09 adds no raw audit export.

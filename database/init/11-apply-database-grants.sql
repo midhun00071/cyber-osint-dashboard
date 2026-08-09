@@ -67,14 +67,16 @@ DECLARE
         'intelligence_item_tags', 'intelligence_items', 'intelligence_sources',
         'quarantined_records', 'source_checkpoints',
         'source_credential_references', 'source_rate_limit_states',
-        'source_records', 'source_watermarks', 'tags', 'vulnerabilities'
+        'source_records', 'source_watermarks', 'tags', 'threat_entities',
+        'threat_entity_aliases', 'threat_relationships', 'vulnerabilities'
     ];
     runtime_update_tables constant text[] := ARRAY[
         'auth_local_credentials', 'auth_login_throttles', 'auth_sessions',
         'auth_user_roles', 'auth_users', 'indicators', 'ingestion_cycles', 'ingestion_runs',
         'intelligence_items', 'intelligence_sources', 'quarantined_records',
         'source_credential_references', 'source_rate_limit_states',
-        'source_records', 'vulnerabilities'
+        'source_records', 'threat_entities', 'threat_entity_aliases',
+        'threat_relationships', 'vulnerabilities'
     ];
     retention_read_tables constant text[] := ARRAY[
         'audit_events', 'ingestion_errors', 'ingestion_run_records',
@@ -152,6 +154,21 @@ BEGIN
         END IF;
     END LOOP;
 
+    IF to_regclass(format('%I.alembic_version', schema_name)) IS NOT NULL THEN
+        EXECUTE format(
+            'GRANT SELECT ON TABLE %I.alembic_version TO %I',
+            schema_name, app_login
+        );
+        EXECUTE format(
+            'GRANT SELECT ON TABLE %I.alembic_version TO %I',
+            schema_name, readonly_role
+        );
+        EXECUTE format(
+            'GRANT SELECT ON TABLE %I.alembic_version TO %I',
+            schema_name, backup_role
+        );
+    END IF;
+
     FOREACH table_name IN ARRAY runtime_update_tables
     LOOP
         IF to_regclass(format('%I.%I', schema_name, table_name)) IS NOT NULL THEN
@@ -191,6 +208,10 @@ BEGIN
         EXECUTE format(
             'GRANT USAGE, SELECT ON SEQUENCE %I.%I TO %I',
             schema_name, object_record.relname, app_login
+        );
+        EXECUTE format(
+            'GRANT SELECT ON SEQUENCE %I.%I TO %I',
+            schema_name, object_record.relname, backup_role
         );
     END LOOP;
 

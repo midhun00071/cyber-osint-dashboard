@@ -367,3 +367,26 @@ loaded.
 - Frontend public build variables require a rebuild and redeployment.
 - Completed environment files must never be included in review ZIPs, task
   sheets, reports, screenshots, or uploaded artifacts.
+
+## C09 edge, monitoring, and backup references
+
+Production now requires explicit `EDGE_HOST`, edge bind/ports, same-origin
+frontend API URL, exact backend HTTPS origin/Host, and `APP_COMMIT_SHA`. An
+optional trustworthy `STORAGE_CAPACITY_BYTES` enables capacity classification;
+blank means unknown.
+
+The explicit edge variables are `EDGE_BIND_ADDRESS`, `EDGE_HTTP_PORT`,
+`EDGE_HTTPS_PORT`, and `EDGE_TLS_MODE`. Backup policy is configured with
+`BACKUP_DESTINATION_ROOT`, `BACKUP_RETENTION_DAILY`,
+`BACKUP_RETENTION_WEEKLY`, and `BACKUP_RETENTION_MONTHLY`.
+
+Backup uses separate `POSTGRES_BACKUP_*` and `POSTGRES_RESTORE_*` components,
+never `DATABASE_URL`. Passwords, age recipient, and age identity are regular
+bounded non-symlink file references. The backup LOGIN is externally provisioned
+and must not reuse runtime, migration, bootstrap, or the NOLOGIN backup role.
+The corresponding operator references are `POSTGRES_BACKUP_USER`,
+`POSTGRES_BACKUP_PASSWORD_SECRET_FILE`, `AGE_RECIPIENT_FILE`, and
+`AGE_IDENTITY_FILE`.
+The backup destination must exist outside the repository. Alert recipient
+credentials are intentionally absent pending owner/provider approval. Follow
+the rotation sequence in `c09-production-operations-recovery.md`.

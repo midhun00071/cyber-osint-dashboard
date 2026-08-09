@@ -122,6 +122,8 @@ def require_permission(permission: Permission) -> Callable[..., AuthenticatedPri
 require_content_read = require_permission(Permission.CONTENT_READ)
 require_source_read = require_permission(Permission.SOURCE_READ)
 require_analysis_use = require_permission(Permission.ANALYSIS_USE)
+require_report_read = require_permission(Permission.REPORT_READ)
+require_report_export = require_permission(Permission.REPORT_EXPORT)
 require_ingestion_read = require_permission(Permission.INGESTION_READ)
 require_ingestion_run = require_permission(Permission.INGESTION_RUN)
 require_ingestion_retry = require_permission(Permission.INGESTION_RETRY)

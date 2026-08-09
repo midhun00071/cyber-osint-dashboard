@@ -1,0 +1,8 @@
+FROM postgres:17.10-alpine@sha256:dc17045ccfd343b49600570ea734b9c4991cf1c3f3302e67df51e3b402dd55c4
+
+COPY init/10-provision-database-roles.sh /docker-entrypoint-initdb.d/10-provision-database-roles.sh
+COPY init/11-apply-database-grants.sql /opt/alpha-data/database/11-apply-database-grants.sql
+
+RUN sed -i 's/\r$//' /docker-entrypoint-initdb.d/10-provision-database-roles.sh \
+    && chmod 0555 /docker-entrypoint-initdb.d/10-provision-database-roles.sh \
+    && chmod 0444 /opt/alpha-data/database/11-apply-database-grants.sql

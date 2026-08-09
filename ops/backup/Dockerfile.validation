@@ -1,0 +1,12 @@
+FROM alpine@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
+
+RUN apk add --no-cache \
+        age=1.2.1-r10 \
+        postgresql17-client=17.10-r0 \
+        python3=3.12.13-r0 \
+    && addgroup -S -g 10001 backup-tool \
+    && adduser -S -D -H -u 10001 -G backup-tool backup-tool
+
+WORKDIR /work
+USER 10001:10001
+CMD ["python3"]

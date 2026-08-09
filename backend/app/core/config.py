@@ -51,6 +51,7 @@ _STRICT_INTEGER_FIELD_NAMES = frozenset(
         "database_pool_timeout_seconds",
         "database_pool_recycle_seconds",
         "database_connect_timeout_seconds",
+        "storage_capacity_bytes",
         "auth_session_ttl_minutes",
         "auth_session_absolute_ttl_minutes",
         "auth_max_active_sessions",
@@ -114,6 +115,12 @@ class Settings(BaseSettings):
         min_length=1,
         max_length=64,
     )
+    app_commit_sha: str | None = Field(
+        default=None,
+        alias="APP_COMMIT_SHA",
+        min_length=40,
+        max_length=40,
+    )
     app_env: str = Field(default="local", alias="APP_ENV")
     debug: bool = Field(default=False, alias="DEBUG")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
@@ -171,6 +178,13 @@ class Settings(BaseSettings):
         strict=True,
         ge=1,
         le=30,
+    )
+    storage_capacity_bytes: int | None = Field(
+        default=None,
+        alias="STORAGE_CAPACITY_BYTES",
+        strict=True,
+        ge=1,
+        le=9_223_372_036_854_775_807,
     )
 
     backend_cors_allowed_origins: str = Field(
@@ -283,6 +297,7 @@ class Settings(BaseSettings):
     @field_validator(
         "app_name",
         "app_version",
+        "app_commit_sha",
         "log_level",
         "backend_host",
         mode="before",
@@ -295,6 +310,26 @@ class Settings(BaseSettings):
             stripped_value = value.strip()
             return stripped_value or None
 
+        return value
+
+    @field_validator("app_commit_sha")
+    @classmethod
+    def validate_commit_sha(cls, value: str | None) -> str | None:
+        """Accept only a complete hexadecimal Git object identity."""
+
+        if value is None:
+            return None
+        if re.fullmatch(r"[0-9a-fA-F]{40}", value) is None:
+            raise ValueError("APP_COMMIT_SHA must be a 40-character hexadecimal commit.")
+        return value.lower()
+
+    @field_validator("storage_capacity_bytes", mode="before")
+    @classmethod
+    def normalize_optional_storage_capacity(cls, value: object) -> object:
+        """Treat an omitted/blank optional capacity as unknown, not zero."""
+
+        if isinstance(value, str) and not value.strip():
+            return None
         return value
 
     @field_validator("postgres_host", mode="before")
@@ -892,6 +927,13 @@ class Settings(BaseSettings):
         ):
             raise ValueError(
                 "AUTH_COOKIE_SECURE must be true in staging and production."
+            )
+        if (
+            self.effective_environment in PROTECTED_ENVIRONMENTS
+            and self.app_commit_sha is None
+        ):
+            raise ValueError(
+                "APP_COMMIT_SHA must be set in staging and production."
             )
         _ = self.sqlalchemy_database_url
 

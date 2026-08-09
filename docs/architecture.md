@@ -952,3 +952,22 @@ visibility-aware 15-second polling with a one-request-at-a-time guard;
 for exact schemas, state transitions, role matrix, audit vocabulary, and
 accepted limitations. `DEFAULT_SOURCE_HANDLERS` remains empty, all four C05
 sources remain disabled and unscheduled, and C07 adds no model or migration.
+
+## C09 production operations architecture
+
+Caddy is the only host-published production service and joins only the edge
+network. Backend joins edge, database, orchestration, and private monitoring;
+Prometheus and Alertmanager remain isolated from the edge. Exact Host checks
+exist at Caddy and FastAPI. HSTS exists only on the HTTPS site. The edge rejects
+internal metrics and administration path shapes.
+
+Reports reuse C07/C08 bounded read services and are generated in backend memory.
+The protected read routes are `GET /api/v1/reports/catalog` and `GET
+/api/v1/system/health`; private Prometheus collection is `GET
+/internal/metrics` and is excluded from OpenAPI and edge routing.
+Health combines bounded SQL, fixed internal HTTP probes, committed operations
+state, configured storage capacity, and injected deployment identity. Private
+metrics use fixed labels and never represent missing backup evidence as green.
+Encrypted backup streams avoid plaintext at rest; restore targets are new and
+isolated. No schema migration or source activation is part of C09. See
+[C09 production operations and recovery](c09-production-operations-recovery.md).

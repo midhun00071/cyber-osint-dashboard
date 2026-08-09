@@ -280,4 +280,17 @@ Planned frontend tests:
 
 ## Current Status
 
-Phase 1 setup only. Automated tests will be added after backend and frontend skeleton code exists.
+Automated backend and frontend suites now cover the implemented application.
+C09 adds focused report/auth/CSV/PDF/audit tests, system health and metrics
+tests, edge/monitoring/Compose contracts, backup/restore safety tests, recovery
+harness safety tests, frontend runtime validators, page states, navigation, and
+Blob cleanup. Run focused C09 tests first, then full pytest, Vitest, TypeScript,
+Next production build, Alembic head/history, Compose config, exact-image config
+validators, and isolated Docker validation where the environment permits. Never
+report an unrun container, vulnerability, backup, or rehearsal check as passed.
+
+The C09 hardening regression additionally proves independent PostgreSQL/Prefect
+retention buckets, SQL-bounded source pagination, complete PDF field layout,
+disabled-source alert gating, a fixed aggregate source-attention signal, and
+restore validation through non-owner runtime identities. Recovery output keeps
+contract-test and Docker operational evidence in separate collections.

@@ -51,6 +51,9 @@ describe("AuthProvider", () => {
   test("uses only validated local return destinations", () => {
     const uuid = "11111111-1111-4111-8111-111111111111";
     expect(getSafeReturnPath("/sources")).toBe("/sources");
+    for (const path of ["/reports", "/system-health", "/audit-log", "/methodology"]) {
+      expect(getSafeReturnPath(path)).toBe(path);
+    }
     expect(getSafeReturnPath(`/articles/${uuid}`)).toBe(`/articles/${uuid}`);
     expect(getSafeReturnPath("https://attacker.invalid")).toBe("/");
     expect(getSafeReturnPath("//attacker.invalid")).toBe("/");

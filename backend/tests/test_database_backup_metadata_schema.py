@@ -17,7 +17,7 @@ def load_schema() -> dict:
 
 def valid_document() -> dict:
     return {
-        "metadata_format_version": "1.0",
+        "metadata_format_version": "2.0",
         "backup_identifier": "backup_review_20260731",
         "database_system": "postgresql",
         "logical_backup_type": "pg_dump_custom",
@@ -30,6 +30,11 @@ def valid_document() -> dict:
         "checksum_value": "a" * 64,
         "artifact_size_bytes": 0,
         "artifact_reference": "artifact_ref_review_20260731",
+        "row_counts": {
+            "intelligence_items": 0,
+            "ingestion_cycles": 0,
+            "ingestion_runs": 0,
+        },
         "safe_summary": "Synthetic contract-validation metadata only.",
     }
 
@@ -53,6 +58,9 @@ def assert_contract_accepts(document: dict) -> None:
         if definition.get("type") == "integer":
             assert type(value) is int
             assert definition["minimum"] <= value <= definition["maximum"]
+        if definition.get("type") == "object":
+            assert isinstance(value, dict)
+            assert set(value) == set(definition["required"])
     timestamp_pattern = re.compile(schema["properties"]["started_utc"]["pattern"])
     for name in ("started_utc", "completed_utc"):
         assert timestamp_pattern.fullmatch(document[name])

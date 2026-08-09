@@ -21,6 +21,9 @@ type SidebarNavigationItem = {
     | "operations"
     | "history"
     | "users"
+    | "reports"
+    | "health"
+    | "audit"
     | "methodology";
   label: string;
 };
@@ -34,6 +37,10 @@ const navigationItems: readonly SidebarNavigationItem[] = [
   { label: "Sources", icon: "sources", href: "/sources" },
   { label: "Ingestion Operations", icon: "operations", href: "/ingestion-operations", permission: "ingestion.read" },
   { label: "Run History", icon: "history", href: "/run-history", permission: "ingestion.read" },
+  { label: "Reports", icon: "reports", href: "/reports", permission: "report.read" },
+  { label: "System Health", icon: "health", href: "/system-health", permission: "source.read" },
+  { label: "Audit Log", icon: "audit", href: "/audit-log", permission: "audit.read" },
+  { label: "Methodology", icon: "methodology", href: "/methodology" },
   { label: "User Access", icon: "users", href: "/admin/users", permission: "user.read" },
 ] as const;
 

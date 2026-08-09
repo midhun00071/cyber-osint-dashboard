@@ -10,6 +10,9 @@ type NavigationIcon =
   | "operations"
   | "history"
   | "users"
+  | "reports"
+  | "health"
+  | "audit"
   | "methodology";
 
 type NavigationItemProps = Readonly<{
@@ -69,6 +72,15 @@ function Icon({ icon }: Readonly<{ icon: NavigationIcon }>) {
     ),
     users: (
       <><circle cx="9" cy="8" r="3" /><path d="M4 19c0-3 2-5 5-5s5 2 5 5" /><path d="M16 7h4M18 5v4" /></>
+    ),
+    reports: (
+      <><path d="M6 3h9l3 3v15H6z" /><path d="M9 11h6M9 15h6" /></>
+    ),
+    health: (
+      <><path d="M3 12h4l2-5 4 10 2-5h6" /></>
+    ),
+    audit: (
+      <><path d="M12 3 5 6v6c0 4 2.8 7 7 9 4.2-2 7-5 7-9V6z" /><path d="m9 12 2 2 4-5" /></>
     ),
     methodology: (
       <>

@@ -1150,3 +1150,15 @@ not activate a handler or schedule, make a live source request, or add a model
 or migration. See [C07 authenticated operations experience](docs/c07-authenticated-operations-experience.md)
 for the exact routes, permission and transition matrices, idempotency, polling,
 audit, redaction, and accepted limitations.
+
+## C09 production operations and recovery
+
+C09 adds functional Reports, System Health, Audit Log, and Methodology pages;
+bounded audited CSV/PDF exports; protected full-stack health; private
+Prometheus metrics and Alertmanager rules; an exact-host Caddy HTTPS edge; and
+streaming encrypted PostgreSQL/Prefect backup and isolated-restore tooling.
+Only Caddy publishes production ports. Source handlers remain empty and the C05
+sources remain disabled. See [C09 production operations and recovery](docs/c09-production-operations-recovery.md)
+and the [C09 recovery runbook](docs/c09-recovery-runbook.md). B9-03 public
+staging, external alert delivery, approved off-host storage, and measured
+RPO/RTO evidence remain manual gates.

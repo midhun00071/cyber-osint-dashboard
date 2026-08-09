@@ -1,0 +1,53 @@
+groups:
+  - name: alpha-data-production-operations
+    rules:
+      - alert: AlphaDataBackendUnhealthy
+        expr: alpha_data_component_health{component="backend",state="unhealthy"} == 1 or absent(alpha_data_component_health{component="backend",state="healthy"})
+        for: 2m
+        labels: { severity: critical, owner: pending }
+        annotations: { summary: "Alpha Data backend health is unavailable" }
+      - alert: AlphaDataDatabaseUnhealthy
+        expr: alpha_data_component_health{component="database",state="unhealthy"} == 1
+        for: 2m
+        labels: { severity: critical, owner: pending }
+        annotations: { summary: "Alpha Data database health is unhealthy" }
+      - alert: AlphaDataPrefectServerUnhealthy
+        expr: alpha_data_component_health{component="prefect_server",state="unhealthy"} == 1
+        for: 5m
+        labels: { severity: warning, owner: pending }
+        annotations: { summary: "Prefect server health is unhealthy" }
+      - alert: AlphaDataWorkerUnhealthy
+        expr: alpha_data_component_health{component="prefect_worker",state="unhealthy"} == 1
+        for: 5m
+        labels: { severity: warning, owner: pending }
+        annotations: { summary: "Prefect worker health is unhealthy" }
+      - alert: AlphaDataSourceFreshnessDegraded
+        expr: alpha_data_component_health{component="source_freshness",state="stale"} == 1
+        for: 15m
+        labels: { severity: warning, owner: pending }
+        annotations: { summary: "One or more enabled sources lack current freshness evidence" }
+      - alert: AlphaDataSourceAttentionRequired
+        expr: alpha_data_source_attention_count > 0 and on() alpha_data_component_health{component="ingestion_operations",state="disabled"} == 0
+        for: 15m
+        labels: { severity: warning, owner: pending }
+        annotations: { summary: "Enabled source operations require operator attention" }
+      - alert: AlphaDataIngestionCycleLate
+        expr: alpha_data_ingestion_active_cycles > 0
+        for: 3h
+        labels: { severity: warning, owner: pending }
+        annotations: { summary: "An ingestion cycle has remained active beyond its expected window" }
+      - alert: AlphaDataAuthenticationAbuse
+        expr: alpha_data_auth_abuse_events_recent >= 10
+        for: 5m
+        labels: { severity: warning, owner: pending }
+        annotations: { summary: "Recent authentication failures or authorization denials exceed the threshold" }
+      - alert: AlphaDataStoragePressure
+        expr: alpha_data_storage_bytes{kind="used"} / alpha_data_storage_bytes{kind="capacity"} >= 0.85
+        for: 15m
+        labels: { severity: warning, owner: pending }
+        annotations: { summary: "Configured database storage use exceeds 85 percent" }
+      - alert: AlphaDataBackupEvidenceMissing
+        expr: alpha_data_backup_evidence_available != 1 or absent(alpha_data_backup_evidence_available)
+        for: 15m
+        labels: { severity: warning, owner: pending }
+        annotations: { summary: "Verified encrypted backup evidence is missing or stale" }

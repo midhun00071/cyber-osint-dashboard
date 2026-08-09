@@ -84,6 +84,10 @@ Thumbs.db
 tmp/
 temp/
 *.tmp
+*.age
+*.partial
+backup-metadata-*.json
+recovery-evidence-*.json
 
 # TypeScript incremental build cache
 *.tsbuildinfo

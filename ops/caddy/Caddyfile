@@ -1,0 +1,58 @@
+{
+	admin off
+	servers {
+		protocols h1 h2
+		timeouts {
+			read_body 10s
+			read_header 5s
+			write 30s
+			idle 2m
+		}
+	}
+}
+
+http://{$EDGE_HOST}:8080 {
+	redir https://{$EDGE_HOST}:{$EDGE_HTTPS_PORT}{uri} permanent
+}
+
+https://{$EDGE_HOST}:8443 {
+	tls {$EDGE_TLS_MODE}
+	request_body {
+		max_size 1MB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+		-Server
+	}
+
+	@internal path /internal/* /metrics /metrics/* /-/healthy /-/ready /prefect /prefect/* /alertmanager /alertmanager/*
+	respond @internal 404
+
+	handle /api/* {
+		reverse_proxy backend:8000 {
+			header_up Host {host}
+			transport http {
+				dial_timeout 3s
+				response_header_timeout 15s
+				keepalive_idle_conns_per_host 16
+				keepalive_idle_conns 32
+			}
+		}
+	}
+
+	handle {
+		reverse_proxy frontend:3000 {
+			header_up Host {host}
+			transport http {
+				dial_timeout 3s
+				response_header_timeout 15s
+			}
+		}
+	}
+}

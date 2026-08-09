@@ -12,6 +12,7 @@ FRONTEND_DOCKERFILE = REPO_ROOT / "frontend" / "Dockerfile.prod"
 LOCAL_FRONTEND_DOCKERFILE = REPO_ROOT / "frontend" / "Dockerfile"
 PRODUCTION_ENV_EXAMPLE = REPO_ROOT / ".env.production.example"
 BACKEND_DOCKERIGNORE = REPO_ROOT / "backend" / ".dockerignore"
+DATABASE_DOCKERFILE = REPO_ROOT / "database" / "Dockerfile.prod"
 
 
 def load_production_compose() -> dict:
@@ -29,6 +30,9 @@ def test_production_compose_has_only_expected_runtime_and_manual_services() -> N
         "migrate",
         "prefect-server",
         "prefect-worker",
+        "reverse-proxy",
+        "prometheus",
+        "alertmanager",
     }
     assert "container_name" not in PRODUCTION_COMPOSE.read_text(encoding="utf-8")
 
@@ -41,27 +45,21 @@ def test_production_services_do_not_bind_mount_application_source() -> None:
     assert "volumes" not in compose["services"]["migrate"]
     assert compose["services"]["db"]["volumes"] == [
         "postgres_data:/var/lib/postgresql/data",
-        "./database/init/10-provision-database-roles.sh:"
-        "/docker-entrypoint-initdb.d/10-provision-database-roles.sh:ro",
-        "./database/init/11-apply-database-grants.sql:"
-        "/opt/alpha-data/database/11-apply-database-grants.sql:ro",
     ]
 
 
-def test_production_database_has_one_automatic_init_script_and_separate_sql() -> None:
-    volumes = load_production_compose()["services"]["db"]["volumes"]
-    automatic_targets = [
-        volume for volume in volumes if ":/docker-entrypoint-initdb.d/" in volume
-    ]
+def test_production_database_image_embeds_normalized_init_assets() -> None:
+    compose = load_production_compose()
+    dockerfile = DATABASE_DOCKERFILE.read_text(encoding="utf-8")
 
-    assert automatic_targets == [
-        "./database/init/10-provision-database-roles.sh:"
-        "/docker-entrypoint-initdb.d/10-provision-database-roles.sh:ro"
-    ]
-    assert volumes.count(
-        "./database/init/11-apply-database-grants.sql:"
-        "/opt/alpha-data/database/11-apply-database-grants.sql:ro"
-    ) == 1
+    assert compose["services"]["db"]["build"] == {
+        "context": "./database",
+        "dockerfile": "Dockerfile.prod",
+    }
+    assert dockerfile.startswith("FROM postgres:17.10-alpine@sha256:")
+    assert "COPY init/10-provision-database-roles.sh" in dockerfile
+    assert "COPY init/11-apply-database-grants.sql" in dockerfile
+    assert "sed -i 's/\\r$//'" in dockerfile
 
 
 def test_production_commands_exclude_development_and_ingestion_modes() -> None:
@@ -83,10 +81,6 @@ def test_database_is_private_persistent_and_healthy() -> None:
     assert "ports" not in database
     assert database["volumes"] == [
         "postgres_data:/var/lib/postgresql/data",
-        "./database/init/10-provision-database-roles.sh:"
-        "/docker-entrypoint-initdb.d/10-provision-database-roles.sh:ro",
-        "./database/init/11-apply-database-grants.sql:"
-        "/opt/alpha-data/database/11-apply-database-grants.sql:ro",
     ]
     assert "postgres_data" in compose["volumes"]
     assert "pg_isready" in " ".join(database["healthcheck"]["test"])
@@ -257,11 +251,10 @@ def test_database_network_is_internal_and_frontend_cannot_join_it() -> None:
 
     assert compose["networks"]["database"]["internal"] is True
     assert set(compose["services"]["backend"]["networks"]) == {
-        "application",
-        "database",
+        "edge", "database", "orchestration", "monitoring",
     }
     assert compose["services"]["db"]["networks"] == ["database"]
-    assert compose["services"]["frontend"]["networks"] == ["application"]
+    assert compose["services"]["frontend"]["networks"] == ["edge"]
 
 
 def test_backend_production_image_is_narrow_and_packages_alembic() -> None:
@@ -293,7 +286,7 @@ def test_frontend_production_image_uses_deterministic_standalone_build() -> None
     assert "/app/.next/standalone" in dockerfile
     assert 'CMD ["node", "server.js"]' in dockerfile
     assert "next dev" not in dockerfile
-    assert "node_modules" not in dockerfile.split("FROM node:24-alpine AS runner", 1)[1]
+    assert "node_modules" not in dockerfile.split(" AS runner", 1)[1]
 
 
 def test_frontend_dockerfiles_set_explicit_build_identities_before_build() -> None:
@@ -333,6 +326,9 @@ def test_production_database_credentials_are_separate_and_file_mounted() -> None
         "postgres_bootstrap_password",
         "postgres_app_password",
         "postgres_migration_password",
+        "postgres_backup_password",
+        "age_recipient",
+        "age_identity",
     }
     for secret_name, variable in (
         ("postgres_bootstrap_password", "POSTGRES_BOOTSTRAP_PASSWORD_SECRET_FILE"),

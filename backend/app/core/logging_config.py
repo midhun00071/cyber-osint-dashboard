@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import re
 import sys
-import time
+from datetime import UTC, datetime
 
 
 APPLICATION_LOGGER_NAME = "app"
@@ -14,10 +16,47 @@ SUPPORTED_LOG_LEVELS = frozenset(
 )
 
 
-class UtcKeyValueFormatter(logging.Formatter):
-    """Render stable key-value records with UTC timestamps."""
+_SAFE_VALUE = re.compile(r"^[A-Za-z0-9_./:{}-]{1,240}$", flags=re.ASCII)
+_ALLOWED_FIELDS = frozenset(
+    {
+        "event",
+        "request_id",
+        "method",
+        "route",
+        "status_code",
+        "duration_ms",
+        "error_category",
+        "operation_state",
+    }
+)
 
-    converter = time.gmtime
+
+class UtcJsonFormatter(logging.Formatter):
+    """Render fixed sanitized JSON without arbitrary LogRecord attributes."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        fields: dict[str, object] = {
+            "timestamp": datetime.now(UTC).isoformat(timespec="milliseconds").replace(
+                "+00:00", "Z"
+            ),
+            "level": record.levelname,
+            "logger": record.name if record.name.startswith("app") else "app",
+        }
+        message = record.getMessage()
+        for token in message.split():
+            if "=" not in token:
+                continue
+            key, value = token.split("=", maxsplit=1)
+            if key in _ALLOWED_FIELDS and _SAFE_VALUE.fullmatch(value):
+                fields[key] = value
+        if "event" not in fields:
+            candidate = message.strip()
+            fields["event"] = (
+                candidate
+                if _SAFE_VALUE.fullmatch(candidate) is not None
+                else "application_event"
+            )
+        return json.dumps(fields, sort_keys=True, separators=(",", ":"))
 
 
 def normalize_log_level(value: str) -> str:
@@ -55,11 +94,7 @@ def configure_logging(log_level: str = "INFO") -> logging.Logger:
 
     handler.setLevel(level)
     handler.setFormatter(
-        UtcKeyValueFormatter(
-            "timestamp=%(asctime)s level=%(levelname)s "
-            "logger=%(name)s %(message)s",
-            datefmt="%Y-%m-%dT%H:%M:%SZ",
-        )
+        UtcJsonFormatter()
     )
     application_logger.setLevel(level)
     application_logger.propagate = False

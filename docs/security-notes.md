@@ -177,3 +177,19 @@ principal and presents access denied for the current route. Role-aware links
 and buttons are defense in depth only. The production handler registry remains
 empty and the four C05 sources remain disabled and unscheduled. See
 [C07 authenticated operations experience](c07-authenticated-operations-experience.md).
+
+## C09 operations and recovery security boundary
+
+Reports enforce backend permissions, CSRF, strict enums/limits, allow-listed
+fields, CSV formula neutralization, plain-string PDF rendering, output ceilings,
+and fail-closed audit commit. Health uses only fixed internal Prefect URLs and
+does not accept probe targets. Metrics are private and fixed-label. Caddy uses
+an exact host, HTTPS-only HSTS, bounded bodies/timeouts, browser security
+headers, and no routing to internal services.
+
+Backup writes no plaintext dump/archive at rest, validates bounded non-symlink
+secret files, rejects privileged backup identities, uses SHA-256 metadata, and
+restores only to strict isolated targets. Prefect backup requires quiescence and
+restore rejects traversal/links/devices. Missing backup evidence is alertable,
+not fabricated. No public staging, external receiver, off-host transfer, or
+RPO/RTO achievement is claimed.

@@ -190,6 +190,8 @@ def test_documented_read_only_routes_come_from_current_fastapi_application() -> 
         "/api/v1/admin/users/{user_public_id}",
         "/api/v1/audit/events",
         "/api/v1/dashboard/summary",
+        "/api/v1/reports/catalog",
+        "/api/v1/system/health",
         "/api/v1/ingestion/cycles",
         "/api/v1/ingestion/operations/summary",
         "/api/v1/ingestion/runs",
@@ -199,6 +201,7 @@ def test_documented_read_only_routes_come_from_current_fastapi_application() -> 
         "/api/v1/intelligence/items/{item_public_id}",
         "/api/v1/sources",
         "/api/v1/sources/{source_slug}",
+        "/internal/metrics",
     }
     for route in implemented_get_routes:
         assert f"`GET {route}`" in document
@@ -300,28 +303,36 @@ def test_production_architecture_matches_compose_service_and_network_contracts()
         "migrate",
         "prefect-server",
         "prefect-worker",
+        "reverse-proxy",
+        "prometheus",
+        "alertmanager",
     }
     assert compose["services"]["migrate"]["profiles"] == ["migration"]
     assert "ports" not in compose["services"]["db"]
     assert compose["networks"]["database"]["internal"] is True
-    assert compose["services"]["frontend"]["networks"] == ["application"]
+    assert compose["services"]["frontend"]["networks"] == ["edge"]
     assert compose["services"]["backend"]["networks"] == [
-        "application",
+        "edge",
         "database",
+        "orchestration",
+        "monitoring",
     ]
     assert compose["services"]["db"]["networks"] == ["database"]
 
     prefect_server = compose["services"]["prefect-server"]
     prefect_worker = compose["services"]["prefect-worker"]
-    assert compose["networks"]["orchestration"] == {
-        "driver": "bridge",
-        "internal": True,
-    }
+    assert compose["networks"]["orchestration"] == {"driver": "bridge"}
     assert prefect_server["networks"] == ["orchestration"]
     assert prefect_worker["networks"] == ["orchestration", "database"]
     assert "ports" not in prefect_server
     assert "ports" not in prefect_worker
-    assert set(compose["volumes"]) == {"postgres_data", "prefect_data"}
+    assert set(compose["volumes"]) == {
+        "postgres_data",
+        "prefect_data",
+        "caddy_data",
+        "caddy_config",
+        "prometheus_data",
+    }
     assert prefect_server["volumes"] == ["prefect_data:/var/lib/prefect"]
     assert "volumes" not in prefect_worker
     assert "secrets" not in prefect_server
@@ -365,11 +376,11 @@ def test_production_architecture_matches_compose_service_and_network_contracts()
     assert "ports" not in local_worker
 
     for phrase in (
-        "lists `db`, `backend`, `frontend`, `prefect-server`, and `prefect-worker`",
+        "Caddy is the only host-published production service",
         "`migrate` service appears only when the `migration` profile is enabled",
         "database has no production host port by default",
         "internal database network",
-        "internal `orchestration` network",
+        "Prometheus and Alertmanager remain isolated from the edge",
         "`prefect_data`",
         "Only `prefect-server` mounts this volume",
         "worker communicates through `http://prefect-server:4200/api`",

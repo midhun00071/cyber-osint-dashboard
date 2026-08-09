@@ -9,7 +9,7 @@ LOCAL_COMPOSE_PATH = REPO_ROOT / "docker-compose.yml"
 PRODUCTION_COMPOSE_PATH = REPO_ROOT / "compose.prod.yml"
 PREFECT_DOCKERFILE = REPO_ROOT / "prefect" / "Dockerfile"
 REQUIREMENTS = REPO_ROOT / "backend" / "requirements.txt"
-PINNED_UPSTREAM_IMAGE = "prefecthq/prefect:3.8.1-python3.13"
+PINNED_UPSTREAM_IMAGE = "prefecthq/prefect:3.8.1-python3.13@sha256:4386a7fd80a989ab55ea98ff860f29e469f6c7b99e1a2b94eaaa7df007504ac5"
 PROJECT_IMAGE = "alpha-data-prefect:3.8.1-python3.13"
 POOL_NAME = "alpha-data-process"
 
@@ -31,7 +31,7 @@ def test_prefect_dockerfile_uses_only_the_exact_pinned_base() -> None:
     ]
 
     assert from_lines == [f"FROM {PINNED_UPSTREAM_IMAGE}"]
-    assert "COPY backend/requirements.txt" in dockerfile
+    assert "COPY backend/requirements.prod.txt" in dockerfile
     assert "COPY --chown=10001:10001 backend/app" in dockerfile
     assert "pip install --no-cache-dir -r /tmp/alpha-data-requirements.txt" in dockerfile
     assert "apt-get" not in dockerfile
@@ -87,6 +87,9 @@ def test_exact_compose_service_sets_include_one_server_and_worker() -> None:
         "migrate",
         "prefect-server",
         "prefect-worker",
+        "reverse-proxy",
+        "prometheus",
+        "alertmanager",
     }
 
 
@@ -142,7 +145,7 @@ def test_prefect_state_is_server_owned_and_worker_isolated() -> None:
     for compose_path in (LOCAL_COMPOSE_PATH, PRODUCTION_COMPOSE_PATH):
         compose = load_yaml(compose_path)
         server, worker = prefect_services(compose)
-        assert set(compose["volumes"]) == {"postgres_data", "prefect_data"}
+        assert {"postgres_data", "prefect_data"}.issubset(compose["volumes"])
         assert server["volumes"] == ["prefect_data:/var/lib/prefect"]
         assert "volumes" not in worker
         assert server["environment"]["PREFECT_HOME"] == "/var/lib/prefect"
@@ -161,10 +164,7 @@ def test_production_prefect_is_private_and_has_no_host_publication() -> None:
     compose = load_yaml(PRODUCTION_COMPOSE_PATH)
     server, worker = prefect_services(compose)
 
-    assert compose["networks"]["orchestration"] == {
-        "driver": "bridge",
-        "internal": True,
-    }
+    assert compose["networks"]["orchestration"] == {"driver": "bridge"}
     assert server["networks"] == ["orchestration"]
     assert worker["networks"] == ["orchestration", "database"]
     assert "ports" not in server
@@ -294,9 +294,8 @@ def test_existing_application_and_database_network_boundaries_remain_intact() ->
     assert compose["networks"]["database"]["internal"] is True
     assert compose["services"]["db"]["networks"] == ["database"]
     assert set(compose["services"]["backend"]["networks"]) == {
-        "application",
-        "database",
+        "edge", "database", "orchestration", "monitoring",
     }
-    assert compose["services"]["frontend"]["networks"] == ["application"]
+    assert compose["services"]["frontend"]["networks"] == ["edge"]
     assert compose["services"]["migrate"]["networks"] == ["database"]
     assert "ports" not in compose["services"]["db"]

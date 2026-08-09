@@ -54,6 +54,8 @@ approved commands and limitations.
 
 ## Current Status
 
-The application can be built and validated as an isolated production-oriented
-Compose stack. TLS termination, backups, monitoring, orchestration, and
-deployment-specific secret management remain external responsibilities.
+The C09 package includes Caddy TLS termination, Prefect, private monitoring,
+Docker secret-file references, and encrypted backup/isolated-restore tooling.
+Only Caddy is host-published. Public staging/DNS/certificate evidence, external
+alert delivery, an approved off-host destination, production credential
+rotation, and measured RPO/RTO evidence remain B9-03/operator responsibilities.

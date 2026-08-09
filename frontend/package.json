@@ -14,23 +14,23 @@
     "validate:safe-rendering": "tsc --project tsconfig.safe-rendering.json --outDir \"%TEMP%\\cyber-osint-p5-03-validation\" && set \"NODE_PATH=%CD%\\node_modules\" && node \"%TEMP%\\cyber-osint-p5-03-validation\\scripts\\validate-safe-rendering.js\""
   },
   "dependencies": {
-    "next": "latest",
-    "react": "latest",
-    "react-dom": "latest"
+    "next": "16.2.9",
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
-    "@types/node": "latest",
-    "@types/react": "latest",
-    "@types/react-dom": "latest",
+    "@types/node": "26.1.0",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
-    "eslint": "latest",
-    "eslint-config-next": "latest",
+    "eslint": "9.39.4",
+    "eslint-config-next": "16.2.9",
     "jsdom": "^29.1.1",
-    "typescript": "latest",
+    "typescript": "6.0.3",
     "vitest": "^4.1.10"
   }
 }

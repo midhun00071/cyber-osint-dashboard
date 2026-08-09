@@ -50,9 +50,13 @@ export async function apiFetch(
   const { notifyAuthentication = true, ...requestOptions } = options;
   const method = (requestOptions.method ?? "GET").toUpperCase();
   const headers = new Headers(requestOptions.headers);
-  headers.set("Accept", "application/json");
+  if (!headers.has("Accept")) {
+    headers.set("Accept", "application/json");
+  }
   if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
-    headers.set("Content-Type", "application/json");
+    if (!headers.has("Content-Type")) {
+      headers.set("Content-Type", "application/json");
+    }
     const csrf = csrfToken();
     if (csrf) {
       headers.set("X-CSRF-Token", csrf);

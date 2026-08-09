@@ -212,3 +212,23 @@ migration, backend and frontend HTTP checks, restrictive CORS, sanitized logs,
 restart recovery, controlled shutdown, and full regression. This evidence
 supports the stated local deployment-build result only and is not a production
 readiness claim.
+
+## C09 isolated production-operations validation (2026-08-09)
+
+C09 used project `alpha-data-c09-rehearsal`, reserved hostname `c09-validation.example.invalid`, loopback-only ports 9080/9443, and synthetic secrets/data. Exact pinned project images built successfully. A fresh database migrated to `c07a01b02c03`; all eight long-running services became healthy and the one-shot ninth `migrate` service completed; only Caddy published ports. Caddy, Prometheus (nine rules), and Alertmanager configuration validators passed. Prometheus privately scraped the backend with `up=1`.
+
+Backend runtime ran as `appuser`, frontend as `nextjs`, Prefect and Caddy as UID/GID 10001. Backend runtime had no pytest and `pip check` passed. Synthetic-canary checks found no value in six local images' config, labels, history, or recorded layer commands. Docker Scout v1.21.0 was UNRUN because no Docker ID session was available. Production npm audit reported 0 Critical and 4 High packages; applicability review and the C10 follow-up are recorded in `c09-local-rehearsal-evidence.md`.
+
+Encrypted PostgreSQL backup/restore passed with matching SHA-256, Alembic head, and safe row counts. Encrypted Prefect backup/restore passed after quiescence, archive safety validation, and source/restore manifest comparison. All eight fixed offline recovery scenarios passed. These results do not demonstrate public staging, external alert delivery, off-host retention, or RPO/RTO.
+
+The consolidated C09 hardening validation used the separate isolated project
+`alpha-data-rehearsal-c09hard02`. Five operational Docker scenarios passed:
+application rollback, failed deployment, migration failure, worker outage, and
+synthetic credential failure. Source outage, partial-ingestion checkpoint, and
+the combined backup/restore harness scenario remained `UNRUN` because no safe
+runtime fault-injection boundary was available. A separate encrypted PostgreSQL
+backup (158,065 bytes) restored to `alpha_data_restore_hardening01`; the distinct
+runtime login verified Alembic head `c07a01b02c03`, expected data evidence, and
+least-privilege readability. A new Prefect restore-readability run was `UNRUN`
+because approval for exposing the host Docker socket to the validation container
+was refused; no workaround was attempted. Prometheus validated 10 alert rules.

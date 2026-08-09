@@ -332,17 +332,19 @@ docker compose -f $ComposeFile --env-file $ProdEnv ps
 ```
 
 PostgreSQL starts first. Backend waits for healthy PostgreSQL, and frontend waits
-for a healthy backend. The `migrate` service is not part of normal startup. The
-default host bindings are loopback-only: frontend port `3000` and backend port
-`8000`; PostgreSQL and both Prefect services have no host binding. Prefect uses
-the internal `orchestration` network; the worker also uses the internal
-`database` network for application-role operational persistence. Do not use the
-development runner for production startup.
+for a healthy backend. The `migrate` service is not part of normal startup. Only
+the Caddy `reverse-proxy` publishes the configured HTTP and HTTPS host bindings;
+frontend, backend, PostgreSQL, both Prefect services, Prometheus, and Alertmanager
+remain on internal networks. Prefect uses the internal `orchestration` network;
+the worker also uses the internal `database` network for application-role
+operational persistence. Do not use the development runner for production
+startup.
 
 Container health checks use `pg_isready` for PostgreSQL, `/api/health` for
 FastAPI, `/` for the production Next.js server, Prefect's `/api/health` endpoint
-for the server, and the worker's enabled `/health` endpoint. Wait until
-`docker compose ps` reports all five runtime services healthy before continuing.
+for the server, the worker's enabled `/health` endpoint, Caddy configuration
+validation, `promtool`, and `amtool`. Wait until `docker compose ps` reports all
+eight long-running services healthy before continuing.
 
 ## Health and functional smoke validation
 
@@ -734,7 +736,9 @@ resolved Compose output, response bodies, or sensitive logs:
 - backend and frontend image tags and immutable IDs;
 - deployment environment identifier;
 - expected and current Alembic migration revision;
-- `db`, `backend`, `frontend`, `prefect-server`, and `prefect-worker` health result;
+- `db`, `backend`, `frontend`, `prefect-server`, `prefect-worker`,
+  `reverse-proxy`, `prometheus`, and `alertmanager` health result, plus the
+  one-shot `migrate` result;
 - the non-sensitive `alpha-data-process` work-pool identity and restart/recreate
   persistence result;
 - functional and CORS validation result;
@@ -745,19 +749,23 @@ resolved Compose output, response bodies, or sensitive logs:
 
 ## Known limitations and future infrastructure work
 
-- TLS termination and HSTS trust are not included.
-- No reverse proxy or load balancer is included.
-- Automated database backup and restore are not included.
-- No monitoring or alerting platform is integrated.
+- Caddy TLS termination and HTTPS-only HSTS are included, but public certificate
+  trust and company DNS remain B9-03 staging evidence.
+- The Caddy reverse proxy is included; no external load balancer is included.
+- Encrypted database and Prefect backup/restore tooling is included, but
+  production scheduling and an approved off-host destination remain pending.
+- Prometheus and Alertmanager are integrated privately with a null receiver;
+  external alert ownership, routing, and delivery remain pending.
 - Logs are bounded locally but there is no centralized logging platform.
 - No CI/CD deployment workflow is implemented.
 - No orchestration platform for container scheduling, autoscaling, or
   zero-downtime deployment exists. Self-hosted Prefect provides bounded workflow
   orchestration infrastructure only.
 - Prefect uses a single server with SQLite and has no high availability, Redis,
-  Prefect-specific PostgreSQL, authentication, backup automation, restore proof,
-  RPO/RTO evidence, source-specific flow bindings, an active deployment/schedule,
-  or staging activation.
+  Prefect-specific PostgreSQL, authentication, production backup scheduling,
+  production RPO/RTO evidence, source-specific flow bindings, an active
+  deployment/schedule, or staging activation. Encrypted local backup and isolated
+  restore evidence is recorded for C09.
 - Enterprise secret management and automated secret rotation are not
   integrated. APR-10 is team-owned, but no provider is selected or implemented;
   any selected baseline still requires security-control compliance and
@@ -770,16 +778,23 @@ resolved Compose output, response bodies, or sensitive logs:
 - The former "no separate restricted PostgreSQL application role" limitation
   is superseded in configuration and disposable tests, but remains unproven in
   staging until authorized provisioning and verification occur.
-- The backend production image installs the shared `requirements.txt`, which
-  currently includes development/test dependencies as well as runtime packages.
+- The backend production runtime installs the pinned `requirements.prod.txt`;
+  test-only dependencies are confined to development requirements/build stages.
 - Production load, capacity, failover, and disaster-recovery testing have not
   been completed.
 - No public internet deployment has been validated.
 
-This Compose file is a hardened production-oriented baseline, not a complete
-internet-facing platform. TLS, trusted proxy configuration, backups, restore
-testing, monitoring, centralized logging, orchestration, host hardening,
-dependency remediation, restricted database-role provisioning, and production
-capacity engineering are future, separately reviewed infrastructure work.
-Production API and frontend ports should normally remain loopback-bound behind
-the deployment's approved TLS terminator.
+The C09 Compose package now includes an exact-host Caddy TLS edge, private
+Prometheus/Alertmanager, JSON application logs, Prefect orchestration, and
+encrypted backup/isolated-restore tooling. Only Caddy publishes host ports;
+backend/frontend/PostgreSQL/Prefect/worker/metrics remain private. Set
+`EDGE_HOST`, edge bind/ports, `APP_COMMIT_SHA`, exact HTTPS origin/Host values,
+and every required secret-file reference before rendering Compose. Leave
+`EDGE_TLS_MODE` blank for normal public ACME; `internal` is local rehearsal only.
+
+Production deployment still requires B9-03 evidence: approved DNS/public
+certificate, external alert ownership/delivery, off-host backup destination,
+credential provisioning/rotation, host hardening, capacity selection, and an
+actual measured restore/recovery rehearsal. Follow
+[C09 production operations and recovery](c09-production-operations-recovery.md)
+and [C09 recovery runbook](c09-recovery-runbook.md).
