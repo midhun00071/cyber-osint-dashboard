@@ -87,7 +87,7 @@ C11 verified a single Alembic head, `c07a01b02c03`, and an eight-revision histor
 
 ## Ingestion, sources, and UAE intelligence
 
-The source catalogue describes approved sources and their governance state. Registration or enablement metadata is not equivalent to live activation. At the release checkpoint, the runtime `DEFAULT_SOURCE_HANDLERS` mapping is intentionally empty, so scheduled and manual orchestration cannot make live source requests through default handlers.
+The source catalogue describes approved sources and their governance state. Registration or enablement metadata is not equivalent to live activation. At the historical C11 release checkpoint, the runtime `DEFAULT_SOURCE_HANDLERS` mapping was intentionally empty. SIX-BIND-01 now code-binds exactly `nvd`, `first-epss`, `cisa-kev`, `cert-eu-security-advisories`, `google-threat-intelligence-public-research`, and `mandiant-public-threat-research` through the immutable reviewed builder. Binding does not equal activation: Prefect remains paused and SIX-BIND-01 executed no parent ingestion cycle. C05 and every other non-approved source remain unbound. A separate controlled activation-precondition task follows; a parent-cycle run still requires separate approval, and recurring Prefect unpause remains a later, separately approved step.
 
 The C05-disabled sources remain disabled as frozen by prior work. Sources that require approval, licence, credentials, quota, or incomplete implementation retain explicit states such as `Need Approval`, `Licence Required`, `Credentials Required`, `Quota Unavailable`, or `Disabled`.
 
@@ -178,7 +178,7 @@ No approved C11 Must Fix remains in the frozen scope.
 - The two known Windows byte-hash boundary tests prevent a literal green full-backend result on this checkout; their scope is isolated and the complementary suite passes.
 - The project runner stops at that backend boundary before executing its frontend stage.
 - Full frontend lint has ten pre-existing hook-rule findings in unchanged files.
-- Runtime source handlers are intentionally absent; live ingestion is not claimed.
+- Exactly six reviewed runtime source handlers are code-bound but inactive; live ingestion is not claimed.
 - Rate limiting is process-local.
 - Authentication is the implemented local single-factor model; deployment credential operations remain manual.
 - Caddy reports upstream dependency findings already accepted in C10; no C11 dependency regression is claimed.
@@ -209,7 +209,7 @@ The following are follow-up candidates and are not C11 acceptance expansion:
 - remove the two Windows byte-hash portability assumptions;
 - resolve the ten existing frontend hook lint findings;
 - evaluate a shared/distributed rate-limit backend for multi-instance deployment;
-- complete approved live source handlers and staged activation one source at a time;
+- complete the separately approved activation preconditions and bounded staging validation before any parent-cycle run or recurring unpause;
 - add formal assistive-technology and external capacity testing;
 - automate external monitoring, backup evidence retention, and release evidence collection where organisational policy allows;
 - review accepted upstream dependency findings on the normal maintenance cadence.

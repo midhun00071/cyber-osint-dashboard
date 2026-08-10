@@ -29,6 +29,7 @@ from app.ingestion.stix_taxii.taxii_client import (
     TaxiiRateLimitError,
 )
 from app.orchestration.flows import DEFAULT_SOURCE_HANDLERS
+from app.orchestration.source_handlers import C02_BOUND_SOURCE_SLUGS
 from app.orchestration.contracts import (
     ClassifiedFailure,
     EligibilityMode,
@@ -88,7 +89,8 @@ def test_fixed_mitre_policy_identity_limits_and_inactive_registration():
     assert policy.stix_policy.maximum_external_references == 25
     assert policy.stix_policy.allowed_custom_properties == MITRE_ATTACK_CUSTOM_PROPERTIES
     assert dict(PRODUCTION_TAXII_COLLECTION_POLICIES) == {}
-    assert dict(DEFAULT_SOURCE_HANDLERS) == {}
+    assert frozenset(DEFAULT_SOURCE_HANDLERS) == C02_BOUND_SOURCE_SLUGS
+    assert "mitre-attack-enterprise" not in DEFAULT_SOURCE_HANDLERS
 
 
 def test_two_page_fixture_uses_fixed_filters_opaque_next_and_server_cursor():
@@ -269,6 +271,7 @@ def test_repeated_or_oversized_continuation_tokens_fail_closed():
 def test_inactive_handler_builder_is_separate_and_immutable():
     handlers = build_c05_mitre_attack_handlers()
     assert tuple(handlers) == ("mitre-attack-enterprise",)
+    assert frozenset(handlers).isdisjoint(DEFAULT_SOURCE_HANDLERS)
     assert isinstance(handlers["mitre-attack-enterprise"], MitreAttackSourceHandler)
     with pytest.raises(TypeError):
         handlers["other"] = handlers["mitre-attack-enterprise"]  # type: ignore[index]

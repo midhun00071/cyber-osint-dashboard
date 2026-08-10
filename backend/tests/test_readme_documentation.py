@@ -51,11 +51,18 @@ def test_readme_states_inactive_scheduled_ingestion_without_live_claims() -> Non
         "scheduled ingestion remains inactive",
         "startup ingestion",
         "public ingestion api",
-        "production handler mapping is empty",
+        "exactly six reviewed scheduled handlers are code-bound",
         "single deployment definition is paused by default",
+        "binding does not equal activation",
+        "prefect remains paused",
         "authorized, audited operator controls",
         "do not bypass source policy",
         "no command below runs on fastapi startup",
+        "c05 and every other non-approved source remain unbound",
+        "separate controlled activation-precondition task follows",
+        "parent-cycle run still requires separate approval",
+        "recurring prefect unpause remains a later, separately approved step",
+        "six-bind-01 executed no parent ingestion cycle",
     ):
         assert required_phrase in readme
 

@@ -1,4 +1,4 @@
-"""Immutable, inactive C02 source-handler bindings."""
+"""Immutable reviewed source-handler builders used by orchestration."""
 
 from __future__ import annotations
 
@@ -53,7 +53,7 @@ def build_c02_source_handlers(
     *,
     session_factory: SessionFactory | None = None,
 ) -> Mapping[str, SourceHandler]:
-    """Build reviewed-but-inactive handlers for tests and later controlled binding."""
+    """Build the exact reviewed C02 handler set without executing any source."""
 
     handlers: dict[str, SourceHandler] = {
         "cisa-kev": CisaKevSourceHandler(session_factory=session_factory),

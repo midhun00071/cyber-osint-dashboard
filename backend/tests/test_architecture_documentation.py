@@ -90,8 +90,9 @@ def test_c03a_reduced_threat_boundary_is_documented_without_activation() -> None
         "threat_relationships",
         "canonical STIX ID",
         "exact SourceRecord",
-        "DEFAULT_SOURCE_HANDLERS` remain empty",
-        "No source, Prefect deployment, API, or frontend route is activated",
+        "At the C03A checkpoint",
+        "`DEFAULT_SOURCE_HANDLERS` remained empty",
+        "No source, Prefect deployment, API, or frontend route was activated",
     ):
         assert phrase in document
 
@@ -100,7 +101,7 @@ def test_manual_ingestion_and_publication_transaction_ownership_are_accurate() -
     document = normalized_architecture()
 
     for phrase in (
-        "Operational source ingestion remains manual-only until C02 handlers are bound",
+        "Scheduled source execution remains inactive until a controlled staging deployment is explicitly activated",
         "does not fetch upstream content",
         "does not commit transactions",
         "Transaction ownership is workflow-specific",
@@ -113,6 +114,22 @@ def test_manual_ingestion_and_publication_transaction_ownership_are_accurate() -
         assert phrase in document
 
     assert "Each CLI owns commit/rollback" not in document
+
+
+def test_six_bind_current_state_is_bound_but_paused() -> None:
+    document = normalized_architecture()
+    for phrase in (
+        "Post-C11 SIX-BIND-01 binding state",
+        "code-binds exactly six reviewed scheduled handlers",
+        "Binding does not equal activation",
+        "Prefect remains paused",
+        "SIX-BIND-01 executed no parent ingestion cycle",
+        "C05 and every other non-approved source remain unbound",
+        "separate controlled activation-precondition task follows",
+        "parent-cycle run still requires separate approval",
+        "recurring Prefect unpause remains a later, separately approved step",
+    ):
+        assert phrase in document
 
 
 def test_vulnerability_publication_and_audit_flows_are_documented() -> None:
@@ -391,8 +408,9 @@ def test_production_architecture_matches_compose_service_and_network_contracts()
         "B2-01 provides the self-hosted Prefect infrastructure",
         "C01 adds typed contracts, generic parent/source flows, bounded retry/progress logic",
         "paused-by-default deployment definition without activating a schedule",
-        "binding registry is empty, Compose does not register it, and no schedule was activated",
-        "C01 deployment is paused by default and has no production source bindings",
+        "At the C01 checkpoint",
+        "the deployment was paused by default and had no production source bindings",
+        "SIX-BIND-01 changes only the code mapping",
         "dedicated non-root users (`appuser` and `nextjs`)",
         "fixed non-root UID/GID `10001:10001`",
         "`no-new-privileges`",

@@ -17,6 +17,7 @@ from app.ingestion.stix_taxii.taxii_client import TaxiiCollectionResult
 from app.models import IngestionRunRecord, IntelligenceSource
 from app.orchestration.contracts import ClassifiedFailure, FailureCategory, QuotaObservation, ReconciledCounters, ResultStatus, SOURCE_POLICIES, SourceAttemptIdentity, SourceExecutionContext, classify_failure
 from app.orchestration.flows import DEFAULT_SOURCE_HANDLERS
+from app.orchestration.source_handlers import C02_BOUND_SOURCE_SLUGS
 from app.orchestration.source_handlers.common import EVIDENCE_PREFIX
 from app.orchestration.source_handlers.stix_taxii import StixTaxiiSourceHandler, build_c03_stix_taxii_handlers, canonical_document_sha256, production_taxii_access_state
 
@@ -99,12 +100,18 @@ def test_licence_required_requires_explicit_fixed_entry_and_no_transport():
     assert production_taxii_access_state("other-taxii") is ResultStatus.DISABLED
 
 
-def test_synthetic_builder_is_immutable_and_default_bindings_remain_empty():
+def test_synthetic_builder_is_immutable_and_separate_from_production_bindings():
     handlers = build_c03_stix_taxii_handlers(registry(), session_factory=lambda: FakeSession([]))
     assert tuple(handlers) == ("cisa-kev",)
     assert isinstance(handlers, MappingProxyType)
     with pytest.raises(TypeError): handlers["cisa-kev"] = handlers["cisa-kev"]
-    assert isinstance(DEFAULT_SOURCE_HANDLERS, MappingProxyType) and not DEFAULT_SOURCE_HANDLERS
+    assert isinstance(DEFAULT_SOURCE_HANDLERS, MappingProxyType)
+    assert frozenset(DEFAULT_SOURCE_HANDLERS) == C02_BOUND_SOURCE_SLUGS
+    assert handlers["cisa-kev"] is not DEFAULT_SOURCE_HANDLERS["cisa-kev"]
+    assert not any(
+        isinstance(handler, StixTaxiiSourceHandler)
+        for handler in DEFAULT_SOURCE_HANDLERS.values()
+    )
 
 
 def test_handler_requires_immutable_validated_policy_registry():

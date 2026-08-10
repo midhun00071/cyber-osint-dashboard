@@ -9,6 +9,7 @@ from app.orchestration.deployments import (
     deployment_specification,
 )
 from app.orchestration.flows import DEFAULT_SOURCE_HANDLERS
+from app.orchestration.source_handlers import C02_BOUND_SOURCE_SLUGS
 from app.ingestion.source_registry import get_source_definition
 
 
@@ -46,9 +47,8 @@ def test_release_api_inventory_and_bounds_remain_present() -> None:
     assert paths["/api/v1/analysis/indicators"]["get"]["parameters"][0]["schema"]["maximum"] == 100
 
 
-def test_release_source_handlers_remain_empty_and_frozen_sources_disabled() -> None:
-    assert len(DEFAULT_SOURCE_HANDLERS) == 0
-    assert dict(DEFAULT_SOURCE_HANDLERS) == {}
+def test_post_c11_source_bindings_are_exact_and_frozen_sources_disabled() -> None:
+    assert frozenset(DEFAULT_SOURCE_HANDLERS) == C02_BOUND_SOURCE_SLUGS
     for slug in EXPECTED_DISABLED_SOURCES:
         definition = get_source_definition(slug)
         assert definition.enabled is False

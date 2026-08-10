@@ -50,13 +50,15 @@ ingestion and enrichment services, read-only APIs, backend-connected dashboard
 views, security hardening, automated tests, development runners, a self-hosted
 Prefect 3.8.1 server and process worker, and production-oriented Docker
 documentation. Scheduled ingestion remains inactive: there is no startup
-ingestion or public ingestion API, the production handler mapping is empty, and
-the single deployment definition is paused by default. C07 provides authorized,
-audited operator controls, but they do not bypass source policy or make an
-unavailable handler executable. C01 adds typed source-execution contracts, a
-deterministic parent/source flow core, bounded retry and progress handling, and
-a paused-by-default deployment definition. No source-specific handler is bound,
-no deployment has been activated, and no live source schedule is claimed.
+ingestion or public ingestion API, exactly six reviewed scheduled handlers are
+code-bound, and the single deployment definition is paused by default. The
+bindings are `nvd`, `first-epss`, `cisa-kev`,
+`cert-eu-security-advisories`,
+`google-threat-intelligence-public-research`, and
+`mandiant-public-threat-research`. Binding does not equal activation: Prefect
+remains paused, no deployment has been activated, and no live source schedule
+is claimed. C07 provides authorized, audited operator controls, but they do not
+bypass source policy or make an unavailable handler executable.
 
 Key implemented capabilities include:
 
@@ -114,9 +116,11 @@ schedule or execute a source workflow.
 
 ## Ingestion control and source scope
 
-All implemented collection and enrichment remains explicitly invoked by an
-operator. No command below runs on FastAPI startup, from a scheduler, through a
-public write endpoint, or from the frontend.
+No collection or enrichment occurs automatically. The six reviewed scheduled
+handlers are code-bound but inactive while Prefect remains paused; the commands
+below remain explicit operator workflows. No command below runs on FastAPI
+startup, from an active scheduler, through a public write endpoint, or from the
+frontend.
 
 Implemented source workflows:
 
@@ -166,11 +170,12 @@ routes, or the frontend dashboard.
 The historical B2-01 platform remains the infrastructure foundation. C01 now
 adds reusable orchestration contracts, generic flow logic, persistence adapters,
 and a reproducible deployment definition without converting any manual source
-collector. The production binding registry is intentionally empty, activation
-fails closed while scheduled-eligible handlers are missing, and Compose does
-not register or execute the deployment. Source conversion belongs to C02;
-operator controls, authentication, monitoring, and activation remain later
-tasks.
+collector. At the C01 checkpoint, the production binding registry is
+intentionally empty, activation fails closed while scheduled-eligible handlers
+are missing, and Compose does not register or execute the deployment. C02 later
+provided the reviewed handlers. SIX-BIND-01 now reuses that builder for exactly
+the six approved production bindings without registering, activating, or
+executing the deployment.
 
 ### Source registry foundation
 
@@ -1090,8 +1095,13 @@ authoritative detailed references:
 ## Known limitations
 
 - Scheduled ingestion is inactive. C01 defines one paused-by-default two-hour
-  deployment and C07 provides audited operator controls, but the production
-  source-handler mapping remains empty and no live schedule is claimed.
+  deployment and C07 provides audited operator controls. SIX-BIND-01 code-binds
+  exactly six reviewed scheduled handlers, but Prefect remains paused and no
+  live schedule is claimed. C05 and every other non-approved source remain
+  unbound. A separate controlled activation-precondition task follows; a
+  parent-cycle run still requires separate approval, and recurring Prefect unpause
+  remains a later, separately approved step. SIX-BIND-01 executed no parent
+  ingestion cycle.
 - Release dashboard panels are backend-connected or show truthful
   unavailable/empty states; the trends view is intentionally bounded rather
   than a complete historical analytics module.
@@ -1181,8 +1191,8 @@ C09 adds functional Reports, System Health, Audit Log, and Methodology pages;
 bounded audited CSV/PDF exports; protected full-stack health; private
 Prometheus metrics and Alertmanager rules; an exact-host Caddy HTTPS edge; and
 streaming encrypted PostgreSQL/Prefect backup and isolated-restore tooling.
-Only Caddy publishes production ports. Source handlers remain empty and the C05
-sources remain disabled. See [C09 production operations and recovery](docs/c09-production-operations-recovery.md)
+Only Caddy publishes production ports. Source handlers remained empty and the
+C05 sources remained disabled at the historical C09 checkpoint. See [C09 production operations and recovery](docs/c09-production-operations-recovery.md)
 and the [C09 recovery runbook](docs/c09-recovery-runbook.md). B9-03 public
 staging, external alert delivery, approved off-host storage, and measured
 RPO/RTO evidence remain manual gates.

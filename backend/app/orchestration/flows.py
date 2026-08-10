@@ -6,7 +6,6 @@ from asyncio import CancelledError
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 import time
-from types import MappingProxyType
 from zoneinfo import ZoneInfo
 
 from prefect import flow, task
@@ -40,13 +39,14 @@ from app.orchestration.persistence import (
     DEPLOYMENT_REFERENCE,
     OrchestrationPersistenceAdapter,
 )
+from app.orchestration.source_handlers import build_c02_source_handlers
 
 
 PARENT_FLOW_NAME = "alpha-data-parent-ingestion-cycle"
 SOURCE_FLOW_NAME = "alpha-data-source-ingestion"
 SOURCE_EXECUTION_TIMEOUT_SECONDS = 900
 SCHEDULE_TIMEZONE = ZoneInfo("Asia/Dubai")
-DEFAULT_SOURCE_HANDLERS: Mapping[str, SourceHandler] = MappingProxyType({})
+DEFAULT_SOURCE_HANDLERS: Mapping[str, SourceHandler] = build_c02_source_handlers()
 _SUCCESSFUL_SOURCE_STATUSES = frozenset(
     {ResultStatus.SUCCESS, ResultStatus.NO_CHANGE}
 )
@@ -631,7 +631,7 @@ def run_parent_cycle(
 def parent_ingestion_cycle(
     scheduled_for: datetime | None = None,
 ) -> CycleResult:
-    """Deployed parent flow; production bindings remain intentionally empty in C01."""
+    """Deployed parent flow using the reviewed immutable production bindings."""
 
     slot = resolve_scheduled_slot(scheduled_for)
 

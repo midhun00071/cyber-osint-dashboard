@@ -11,8 +11,8 @@ metadata in a dedicated internal PostgreSQL service/volume and serves real UI
 assets from the explicit non-root writable `/var/lib/prefect/ui` path. The old
 local SQLite file remains untouched and no metadata migration is claimed. The
 production-oriented topology and historical C09/C11 evidence below remain on
-their documented SQLite volume architecture. The deployment stays paused and
-the production source-handler mapping stays empty.
+their documented SQLite volume architecture. SIX-BIND-01 now code-binds exactly
+six reviewed scheduled handlers, while the deployment stays paused.
 
 ## Component map and deployment topology
 
@@ -85,7 +85,7 @@ flowchart TD
     Commit -->|"Yes"| Progress["Advance source checkpoint/watermark"]
 ```
 
-The production `DEFAULT_SOURCE_HANDLERS` mapping is empty in C11. Registry `enabled` metadata does not make a source live. The deployment is paused by default and activation requires staging, explicit controlled evidence, a valid fixed work pool, and all scheduled handler bindings. One source failure does not fail or overwrite unrelated source evidence.
+The production `DEFAULT_SOURCE_HANDLERS` mapping was empty at the historical C11 checkpoint. SIX-BIND-01 now reuses the immutable C02 builder to bind exactly `nvd`, `first-epss`, `cisa-kev`, `cert-eu-security-advisories`, `google-threat-intelligence-public-research`, and `mandiant-public-threat-research`. Registry `enabled` metadata and code binding do not make a source live. The deployment remains paused, and activation requires staging, explicit controlled evidence, a valid fixed work pool, and the exact scheduled handler set. C05 and every other non-approved source remain unbound. SIX-BIND-01 executed no parent cycle; a controlled activation-precondition task, any approved parent-cycle run, and recurring Prefect unpause remain separate later steps. One source failure does not fail or overwrite unrelated source evidence.
 
 Source clients accept no arbitrary API root, host, path, collection, redirect, header, cookie, callback, or proxy. Collection is metadata-oriented and excludes scanning, active probing, malware/binary retrieval, file submission, and exploit execution.
 

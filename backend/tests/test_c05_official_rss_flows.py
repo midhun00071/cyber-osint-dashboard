@@ -36,6 +36,7 @@ from app.orchestration.contracts import (
     SourcePolicy,
 )
 from app.orchestration.flows import DEFAULT_SOURCE_HANDLERS
+from app.orchestration.source_handlers import C02_BOUND_SOURCE_SLUGS
 import app.orchestration.source_handlers.official_rss as official_rss_module
 from app.orchestration.source_handlers.official_rss import (
     OfficialRssSourceHandler,
@@ -97,7 +98,10 @@ def test_inactive_builder_is_separate_from_production_handlers():
     copied = MappingProxyType(dict(C05_OFFICIAL_RSS_POLICIES))
     handlers = build_c05_official_rss_handlers(copied)
     assert frozenset(handlers) == C05_OFFICIAL_RSS_SOURCE_SLUGS
-    assert dict(DEFAULT_SOURCE_HANDLERS) == {}
+    assert C05_OFFICIAL_RSS_SOURCE_SLUGS.isdisjoint(
+        frozenset(DEFAULT_SOURCE_HANDLERS)
+    )
+    assert frozenset(DEFAULT_SOURCE_HANDLERS) == C02_BOUND_SOURCE_SLUGS
     assert all(isinstance(value, OfficialRssSourceHandler) for value in handlers.values())
     assert isinstance(
         OfficialRssSourceHandler(

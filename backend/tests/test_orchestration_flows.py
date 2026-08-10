@@ -32,15 +32,91 @@ from app.orchestration.contracts import (
 )
 from app.orchestration.flows import run_parent_cycle, run_source_once
 from app.orchestration.flows import (
+    DEFAULT_SOURCE_HANDLERS,
     SOURCE_EXECUTION_TIMEOUT_SECONDS,
     SourceRunIncomplete,
+    parent_ingestion_cycle,
     resolve_scheduled_slot,
     source_ingestion_flow,
     validate_scheduled_slot,
 )
+from app.orchestration.source_handlers import C02_BOUND_SOURCE_SLUGS
+from app.orchestration.source_handlers.cisa_kev import CisaKevSourceHandler
+from app.orchestration.source_handlers.epss import EpssSourceHandler
+from app.orchestration.source_handlers.nvd import NvdSourceHandler
+from app.orchestration.source_handlers.publications import PublicationSourceHandler
 
 
 SLOT = datetime(2026, 8, 3, 8, 17, tzinfo=UTC)
+
+
+def test_production_source_handlers_are_exact_typed_and_immutable() -> None:
+    assert frozenset(DEFAULT_SOURCE_HANDLERS) == C02_BOUND_SOURCE_SLUGS
+    assert isinstance(DEFAULT_SOURCE_HANDLERS["nvd"], NvdSourceHandler)
+    assert isinstance(DEFAULT_SOURCE_HANDLERS["first-epss"], EpssSourceHandler)
+    assert isinstance(DEFAULT_SOURCE_HANDLERS["cisa-kev"], CisaKevSourceHandler)
+    for source_slug in (
+        "cert-eu-security-advisories",
+        "google-threat-intelligence-public-research",
+        "mandiant-public-threat-research",
+    ):
+        assert isinstance(
+            DEFAULT_SOURCE_HANDLERS[source_slug],
+            PublicationSourceHandler,
+        )
+    with pytest.raises(TypeError):
+        DEFAULT_SOURCE_HANDLERS["unapproved-source"] = DEFAULT_SOURCE_HANDLERS[  # type: ignore[index]
+            "nvd"
+        ]
+
+
+def test_scheduled_policy_set_equals_the_exact_production_binding_set() -> None:
+    scheduled = frozenset(
+        policy.source_slug
+        for policy in list_source_policies()
+        if policy.eligibility_mode is EligibilityMode.SCHEDULED
+    )
+    assert scheduled == C02_BOUND_SOURCE_SLUGS
+
+
+def test_source_flow_resolves_its_handler_from_the_production_mapping(monkeypatch) -> None:
+    captured = {}
+    expected = success_result("nvd")
+
+    def fake_run_source_once(**kwargs):
+        captured.update(kwargs)
+        return expected
+
+    monkeypatch.setattr("app.orchestration.flows.run_source_once", fake_run_source_once)
+    monkeypatch.setattr(
+        "app.orchestration.flows.OrchestrationPersistenceAdapter",
+        lambda: object(),
+    )
+
+    result = source_ingestion_flow.fn("nvd", 1, SLOT)
+
+    assert result is expected
+    assert captured["handler"] is DEFAULT_SOURCE_HANDLERS["nvd"]
+
+
+def test_parent_flow_supplies_the_same_production_mapping(monkeypatch) -> None:
+    captured = {}
+    expected = object()
+
+    def fake_run_parent_cycle(**kwargs):
+        captured.update(kwargs)
+        return expected
+
+    monkeypatch.setattr("app.orchestration.flows.run_parent_cycle", fake_run_parent_cycle)
+    monkeypatch.setattr(
+        "app.orchestration.flows.OrchestrationPersistenceAdapter",
+        lambda: object(),
+    )
+
+    result = parent_ingestion_cycle.fn(SLOT)
+
+    assert result is expected
+    assert captured["handlers"] is DEFAULT_SOURCE_HANDLERS
 
 
 class FakePersistence:

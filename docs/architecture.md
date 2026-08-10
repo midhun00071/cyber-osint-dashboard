@@ -18,9 +18,25 @@ in one transaction without owning commit or rollback.
 An inactive policy-gated TAXII handler completes collection and validation
 before persistence, writes run-linked evidence atomically, and uses canonical
 safe-document content hashing for network-free checkpoint reconstruction.
-Production TAXII registries and `DEFAULT_SOURCE_HANDLERS` remain empty. No
-source, Prefect deployment, API, or frontend route is activated by C03A. See
+At the C03A checkpoint, production TAXII registries and
+`DEFAULT_SOURCE_HANDLERS` remained empty. No source, Prefect deployment, API,
+or frontend route was activated by C03A. See
 [C03A threat knowledge and STIX persistence](c03-threat-knowledge-stix-persistence.md).
+
+## Post-C11 SIX-BIND-01 binding state
+
+SIX-BIND-01 code-binds exactly six reviewed scheduled handlers through the one
+immutable C02 builder: `nvd`, `first-epss`, `cisa-kev`,
+`cert-eu-security-advisories`,
+`google-threat-intelligence-public-research`, and
+`mandiant-public-threat-research`. Binding does not equal activation. Prefect
+remains paused, SIX-BIND-01 executed no parent ingestion cycle, and no source
+request or database write was performed by the binding task. C05 and every
+other non-approved source remain unbound.
+
+A separate controlled activation-precondition task follows. Any parent-cycle
+run still requires separate approval, and recurring Prefect unpause remains a
+later, separately approved step.
 
 ## Purpose and audience
 
@@ -49,8 +65,8 @@ for a new live collection method.
 
 ## Architecture principles
 
-- Operational source ingestion remains manual-only until C02 handlers are bound
-  and a controlled staging deployment is explicitly activated.
+- Scheduled source execution remains inactive until a controlled staging
+  deployment is explicitly activated; code binding alone does not run a source.
 - Fixed endpoints, exact hosts, closed selectors, or reviewed local files bound
   every implemented source workflow; operators cannot supply network URLs.
 - Collectors, adapters/normalizers, persistence, queries, and presentation have
@@ -68,9 +84,9 @@ for a new live collection method.
 - B2-01 provides the self-hosted Prefect infrastructure. C01 adds typed
   contracts, generic parent/source flows, bounded retry/progress logic, and a
   paused-by-default deployment definition without activating a schedule.
-- C02 adds six source-specific, transaction-owning handlers behind a separate
-  immutable builder. The production default mapping stays empty, so this code
-  is flow-ready but inactive.
+- C02 adds six source-specific, transaction-owning handlers behind one immutable
+  builder. SIX-BIND-01 uses that builder for the exact production mapping while
+  the paused deployment keeps scheduled execution inactive.
 - Absent controls and operational limitations are documented rather than
   implied to exist.
 
@@ -115,9 +131,9 @@ One self-hosted Prefect server and one process worker provide the B2-01
 platform. The worker image now contains `app.orchestration`, registers and polls
 the fixed `alpha-data-process` process work pool, and can use the application
 database role. C01 defines the fixed parent flow and paused deployment contract.
-C02 provides a separate immutable test/later-staging builder for six reviewed
-handlers, but the binding registry is empty, Compose does not register it, and
-no schedule was activated.
+C02 provides the immutable builder for six reviewed handlers. SIX-BIND-01 binds
+that exact set to the production default mapping; Compose still does not
+register it, Prefect remains paused, and no schedule was activated.
 
 ## Major components and responsibilities
 
@@ -134,8 +150,8 @@ no schedule was activated.
 | Next.js | Fetch validated API data and present dashboard/list/detail states safely | No source collection, database connection, credentials, or raw HTML rendering |
 | Orchestration contracts and policies | Define exact result/failure/progress vocabularies, immutable per-source bounds, handler/persistence protocols, and the fixed deployment specification | No credentials, arbitrary network configuration, raw payload, or source-specific collector |
 | Orchestration persistence adapter | Own short application-role transactions and delegate operational mutations to the existing service | Flow bodies issue no SQL, mutate no ORM objects, and hide no commits |
-| Prefect parent/source flows | Evaluate all enabled policies in slug order, isolate source outcomes, apply bounded retries/staggering, and finalize reconciled cycle evidence | Production bindings remain empty; C02 handlers are available only through the separate inactive builder |
-| C02 source handlers | Directly call existing CISA, NVD, EPSS, RSS, adapter, normalizer, and persistence components; own source-data transactions and immutable run-linked recovery evidence | Separate inactive builder only; manual-only Anomali, Censys, and IBM identities remain unbound |
+| Prefect parent/source flows | Evaluate all enabled policies in slug order, isolate source outcomes, apply bounded retries/staggering, and finalize reconciled cycle evidence | Exactly six C02 handlers are code-bound; the deployment remains paused and binding does not activate execution |
+| C02 source handlers | Directly call existing CISA, NVD, EPSS, RSS, adapter, normalizer, and persistence components; own source-data transactions and immutable run-linked recovery evidence | One immutable builder supplies the exact production set; C05, STIX/TAXII, MITRE, DESC, commercial, manual-only, and disabled identities remain unbound |
 | Prefect server | Provide one self-hosted Prefect 3.8.1 API/UI; local metadata uses dedicated PostgreSQL while the production-oriented baseline retains SQLite | Real UI bundles use the non-root writable `prefect_data` path; no production host publication, Cloud dependency, default credential, or application-database access |
 | Prefect process worker | Poll the fixed `alpha-data-process` pool and import the application orchestration package | No direct metadata-database/volume access, Docker socket, source mount, bootstrap/migration credential, automatic deployment registration, or C01 live-source execution |
 
@@ -664,8 +680,11 @@ placeholder database credentials are not production controls. Although the devel
 environment contains legacy interval/admin feature flags, the current
 application has no ingestion scheduler, startup ingestion, or admin ingestion
 route. The Prefect worker remains idle apart from fixed pool registration and
-polling until an operator explicitly registers a deployment. The C01 deployment
-is paused by default and has no production source bindings.
+polling until an operator explicitly registers a deployment. At the C01
+checkpoint, the deployment was paused by default and had no production source
+bindings.
+SIX-BIND-01 changes only the code mapping; it does not register or unpause the
+deployment.
 
 ## Production Docker architecture
 
@@ -748,10 +767,10 @@ No default Prefect credential or Prefect Cloud configuration exists. B2-01
 protects administration through loopback-only local publication and private
 production networking; Prefect authentication and backend-authorized operator
 controls remain later work. C01 supplies one fixed schedule specification and
-generic flows, but paused registration is explicit and staging activation is
-blocked unless every scheduled handler is bound and controlled evidence is
-confirmed. Source conversion, operator controls, monitoring, backup/recovery,
-and staging activation evidence remain later tasks.
+generic flows. Paused registration remains explicit, and staging activation is
+blocked unless the exact scheduled handler set is bound and controlled evidence
+is confirmed. SIX-BIND-01 satisfies only the code-binding precondition;
+controlled activation evidence remains a later task.
 
 ### Database-role architecture
 
@@ -855,11 +874,11 @@ Manual cases remain `Not Run` until separately executed and recorded.
 
 ## Operational workflows
 
-- Source collection/enrichment is invoked through reviewed backend CLIs only;
-  operators choose timing and bounds. No standard refresh interval exists.
-- C01's Prefect parent/source flows and fixed schedule contract are implemented,
-  but the deployment is not automatically registered or activated and the
-  production source-handler registry is empty.
+- Manual source collection/enrichment remains available through reviewed backend
+  CLIs; operators choose timing and bounds.
+- C01's Prefect parent/source flows and fixed schedule contract are implemented.
+  SIX-BIND-01 supplies the exact six-handler production mapping, but the
+  deployment is not automatically registered or activated and remains paused.
 - Development seed data is a separate explicit development-only CLI and is not
   production ingestion or an API fallback.
 - Development startup uses the Windows runner and local Compose boundaries above.
@@ -899,12 +918,12 @@ the named PostgreSQL volume and is not routine cleanup. Manual approval remains
 required for source collection, migration, rollback, volume deletion, and other
 destructive deployment commands.
 
-C02 now owns reviewed source-specific flow-ready handlers but does not activate
-or production-bind them. C06 owns authentication/RBAC and C07 owns the
-authenticated operations experience; later deployment work owns monitoring,
-backup, and controlled staging activation. The B2-01 private network boundary,
-C01 paused deployment contract, and implemented browser login must not be
-mistaken for public deployment readiness.
+C02 owns the reviewed source-specific flow-ready handlers, and SIX-BIND-01
+production-binds exactly the approved six without activation. C06 owns
+authentication/RBAC and C07 owns the authenticated operations experience;
+later deployment work owns controlled staging activation. The B2-01 private
+network boundary, C01 paused deployment contract, and implemented browser login
+must not be mistaken for public deployment readiness.
 
 ## Canonical references
 
@@ -967,8 +986,9 @@ visibility-aware 15-second polling with a one-request-at-a-time guard;
 `/admin/users` is Administrator protected. See
 [C07 authenticated operations experience](c07-authenticated-operations-experience.md)
 for exact schemas, state transitions, role matrix, audit vocabulary, and
-accepted limitations. `DEFAULT_SOURCE_HANDLERS` remains empty, all four C05
-sources remain disabled and unscheduled, and C07 adds no model or migration.
+accepted limitations. At the C07 checkpoint, `DEFAULT_SOURCE_HANDLERS` remained
+empty, all four C05 sources remained disabled and unscheduled, and C07 added no
+model or migration.
 
 ## C09 production operations architecture
 

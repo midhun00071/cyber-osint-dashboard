@@ -6,13 +6,14 @@ import ast
 from pathlib import Path
 
 from app.orchestration.flows import DEFAULT_SOURCE_HANDLERS
+from app.orchestration.source_handlers import C02_BOUND_SOURCE_SLUGS
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_default_source_handlers_remain_closed() -> None:
-    assert len(DEFAULT_SOURCE_HANDLERS) == 0
+    assert frozenset(DEFAULT_SOURCE_HANDLERS) == C02_BOUND_SOURCE_SLUGS
 
 
 def test_runtime_modules_do_not_import_test_packages() -> None:

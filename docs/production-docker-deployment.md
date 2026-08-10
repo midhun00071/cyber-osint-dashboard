@@ -508,8 +508,11 @@ by contacting the unapproved domain.
 The FastAPI startup path performs no ingestion. P7-01 does not add a scheduler,
 ingestion service, ingestion startup hook, or public ingestion trigger.
 C01 adds generic parent/source flows and one paused-by-default deployment
-definition. Compose does not register or activate it, the production binding
-registry is empty, and no source-specific handler or live schedule is active.
+definition. At the C01 checkpoint, Compose did not register or activate it, the
+production binding registry was empty, and no source-specific handler or live
+schedule was active. SIX-BIND-01 now code-binds exactly the six reviewed C02
+handlers while leaving Compose registration, Prefect state, and the paused
+deployment unchanged.
 
 The earlier P7-03 limitation said that a shared database user could hold
 superuser privileges, that backend and migration access used that identity,
@@ -566,8 +569,14 @@ Registration performs no source request and does not run during Compose startup.
 It validates an existing deployment's single schedule before applying the fixed
 contract. Do not pass `--activate` in production. Activation is staging-only and
 also requires complete C02 scheduled-source bindings plus explicit controlled
-staging-evidence confirmation. C01 provides neither binding nor activation
-evidence. See [C01 Prefect orchestration core](c01-prefect-orchestration-core.md).
+staging-evidence confirmation. C01 provided neither binding nor activation
+evidence at its checkpoint. SIX-BIND-01 satisfies the code-binding requirement
+only: binding does not equal activation, Prefect remains paused, and it executed
+no parent ingestion cycle. C05 and every other non-approved source remain
+unbound. A separate controlled activation-precondition task follows; a
+parent-cycle run still requires separate approval, and recurring Prefect unpause
+remains a later, separately approved step. See
+[C01 Prefect orchestration core](c01-prefect-orchestration-core.md).
 
 For controlled restart-persistence verification, record only the work-pool ID
 and type, restart both services, and compare that identity after both become
@@ -776,7 +785,8 @@ resolved Compose output, response bodies, or sensitive logs:
 - The production-oriented Prefect baseline uses a single server with SQLite and
   has no high availability, Redis, Prefect-specific PostgreSQL, authentication,
   production backup scheduling, production RPO/RTO evidence, source-specific
-  flow bindings, an active deployment/schedule, or staging activation.
+  bindings beyond the exact six approved by SIX-BIND-01, an active
+  deployment/schedule, or staging activation.
   Encrypted local backup and isolated restore evidence is recorded for C09.
 - Enterprise secret management and automated secret rotation are not
   integrated. APR-10 is team-owned, but no provider is selected or implemented;

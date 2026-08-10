@@ -49,7 +49,7 @@ docker compose -f $ComposeFile --env-file $ProdEnv ps
 
 Expected: the migration job completes successfully and the eight long-running services become healthy. A failed migration, missing secret, invalid commit identity, unhealthy service, or unexpected public port means **failed deployment**, not partial success. Follow the recovery runbook; do not improvise a downgrade.
 
-Production deployment registration is explicit and paused by default. C11 has zero production source handlers. Do not pass activation flags or enable a schedule during ordinary startup.
+Production deployment registration is explicit and paused by default. C11 had zero production source handlers at its historical checkpoint. SIX-BIND-01 now code-binds exactly six reviewed scheduled handlers, but binding does not equal activation and Prefect remains paused. Do not pass activation flags or enable a schedule during ordinary startup.
 
 For the corrected local-development workflow only, start `prefect-db`,
 `prefect-server`, and `prefect-worker` together. The UI remains loopback-only at
@@ -107,7 +107,7 @@ Use **Sources** to read:
 - freshness, quota/backoff, progress version/fingerprint, and latest safe run;
 - actions explicitly returned by the backend.
 
-The source registry's `enabled` metadata is not proof of live collection. In C11, `DEFAULT_SOURCE_HANDLERS_COUNT = 0`; no source is scheduled or executable through the production parent mapping. The four C05 sources and UAE approval-gated sources remain disabled/unscheduled.
+The source registry's `enabled` metadata is not proof of live collection. The historical C11 checkpoint recorded `DEFAULT_SOURCE_HANDLERS_COUNT = 0`. SIX-BIND-01 now binds exactly `nvd`, `first-epss`, `cisa-kev`, `cert-eu-security-advisories`, `google-threat-intelligence-public-research`, and `mandiant-public-threat-research` in code. Prefect remains paused, so binding does not activate collection. The C05 sources, STIX/TAXII, MITRE, DESC, commercial, manual-only, disabled, UAE approval-gated, and every other non-approved source remain unbound or unscheduled as applicable.
 
 Do not enter an arbitrary URL, edit source policy in a running container, invent an aeCERT/NibraS/DESC path, or create sample/live state to make the UI appear active.
 
@@ -125,7 +125,7 @@ Do not enter an arbitrary URL, edit source policy in a running container, invent
 
 Operator controls use fixed source slugs, empty strict request bodies, CSRF/Origin protection, audit evidence, and idempotency where required. They do not accept arbitrary hosts or paths.
 
-For this C11 package, no production source handler is bound. If no `manual_run` action is offered, the correct action is **none**. Do not activate a handler, call a legacy manual CLI against live sources, or use a test fixture in staging merely to create data. Live validation requires a separately approved source policy and exact command.
+The six reviewed scheduled handlers are code-bound, but no production source execution was activated by SIX-BIND-01. If no `manual_run` action is offered, the correct action is **none**. Do not activate a handler, call a legacy manual CLI against live sources, or use a test fixture in staging merely to create data. A separate controlled activation-precondition task follows; a parent-cycle run still requires separate approval, and recurring Prefect unpause remains a later, separately approved step.
 
 ## Analyst workflows
 
@@ -194,7 +194,7 @@ Use [`c09-recovery-runbook.md`](c09-recovery-runbook.md) for exact procedures. D
 |---|---|
 | Candidate health/migration fails | Stop cutover; preserve safe event/correlation evidence; restore known-good immutable package without automatic schema downgrade |
 | Database unhealthy | Treat overall system unhealthy; stop release and investigate dependency/configuration safely |
-| Prefect/worker unhealthy | Keep internal; restart only affected service after dependency health; confirm handlers remain inactive |
+| Prefect/worker unhealthy | Keep internal; restart only affected service after dependency health; confirm the deployment remains paused and only the six approved bindings exist |
 | Source failed/partial/rate-limited | Preserve truthful state; inspect policy/quota/checkpoint; retry only if authorized/retryable |
 | Credential missing/invalid | Rotate through secret owner; never test/print value on command line |
 | Report export fails | Do not fabricate/download a file; verify audit/database health and safe logs |

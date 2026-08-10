@@ -22,7 +22,8 @@ from app.orchestration.deployments import (
     validate_activation,
     validate_existing_schedules,
 )
-from app.orchestration.flows import PARENT_FLOW_NAME
+from app.orchestration.flows import DEFAULT_SOURCE_HANDLERS, PARENT_FLOW_NAME
+from app.orchestration.source_handlers import C02_BOUND_SOURCE_SLUGS
 
 
 class FakeHandler:
@@ -135,3 +136,53 @@ def test_activation_contract_can_pass_only_with_all_explicit_staging_gates() -> 
         handlers=scheduled_bindings(),
         work_pool_valid=True,
     )
+
+
+def test_exact_production_bindings_satisfy_activation_completeness_validation() -> None:
+    assert frozenset(DEFAULT_SOURCE_HANDLERS) == C02_BOUND_SOURCE_SLUGS
+    validate_activation(
+        activate=True,
+        app_env="staging",
+        controlled_staging_evidence_confirmed=True,
+        handlers=DEFAULT_SOURCE_HANDLERS,
+        work_pool_valid=True,
+    )
+
+
+def test_missing_production_binding_fails_activation_closed() -> None:
+    handlers = dict(DEFAULT_SOURCE_HANDLERS)
+    handlers.pop("nvd")
+    with pytest.raises(ContractValidationError, match="must be bound"):
+        validate_activation(
+            activate=True,
+            app_env="staging",
+            controlled_staging_evidence_confirmed=True,
+            handlers=handlers,
+            work_pool_valid=True,
+        )
+
+
+def test_unknown_extra_binding_fails_activation_closed() -> None:
+    handlers = dict(DEFAULT_SOURCE_HANDLERS)
+    handlers["unapproved-source"] = FakeHandler()
+    with pytest.raises(ContractValidationError, match="unknown source binding"):
+        validate_activation(
+            activate=True,
+            app_env="staging",
+            controlled_staging_evidence_confirmed=True,
+            handlers=handlers,
+            work_pool_valid=True,
+        )
+
+
+def test_invalid_required_handler_fails_activation_closed() -> None:
+    handlers = dict(DEFAULT_SOURCE_HANDLERS)
+    handlers["nvd"] = object()
+    with pytest.raises(ContractValidationError, match="binding is invalid"):
+        validate_activation(
+            activate=True,
+            app_env="staging",
+            controlled_staging_evidence_confirmed=True,
+            handlers=handlers,  # type: ignore[arg-type]
+            work_pool_valid=True,
+        )

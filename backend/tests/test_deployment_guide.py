@@ -269,6 +269,21 @@ def test_deployment_evidence_and_known_limitations_are_complete() -> None:
         assert required_phrase in guide
 
 
+def test_six_bind_code_binding_remains_paused_and_separately_gated() -> None:
+    guide = normalized_guide()
+    for required_phrase in (
+        "six-bind-01 now code-binds exactly the six reviewed c02 handlers",
+        "binding does not equal activation",
+        "prefect remains paused",
+        "executed no parent ingestion cycle",
+        "c05 and every other non-approved source remain unbound",
+        "separate controlled activation-precondition task follows",
+        "parent-cycle run still requires separate approval",
+        "recurring prefect unpause remains a later, separately approved step",
+    ):
+        assert required_phrase in guide
+
+
 def test_guide_does_not_embed_credentials_or_recommend_weakened_controls() -> None:
     raw_guide = DEPLOYMENT_GUIDE.read_text(encoding="utf-8")
     guide = re.sub(r"\s+", " ", raw_guide.lower())
