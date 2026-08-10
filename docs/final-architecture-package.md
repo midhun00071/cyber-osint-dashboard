@@ -6,6 +6,14 @@ This document is the C11 architecture index for the Alpha Data / Cyber OSINT Das
 
 It reconciles the implemented component/trust/data flows without duplicating the detailed source documents. It does not claim mentor staging, public TLS, external alert delivery, off-host backup activation, scheduled-cycle observation, UAT, or measured production recovery.
 
+Post-C11 PF-01/PF-02 local correction: development Compose now stores Prefect
+metadata in a dedicated internal PostgreSQL service/volume and serves real UI
+assets from the explicit non-root writable `/var/lib/prefect/ui` path. The old
+local SQLite file remains untouched and no metadata migration is claimed. The
+production-oriented topology and historical C09/C11 evidence below remain on
+their documented SQLite volume architecture. The deployment stays paused and
+the production source-handler mapping stays empty.
+
 ## Component map and deployment topology
 
 ```mermaid

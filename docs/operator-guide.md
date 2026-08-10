@@ -51,6 +51,14 @@ Expected: the migration job completes successfully and the eight long-running se
 
 Production deployment registration is explicit and paused by default. C11 has zero production source handlers. Do not pass activation flags or enable a schedule during ordinary startup.
 
+For the corrected local-development workflow only, start `prefect-db`,
+`prefect-server`, and `prefect-worker` together. The UI remains loopback-only at
+`http://127.0.0.1:4200`; the local metadata database has no host port. If the
+new metadata volume starts empty, recreate the deployment only with
+`python -m app.orchestration.deployments` inside `prefect-worker`, never with
+`--activate`. The worker recreates `alpha-data-process` idempotently. The old
+SQLite file in `prefect_data` is retained and is not migrated or deleted.
+
 ## Shutdown
 
 Routine stop preserves named volumes:

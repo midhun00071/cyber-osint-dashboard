@@ -136,8 +136,8 @@ no schedule was activated.
 | Orchestration persistence adapter | Own short application-role transactions and delegate operational mutations to the existing service | Flow bodies issue no SQL, mutate no ORM objects, and hide no commits |
 | Prefect parent/source flows | Evaluate all enabled policies in slug order, isolate source outcomes, apply bounded retries/staggering, and finalize reconciled cycle evidence | Production bindings remain empty; C02 handlers are available only through the separate inactive builder |
 | C02 source handlers | Directly call existing CISA, NVD, EPSS, RSS, adapter, normalizer, and persistence components; own source-data transactions and immutable run-linked recovery evidence | Separate inactive builder only; manual-only Anomali, Censys, and IBM identities remain unbound |
-| Prefect server | Provide one self-hosted Prefect 3.8.1 API/UI and persist its SQLite orchestration state in `prefect_data` | No production host publication, Cloud dependency, default credential, or application-database access |
-| Prefect process worker | Poll the fixed `alpha-data-process` pool and import the application orchestration package | No direct SQLite/volume access, Docker socket, source mount, bootstrap/migration credential, automatic registration, or C01 live-source execution |
+| Prefect server | Provide one self-hosted Prefect 3.8.1 API/UI; local metadata uses dedicated PostgreSQL while the production-oriented baseline retains SQLite | Real UI bundles use the non-root writable `prefect_data` path; no production host publication, Cloud dependency, default credential, or application-database access |
+| Prefect process worker | Poll the fixed `alpha-data-process` pool and import the application orchestration package | No direct metadata-database/volume access, Docker socket, source mount, bootstrap/migration credential, automatic deployment registration, or C01 live-source execution |
 
 ## Repository and module structure
 
@@ -548,12 +548,18 @@ measured staging RPO/RTO remain manual gates. `docker compose down -v` deletes
 the persistent PostgreSQL volume and is a destructive operation, not routine
 cleanup; it requires explicit authorization and verified recovery evidence.
 
-Prefect state is separate from application data. The single server stores its
-SQLite database inside `PREFECT_HOME` on the named `prefect_data` volume. Only
-`prefect-server` mounts this volume; the worker communicates through
-`http://prefect-server:4200/api` and cannot directly open the SQLite file.
-Controlled container restart/recreation preserves this state, but the volume is
-not a backup and B2-01 provides no restore, RPO, or RTO evidence.
+Prefect state is separate from application data. Local development now stores
+metadata in the dedicated `prefect` database on the internal-only
+`prefect-db` service, persisted by `prefect_postgres_data`; its separate
+`prefect_runtime` owner is non-superuser. The existing `prefect_data` volume is
+preserved and stores the non-root writable real-UI bundle cache at
+`/var/lib/prefect/ui`; the old local SQLite file is left untouched and is not
+claimed as migrated. Only `prefect-server` reaches the local metadata network.
+The worker communicates through `http://prefect-server:4200/api` and receives
+no Prefect metadata credential. The production-oriented Compose baseline
+continues to store its separate SQLite state in `prefect_data`. Controlled
+container restart/recreation preserves each current store, but volumes are not
+backups and this correction provides no staging migration, RPO, or RTO evidence.
 
 ## Backend API architecture
 
@@ -644,14 +650,17 @@ The parent environment is restored in `finally`, and the credential-bearing URL
 must not be printed or passed on the process command line. Stopping `dev` ends
 only the host process trees; the database container remains running.
 
-The development Compose stack runs `db`, `backend`, `frontend`,
-`prefect-server`, and `prefect-worker` containers on a shared bridge network;
-`migrate` remains a manual profile. PostgreSQL, backend, and frontend retain
+The development Compose stack runs `db`, `backend`, `frontend`, `prefect-db`,
+`prefect-server`, and `prefect-worker`; `migrate` remains a manual profile.
+The Prefect metadata database uses a separate internal-only network joined only
+by `prefect-db` and `prefect-server`. PostgreSQL, backend, and frontend retain
 their local host publications. Local Prefect administration is published only
 on `127.0.0.1` at `${PREFECT_PORT:-4200}`; its bind host is not configurable,
-and the worker health port is not published. Its local defaults, development
-environment, fixed application container names, and placeholder database
-credentials are not production controls. Although the development Compose
+and neither the worker health port nor Prefect metadata database is published.
+The real UI is copied by UID/GID `10001:10001` into the explicit writable
+`/var/lib/prefect/ui` path rather than root-owned site-packages. Its local
+defaults, development environment, fixed application container names, and
+placeholder database credentials are not production controls. Although the development Compose
 environment contains legacy interval/admin feature flags, the current
 application has no ingestion scheduler, startup ingestion, or admin ingestion
 route. The Prefect worker remains idle apart from fixed pool registration and
@@ -698,7 +707,8 @@ environment file, or Docker socket is mounted into application containers.
 Prefect server joins only the dedicated internal `orchestration` network;
 Prefect worker joins only `orchestration` and the internal `database` network.
 Production publishes no Prefect host port. The server alone mounts
-`prefect_data`; the worker uses the internal API, has no state-volume mount, and
+`prefect_data`. Only `prefect-server` mounts this volume. The worker uses the
+internal API, has no state-volume mount, and
 receives only the existing application database credential secret.
 Both use the same project-built image based exactly on
 `prefecthq/prefect:3.8.1-python3.13`. The worker's fixed argument-vector command
@@ -782,7 +792,9 @@ backup, retention, or recovery work has been executed or validated.
    escapes text, and external links pass scheme/credential/character checks.
 6. **Orchestration boundary:** local Prefect administration is loopback-only;
    production server/worker traffic remains on the private internal network.
-   The worker reaches the server API but not the server-owned SQLite volume.
+   The worker reaches the server API but not the local Prefect metadata network,
+   PostgreSQL credential, or server-owned `prefect_data` volume. Production
+   retains its server-owned SQLite volume boundary.
 
 Backend settings use environment variables and `SecretStr` for sensitive
 values. Production rejects debug mode and non-HTTPS/loopback CORS origins. CORS
@@ -869,9 +881,10 @@ The current repository does not implement:
   database roles, or zero-downtime deployment;
 - production load testing or validated public-internet deployment;
 - active startup, scheduled/background ingestion, or recurring refresh;
-- Prefect high availability, Redis, a Prefect-specific PostgreSQL database,
-  Prefect authentication, active production deployments/schedules, monitoring,
-  backup/restore proof, or staging activation;
+- Prefect high availability, Redis, Prefect authentication, active production
+  deployments/schedules, monitoring, backup/restore proof, or staging
+  activation; the dedicated Prefect PostgreSQL backend is local-development
+  only and is not a production metadata migration claim;
 - an unauthenticated ingestion API, arbitrary URL ingestion, or automatically
   activated source execution;
 - active scanning/probing, active IOC validation, malware retrieval, file

@@ -20,6 +20,13 @@ Expected local URLs:
 - Frontend: http://localhost:3000
 - Backend: http://localhost:8000
 - PostgreSQL: localhost:5432
+- Prefect UI/API: http://127.0.0.1:4200
+
+Local Prefect metadata uses a separate internal-only PostgreSQL service with no
+host port and persistent `prefect_postgres_data`. The non-root Prefect server
+serves its real UI from the writable `/var/lib/prefect/ui` path in the preserved
+`prefect_data` volume. The old local SQLite file is preserved separately and is
+not represented as migrated.
 
 ## Environment Requirements
 
@@ -59,3 +66,5 @@ Docker secret-file references, and encrypted backup/isolated-restore tooling.
 Only Caddy is host-published. Public staging/DNS/certificate evidence, external
 alert delivery, an approved off-host destination, production credential
 rotation, and measured RPO/RTO evidence remain B9-03/operator responsibilities.
+The post-C11 PF-01/PF-02 correction is local-development evidence only;
+production Prefect metadata remains on the documented SQLite baseline.

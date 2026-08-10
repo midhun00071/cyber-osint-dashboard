@@ -18,6 +18,7 @@ def test_local_compose_has_exact_expected_service_set() -> None:
         "backend",
         "migrate",
         "frontend",
+        "prefect-db",
         "prefect-server",
         "prefect-worker",
     }

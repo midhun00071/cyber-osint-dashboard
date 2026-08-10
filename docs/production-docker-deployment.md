@@ -38,6 +38,13 @@ deployment must supply those controls outside this repository.
 Do not use `.\run.cmd dev`, `.\run.cmd docker`, the development Compose file,
 reload servers, or development environment values as production procedures.
 
+Post-C11 PF-01/PF-02 correction note: the development Compose file now uses a
+dedicated internal PostgreSQL service for Prefect metadata. This production
+guide and `compose.prod.yml` retain the separately reviewed single-server SQLite
+metadata architecture; no production metadata migration is claimed. The shared
+non-root Prefect image now uses the explicit writable
+`/var/lib/prefect/ui` directory for real UI assets in both modes.
+
 ## Architecture summary
 
 The production entry point is `compose.prod.yml`. It is standalone because the
@@ -462,6 +469,9 @@ by contacting the unapproved domain.
 - PostgreSQL data is stored in the named `postgres_data` volume.
 - Prefect server state is stored in the separate named `prefect_data` volume.
   Only the server mounts it; the worker communicates through the self-hosted API.
+- Prefect's real UI bundles are copied to `/var/lib/prefect/ui` in that
+  server-owned volume by UID/GID `10001`; root-owned site-packages are not made
+  writable.
 - The Prefect server and worker use the same project-built image based exactly
   on `prefecthq/prefect:3.8.1-python3.13` and run as fixed UID/GID `10001`.
 - The image contains the backend Python runtime and `app.orchestration` under
@@ -763,11 +773,11 @@ resolved Compose output, response bodies, or sensitive logs:
 - No orchestration platform for container scheduling, autoscaling, or
   zero-downtime deployment exists. Self-hosted Prefect provides bounded workflow
   orchestration infrastructure only.
-- Prefect uses a single server with SQLite and has no high availability, Redis,
-  Prefect-specific PostgreSQL, authentication, production backup scheduling,
-  production RPO/RTO evidence, source-specific flow bindings, an active
-  deployment/schedule, or staging activation. Encrypted local backup and isolated
-  restore evidence is recorded for C09.
+- The production-oriented Prefect baseline uses a single server with SQLite and
+  has no high availability, Redis, Prefect-specific PostgreSQL, authentication,
+  production backup scheduling, production RPO/RTO evidence, source-specific
+  flow bindings, an active deployment/schedule, or staging activation.
+  Encrypted local backup and isolated restore evidence is recorded for C09.
 - Enterprise secret management and automated secret rotation are not
   integrated. APR-10 is team-owned, but no provider is selected or implemented;
   any selected baseline still requires security-control compliance and

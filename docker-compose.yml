@@ -100,6 +100,34 @@ services:
     networks:
       - alpha_data_network
 
+  prefect-db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: prefect_bootstrap
+      POSTGRES_PASSWORD: ${PREFECT_METADATA_ADMIN_PASSWORD:-local-prefect-bootstrap-change-me}
+      POSTGRES_DB: postgres
+      PREFECT_RUNTIME_USER: prefect_runtime
+      PREFECT_RUNTIME_PASSWORD: ${PREFECT_POSTGRES_PASSWORD:-local-prefect-change-me}
+      PREFECT_RUNTIME_DB: prefect
+    volumes:
+      - prefect_postgres_data:/var/lib/postgresql/data
+      - ./prefect/database/init/10-provision-runtime-role.sh:/docker-entrypoint-initdb.d/10-provision-runtime-role.sh:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          PGPASSWORD="$${PREFECT_RUNTIME_PASSWORD}"
+          psql --no-psqlrc --username "$${PREFECT_RUNTIME_USER}"
+          --dbname "$${PREFECT_RUNTIME_DB}" --tuples-only --no-align
+          --command 'SELECT 1' | grep -qx 1
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks:
+      - prefect_metadata_network
+
   prefect-server:
     image: alpha-data-prefect:3.8.1-python3.13
     build:
@@ -110,6 +138,13 @@ services:
     environment:
       PREFECT_HOME: /var/lib/prefect
       PREFECT_UI_API_URL: http://127.0.0.1:${PREFECT_PORT:-4200}/api
+      PREFECT_SERVER_UI_STATIC_DIRECTORY: /var/lib/prefect/ui
+      PREFECT_SERVER_DATABASE_DRIVER: postgresql+asyncpg
+      PREFECT_SERVER_DATABASE_HOST: prefect-db
+      PREFECT_SERVER_DATABASE_PORT: 5432
+      PREFECT_SERVER_DATABASE_USER: prefect_runtime
+      PREFECT_SERVER_DATABASE_PASSWORD: ${PREFECT_POSTGRES_PASSWORD:-local-prefect-change-me}
+      PREFECT_SERVER_DATABASE_NAME: prefect
     ports:
       - "127.0.0.1:${PREFECT_PORT:-4200}:4200"
     volumes:
@@ -124,8 +159,12 @@ services:
       timeout: 5s
       retries: 12
       start_period: 20s
+    depends_on:
+      prefect-db:
+        condition: service_healthy
     networks:
       - alpha_data_network
+      - prefect_metadata_network
 
   prefect-worker:
     image: alpha-data-prefect:3.8.1-python3.13
@@ -177,7 +216,11 @@ services:
 volumes:
   postgres_data:
   prefect_data:
+  prefect_postgres_data:
 
 networks:
   alpha_data_network:
     driver: bridge
+  prefect_metadata_network:
+    driver: bridge
+    internal: true

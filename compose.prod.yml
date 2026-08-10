@@ -161,7 +161,9 @@ services:
     mem_limit: 1g
     cpus: 1.0
     command: ["prefect", "server", "start", "--host", "0.0.0.0", "--port", "4200"]
-    environment: { PREFECT_HOME: /var/lib/prefect }
+    environment:
+      PREFECT_HOME: /var/lib/prefect
+      PREFECT_SERVER_UI_STATIC_DIRECTORY: /var/lib/prefect/ui
     volumes: ["prefect_data:/var/lib/prefect"]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4200/api/health',timeout=3).read()"]

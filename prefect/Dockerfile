@@ -1,6 +1,7 @@
 FROM prefecthq/prefect:3.8.1-python3.13@sha256:4386a7fd80a989ab55ea98ff860f29e469f6c7b99e1a2b94eaaa7df007504ac5
 
 ENV PREFECT_HOME=/var/lib/prefect \
+    PREFECT_SERVER_UI_STATIC_DIRECTORY=/var/lib/prefect/ui \
     PYTHONPATH=/opt/alpha-data/backend \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
@@ -9,6 +10,7 @@ RUN groupadd --gid 10001 prefect \
     && useradd --uid 10001 --gid 10001 --home-dir /var/lib/prefect \
         --no-create-home --shell /usr/sbin/nologin prefect \
     && install -d --owner prefect --group prefect --mode 0750 /var/lib/prefect \
+    && install -d --owner prefect --group prefect --mode 0750 /var/lib/prefect/ui \
     && install -d --owner prefect --group prefect --mode 0750 /opt/alpha-data/backend
 
 COPY backend/requirements.prod.txt /tmp/alpha-data-requirements.txt

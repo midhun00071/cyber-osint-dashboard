@@ -8,6 +8,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 LOCAL_COMPOSE_PATH = REPO_ROOT / "docker-compose.yml"
 PRODUCTION_COMPOSE_PATH = REPO_ROOT / "compose.prod.yml"
 PREFECT_DOCKERFILE = REPO_ROOT / "prefect" / "Dockerfile"
+PREFECT_DATABASE_INIT = (
+    REPO_ROOT / "prefect" / "database" / "init" / "10-provision-runtime-role.sh"
+)
 REQUIREMENTS = REPO_ROOT / "backend" / "requirements.txt"
 PINNED_UPSTREAM_IMAGE = "prefecthq/prefect:3.8.1-python3.13@sha256:4386a7fd80a989ab55ea98ff860f29e469f6c7b99e1a2b94eaaa7df007504ac5"
 PROJECT_IMAGE = "alpha-data-prefect:3.8.1-python3.13"
@@ -36,6 +39,7 @@ def test_prefect_dockerfile_uses_only_the_exact_pinned_base() -> None:
     assert "pip install --no-cache-dir -r /tmp/alpha-data-requirements.txt" in dockerfile
     assert "apt-get" not in dockerfile
     assert "PREFECT_HOME=/var/lib/prefect" in dockerfile
+    assert "PREFECT_SERVER_UI_STATIC_DIRECTORY=/var/lib/prefect/ui" in dockerfile
     assert "PYTHONPATH=/opt/alpha-data/backend" in dockerfile
     assert "WORKDIR /opt/alpha-data/backend" in dockerfile
 
@@ -46,6 +50,7 @@ def test_prefect_image_has_a_fixed_unprivileged_identity() -> None:
     assert "groupadd --gid 10001 prefect" in dockerfile
     assert "useradd --uid 10001 --gid 10001" in dockerfile
     assert "install -d --owner prefect --group prefect --mode 0750" in dockerfile
+    assert "/var/lib/prefect/ui" in dockerfile
     assert re.search(r"(?m)^USER 10001:10001$", dockerfile)
     assert not re.search(r"(?m)^USER (?:0|root)(?::(?:0|root))?$", dockerfile)
 
@@ -77,6 +82,7 @@ def test_exact_compose_service_sets_include_one_server_and_worker() -> None:
         "backend",
         "migrate",
         "frontend",
+        "prefect-db",
         "prefect-server",
         "prefect-worker",
     }
@@ -150,6 +156,72 @@ def test_prefect_state_is_server_owned_and_worker_isolated() -> None:
         assert "volumes" not in worker
         assert server["environment"]["PREFECT_HOME"] == "/var/lib/prefect"
         assert worker["environment"]["PREFECT_HOME"] == "/var/lib/prefect"
+
+
+def test_local_prefect_uses_a_dedicated_internal_postgresql_database() -> None:
+    compose = load_yaml(LOCAL_COMPOSE_PATH)
+    metadata = compose["services"]["prefect-db"]
+    server, worker = prefect_services(compose)
+
+    assert metadata["image"] == "postgres:17-alpine"
+    assert "ports" not in metadata
+    assert metadata["volumes"] == [
+        "prefect_postgres_data:/var/lib/postgresql/data",
+        "./prefect/database/init/10-provision-runtime-role.sh:"
+        "/docker-entrypoint-initdb.d/10-provision-runtime-role.sh:ro",
+    ]
+    metadata_health = " ".join(metadata["healthcheck"]["test"])
+    assert "psql --no-psqlrc" in metadata_health
+    assert 'PGPASSWORD="$${PREFECT_RUNTIME_PASSWORD}"' in metadata_health
+    assert '"$${PREFECT_RUNTIME_USER}"' in metadata_health
+    assert '"$${PREFECT_RUNTIME_DB}"' in metadata_health
+    assert "SELECT 1" in metadata_health
+    assert metadata["networks"] == ["prefect_metadata_network"]
+    assert compose["networks"]["prefect_metadata_network"]["internal"] is True
+    assert "prefect_postgres_data" in compose["volumes"]
+
+    environment = server["environment"]
+    assert environment["PREFECT_SERVER_DATABASE_DRIVER"] == "postgresql+asyncpg"
+    assert environment["PREFECT_SERVER_DATABASE_HOST"] == "prefect-db"
+    assert environment["PREFECT_SERVER_DATABASE_PORT"] == 5432
+    assert environment["PREFECT_SERVER_DATABASE_NAME"] == "prefect"
+    assert environment["PREFECT_SERVER_DATABASE_USER"] == "prefect_runtime"
+    assert environment["PREFECT_SERVER_DATABASE_PASSWORD"] == (
+        "${PREFECT_POSTGRES_PASSWORD:-local-prefect-change-me}"
+    )
+    assert "PREFECT_SERVER_DATABASE_CONNECTION_URL" not in environment
+    assert server["depends_on"]["prefect-db"]["condition"] == "service_healthy"
+    assert server["networks"] == ["alpha_data_network", "prefect_metadata_network"]
+    assert not any(
+        key.startswith("PREFECT_SERVER_DATABASE_")
+        for key in worker["environment"]
+    )
+
+
+def test_local_prefect_database_runtime_role_is_not_the_bootstrap_identity() -> None:
+    compose = load_yaml(LOCAL_COMPOSE_PATH)
+    metadata = compose["services"]["prefect-db"]
+    environment = metadata["environment"]
+    init_script = PREFECT_DATABASE_INIT.read_text(encoding="utf-8")
+
+    assert environment["POSTGRES_USER"] == "prefect_bootstrap"
+    assert environment["PREFECT_RUNTIME_USER"] == "prefect_runtime"
+    assert environment["POSTGRES_USER"] != environment["PREFECT_RUNTIME_USER"]
+    assert environment["POSTGRES_DB"] == "postgres"
+    assert environment["PREFECT_RUNTIME_DB"] == "prefect"
+    assert "NOSUPERUSER" in init_script
+    assert "NOCREATEDB" in init_script
+    assert "NOCREATEROLE" in init_script
+    assert "ALTER DATABASE" not in init_script
+
+
+def test_prefect_ui_uses_an_explicit_non_root_writable_directory() -> None:
+    for compose_path in (LOCAL_COMPOSE_PATH, PRODUCTION_COMPOSE_PATH):
+        server, _ = prefect_services(load_yaml(compose_path))
+        assert server["environment"]["PREFECT_SERVER_UI_STATIC_DIRECTORY"] == (
+            "/var/lib/prefect/ui"
+        )
+        assert server["volumes"] == ["prefect_data:/var/lib/prefect"]
 
 
 def test_local_prefect_admin_is_loopback_only_and_worker_is_not_published() -> None:

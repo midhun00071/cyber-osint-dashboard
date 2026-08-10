@@ -439,15 +439,21 @@ backend and frontend. The database container remains running for reuse.
 Build and start only the local Prefect services from the repository root:
 
 ```powershell
-docker compose up --build -d prefect-server prefect-worker
+docker compose up --build -d prefect-db prefect-server prefect-worker
 docker compose ps
 ```
 
 The Prefect administration UI and API are published only on loopback at
 `http://127.0.0.1:4200` by default. `PREFECT_PORT` may change the host port, but
 not the `127.0.0.1` bind address. The worker health port is not published. The
-server owns the `prefect_data` volume; the worker reaches state only through
-`http://prefect-server:4200/api` and creates or reuses the fixed process work
+non-root image directs Prefect's real UI bundles to the explicitly writable
+`/var/lib/prefect/ui` directory in `prefect_data`; site-packages remain
+read-only. Local Prefect metadata uses the separate, internal-only
+`prefect-db` PostgreSQL service and `prefect_postgres_data` volume with the
+supported async driver. The service has no host port and uses a dedicated
+non-superuser `prefect_runtime` role. The worker has no metadata-database
+network or credential and reaches state only through
+`http://prefect-server:4200/api`, creating or reusing the fixed process work
 pool `alpha-data-process`. This local platform boundary does not mean that any
 source-specific ingestion handler or active schedule exists. C01's fixed
 deployment must be registered explicitly and remains paused by default. See the
@@ -455,6 +461,13 @@ deployment must be registered explicitly and remains paused by default. See the
 validation and paused registration, and the historical
 [B2-01 Prefect platform](docs/b2-01-prefect-platform.md) for infrastructure
 health and persistence validation.
+
+The earlier local SQLite file remains untouched in `prefect_data`; this
+correction does not claim to migrate it. On the first start of the new local
+metadata volume, the worker recreates the work pool idempotently and an operator
+recreates the deployment through `python -m app.orchestration.deployments`
+without `--activate`. The registration remains paused and makes no source
+request.
 
 ## Production-oriented deployment
 
@@ -1093,9 +1106,12 @@ authoritative detailed references:
 - CI/CD deployment, Kubernetes or another orchestration platform for container
   deployment, autoscaling, zero-downtime deployment, and automated secret
   rotation are not implemented. Prefect provides workflow orchestration only.
-- Prefect uses one server and SQLite state, with no high availability, Redis,
-  Prefect-specific PostgreSQL, authentication, backup/restore proof, or staging
-  deployment. Network isolation is the current administration boundary.
+- Local development now uses a dedicated internal PostgreSQL database for
+  Prefect metadata. The production-oriented Compose baseline still uses one
+  Prefect server with SQLite and has no high availability, Redis,
+  Prefect-specific PostgreSQL, authentication, production backup/restore proof,
+  or staging deployment. Network isolation is the current administration
+  boundary.
 - Current production Compose separates the privileged PostgreSQL bootstrap
   identity from non-superuser migration and runtime application identities;
   read-only, logical-backup, and retention-planning groups remain bounded to
