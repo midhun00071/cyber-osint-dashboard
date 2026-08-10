@@ -14,6 +14,7 @@ from app.ingestion.adapters.google_threat_publications import (
     MAX_GOOGLE_THREAT_CATEGORIES,
     MAX_GOOGLE_THREAT_DIAGNOSTIC_BYTES,
     MAX_GOOGLE_THREAT_FEED_ENTRIES,
+    SUMMARY_HANDLING_UNSUPPORTED_MARKUP_OMITTED,
     GoogleThreatFeedError,
     GoogleThreatPublicationRecordError,
     adapt_google_threat_publication,
@@ -491,11 +492,17 @@ def test_summary_truncation_follows_markup_and_whitespace_normalization() -> Non
     assert "\t" not in candidate.summary
 
 
-def test_malformed_markup_beyond_summary_limit_remains_rejected() -> None:
-    summary = "A" * MAX_PUBLICATION_SUMMARY_LENGTH + "Safe <strong"
+def test_malformed_markup_beyond_summary_limit_is_omitted_completely() -> None:
+    private_summary = "A" * MAX_PUBLICATION_SUMMARY_LENGTH + "PRIVATE <strong"
 
-    with pytest.raises(GoogleThreatPublicationRecordError):
-        adapt_google_threat_publication(entry(summary=summary))
+    candidate = adapt_google_threat_publication(entry(summary=private_summary))
+
+    assert candidate.summary is None
+    assert candidate.safe_source_payload["summary_handling"] == (
+        SUMMARY_HANDLING_UNSUPPORTED_MARKUP_OMITTED
+    )
+    assert private_summary not in str(candidate)
+    assert "PRIVATE" not in str(candidate.safe_source_payload)
 
 
 def test_prohibited_character_beyond_summary_limit_remains_rejected() -> None:
@@ -505,11 +512,16 @@ def test_prohibited_character_beyond_summary_limit_remains_rejected() -> None:
         adapt_google_threat_publication(entry(summary=summary))
 
 
-def test_active_markup_beyond_summary_limit_remains_rejected() -> None:
-    summary = "A" * MAX_PUBLICATION_SUMMARY_LENGTH + "<script/>discarded"
+def test_active_markup_beyond_summary_limit_is_omitted_completely() -> None:
+    private_summary = "A" * MAX_PUBLICATION_SUMMARY_LENGTH + "<script/>PRIVATE"
 
-    with pytest.raises(GoogleThreatPublicationRecordError):
-        adapt_google_threat_publication(entry(summary=summary))
+    candidate = adapt_google_threat_publication(entry(summary=private_summary))
+
+    assert candidate.summary is None
+    assert candidate.safe_source_payload["summary_handling"] == (
+        SUMMARY_HANDLING_UNSUPPORTED_MARKUP_OMITTED
+    )
+    assert "PRIVATE" not in str(candidate.safe_source_payload)
 
 
 def test_oversized_title_remains_rejected_without_truncation() -> None:
@@ -527,6 +539,101 @@ def test_summary_precedence_and_description_fallback_remain_unchanged() -> None:
 
     assert adapt_google_threat_publication(preferred).summary == "Preferred summary"
     assert adapt_google_threat_publication(fallback).summary == "Fallback description"
+
+
+@pytest.mark.parametrize(
+    ("author", "malformed_summary"),
+    [
+        (GOOGLE_AUTHOR_NAME, "PRIVATE_GOOGLE_PI <?target"),
+        (MANDIANT_AUTHOR_NAME, "PRIVATE_MANDIANT_UNTERMINATED <strong"),
+        (MANDIANT_AUTHOR_NAME, "PRIVATE_MANDIANT_INVALID_START <div class=>"),
+    ],
+    ids=[
+        "google-invalid-processing-instruction",
+        "mandiant-unterminated-tag",
+        "mandiant-invalid-start-tag",
+    ],
+)
+def test_observed_optional_summary_markup_classes_are_omitted_safely(
+    author: str,
+    malformed_summary: str,
+) -> None:
+    candidate = adapt_google_threat_publication(
+        entry(author=author, summary=malformed_summary)
+    )
+
+    assert candidate.summary is None
+    assert candidate.safe_source_payload["summary_handling"] == (
+        SUMMARY_HANDLING_UNSUPPORTED_MARKUP_OMITTED
+    )
+    assert malformed_summary not in str(candidate)
+    assert malformed_summary not in str(candidate.safe_source_payload)
+    assert "contains unsupported markup" not in str(candidate.safe_source_payload)
+    assert "diagnostic_fingerprint" not in candidate.safe_source_payload
+
+
+def test_unsupported_summary_markup_uses_valid_description_fallback() -> None:
+    private_summary = "PRIVATE_SUMMARY <strong"
+    data = entry(summary=private_summary)
+    data["description"] = "Safe description fallback"
+
+    candidate = adapt_google_threat_publication(data)
+
+    assert candidate.summary == "Safe description fallback"
+    assert candidate.safe_source_payload["summary_handling"] == (
+        SUMMARY_HANDLING_UNSUPPORTED_MARKUP_OMITTED
+    )
+    assert private_summary not in str(candidate)
+    assert private_summary not in str(candidate.safe_source_payload)
+
+
+def test_all_unsupported_optional_summary_values_are_omitted() -> None:
+    private_summary = "PRIVATE_SUMMARY <strong"
+    private_description = "PRIVATE_DESCRIPTION <?target"
+    data = entry(summary=private_summary)
+    data["description"] = private_description
+
+    candidate = adapt_google_threat_publication(data)
+
+    assert candidate.summary is None
+    assert candidate.safe_source_payload["summary_handling"] == (
+        SUMMARY_HANDLING_UNSUPPORTED_MARKUP_OMITTED
+    )
+    assert private_summary not in str(candidate)
+    assert private_description not in str(candidate)
+
+
+def test_non_markup_description_failure_after_omitted_summary_remains_fatal() -> None:
+    data = entry(summary="PRIVATE_SUMMARY <strong")
+    data["description"] = "PRIVATE_DESCRIPTION\x00"
+
+    with pytest.raises(GoogleThreatPublicationRecordError) as exc_info:
+        adapt_google_threat_publication(data)
+
+    assert exc_info.value.failure_stage == "adapter.text_unsupported_characters"
+
+
+def test_fixed_summary_marker_is_absent_without_unsupported_markup() -> None:
+    candidate = adapt_google_threat_publication(entry(summary="Safe summary"))
+
+    assert "summary_handling" not in candidate.safe_source_payload
+
+
+@pytest.mark.parametrize(
+    "malformed_title",
+    [
+        "PRIVATE_GOOGLE_PI <?target",
+        "PRIVATE_MANDIANT_UNTERMINATED <strong",
+        "PRIVATE_MANDIANT_INVALID_START <div class=>",
+    ],
+)
+def test_required_title_with_equivalent_malformed_markup_still_fails_closed(
+    malformed_title: str,
+) -> None:
+    with pytest.raises(GoogleThreatPublicationRecordError) as exc_info:
+        adapt_google_threat_publication(entry(title=malformed_title))
+
+    assert exc_info.value.failure_stage == "adapter.text_markup_unsupported"
 
 
 def test_encoded_or_malformed_markup_is_removed_or_rejected_safely() -> None:
@@ -599,17 +706,20 @@ def test_active_and_non_text_markup_is_removed_completely() -> None:
         "&amp;amp;lt;style/&amp;amp;gt;body{display:none}",
     ],
 )
-def test_self_closing_non_void_active_containers_are_rejected_without_disclosure(
+def test_self_closing_non_void_active_containers_are_omitted_without_disclosure(
     summary: str,
 ) -> None:
-    with pytest.raises(GoogleThreatPublicationRecordError) as exc_info:
-        adapt_google_threat_publication(entry(summary=summary))
+    candidate = adapt_google_threat_publication(entry(summary=summary))
 
-    message = str(exc_info.value)
-    assert summary not in message
-    assert "secret" not in message.lower()
-    assert "token" not in message.lower()
-    assert "password" not in message.lower()
+    assert candidate.summary is None
+    assert candidate.safe_source_payload["summary_handling"] == (
+        SUMMARY_HANDLING_UNSUPPORTED_MARKUP_OMITTED
+    )
+    safe_payload = str(candidate.safe_source_payload)
+    assert summary not in safe_payload
+    assert "secret" not in safe_payload.lower()
+    assert "token" not in safe_payload.lower()
+    assert "password" not in safe_payload.lower()
 
 
 @pytest.mark.parametrize(

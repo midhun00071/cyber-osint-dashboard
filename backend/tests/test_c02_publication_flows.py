@@ -39,6 +39,19 @@ def google_item(author: str, slug: str) -> str:
     """
 
 
+def google_item_with_unsupported_summary_markup(author: str, slug: str) -> str:
+    return f"""
+    <item>
+      <title>{author} report</title>
+      <author>{author}</author>
+      <link>https://cloud.google.com/blog/topics/threat-intelligence/{slug}/</link>
+      <guid>{slug}</guid>
+      <pubDate>Sun, 03 Aug 2026 07:00:00 GMT</pubDate>
+      <description>PRIVATE_OPTIONAL_SUMMARY &lt;strong</description>
+    </item>
+    """
+
+
 def malformed_google_item(author: str, slug: str) -> str:
     return f"""
     <item>
@@ -203,6 +216,58 @@ def test_shared_feed_persists_only_active_source(
     assert captured[0].source_slug == active_slug
     assert captured[0].safe_source_payload["authoritative_author"] == expected_author
     assert result.counters.failed == 0
+    assert result.progress_proposal is not None
+    assert result.progress_proposal.value == SLOT
+
+
+@pytest.mark.parametrize(
+    ("active_slug", "author"),
+    [
+        (GOOGLE_SOURCE_SLUG, "Google Threat Intelligence Group"),
+        (MANDIANT_SOURCE_SLUG, "Mandiant"),
+    ],
+)
+def test_shared_feed_omits_unsupported_optional_summary_without_owned_failure(
+    monkeypatch,
+    active_slug,
+    author,
+) -> None:
+    captured = []
+
+    class Pipeline:
+        def __init__(self, session):
+            del session
+
+        def persist(self, candidate, *, observed_at):
+            del observed_at
+            captured.append(candidate)
+            return persisted()
+
+    monkeypatch.setattr(
+        "app.orchestration.source_handlers.publications.PublicationPipeline",
+        Pipeline,
+    )
+    session = FakeSession()
+    feed = shared_feed(
+        google_item_with_unsupported_summary_markup(author, "omitted-summary")
+    )
+
+    result = PublicationSourceHandler(
+        active_slug,
+        session_factory=lambda: session,
+        google_client_factory=lambda: FeedClient(feed),
+    ).execute(context(active_slug))
+
+    assert result.status is ResultStatus.SUCCESS
+    assert result.counters.created == 1
+    assert result.counters.failed == 0
+    assert len(captured) == 1
+    assert captured[0].summary is None
+    assert captured[0].safe_source_payload["summary_handling"] == (
+        "unsupported_markup_omitted"
+    )
+    assert "PRIVATE_OPTIONAL_SUMMARY" not in str(captured[0])
+    assert not any(isinstance(item, IngestionError) for item in session.added)
     assert result.progress_proposal is not None
     assert result.progress_proposal.value == SLOT
 

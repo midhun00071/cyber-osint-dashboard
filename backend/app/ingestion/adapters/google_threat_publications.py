@@ -45,6 +45,7 @@ GOOGLE_THREAT_PUBLICATION_HOST = "cloud.google.com"
 GOOGLE_THREAT_PUBLICATION_PATH_PREFIX = "/blog/topics/threat-intelligence/"
 GOOGLE_AUTHOR_NAME = "Google Threat Intelligence Group"
 MANDIANT_AUTHOR_NAME = "Mandiant"
+SUMMARY_HANDLING_UNSUPPORTED_MARKUP_OMITTED = "unsupported_markup_omitted"
 
 _AUTHOR_TO_SOURCE_SLUG = {
     GOOGLE_AUTHOR_NAME: GOOGLE_THREAT_INTELLIGENCE_SOURCE_SLUG,
@@ -235,7 +236,7 @@ def _adapt_google_threat_publication(entry: object) -> PublicationCandidate:
     try:
         title = _required_text(entry.get("title"), MAX_PUBLICATION_TITLE_LENGTH)
         canonical_url = _canonical_google_threat_url(source_slug, _entry_url_values(entry))
-        summary = _entry_summary(entry)
+        summary, unsupported_summary_markup_omitted = _entry_summary(entry)
         published_at = _entry_datetime(entry, "published")
         modified_at = _entry_datetime(entry, "updated")
         authors = _bounded_unique_texts(
@@ -256,6 +257,10 @@ def _adapt_google_threat_publication(entry: object) -> PublicationCandidate:
         }
         if feed_id is not None:
             payload["feed_id"] = feed_id
+        if unsupported_summary_markup_omitted:
+            payload["summary_handling"] = (
+                SUMMARY_HANDLING_UNSUPPORTED_MARKUP_OMITTED
+            )
         candidate = PublicationCandidate(
             source_slug=source_slug,
             source_external_id=external_id,
@@ -456,12 +461,19 @@ def _canonical_google_threat_url(source_slug: str, values: list[object]) -> str:
     return unique[0]
 
 
-def _entry_summary(entry: dict[str, Any]) -> str | None:
+def _entry_summary(entry: dict[str, Any]) -> tuple[str | None, bool]:
+    unsupported_markup_omitted = False
     for key in ("summary", "description"):
-        text = _optional_summary_text(entry.get(key))
+        try:
+            text = _optional_summary_text(entry.get(key))
+        except GoogleThreatPublicationRecordError as exc:
+            if exc.failure_stage != "adapter.text_markup_unsupported":
+                raise
+            unsupported_markup_omitted = True
+            continue
         if text:
-            return text
-    return None
+            return text, unsupported_markup_omitted
+    return None, unsupported_markup_omitted
 
 
 def _entry_datetime(entry: dict[str, Any], field_name: str) -> datetime | None:
