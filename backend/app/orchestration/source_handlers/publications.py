@@ -236,7 +236,7 @@ class PublicationSourceHandler:
             try:
                 candidate = adapt_google_threat_publication(entry)
             except GoogleThreatPublicationRecordError as error:
-                if error.source_slug in {None, self.source_slug}:
+                if error.source_slug == self.source_slug:
                     failures += 1
                 continue
             if candidate.source_slug != self.source_slug:
