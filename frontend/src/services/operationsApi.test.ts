@@ -62,6 +62,37 @@ describe("operationsApi", () => {
     expect(apiFetchMock.mock.calls[1][0]).toBe(`/api/v1/ingestion/runs/${RUN.public_id}/events?limit=500&offset=0`);
   });
 
+  test("accepts explicit null cycle ids in mixed run lists", async () => {
+    const cycleLessRun = {
+      ...RUN,
+      public_id: "77777777-7777-4777-8777-777777777777",
+      cycle_public_id: null,
+    };
+    apiFetchMock.mockResolvedValue(new Response(JSON.stringify({
+      items: [RUN, cycleLessRun], total: 2, limit: 25, offset: 0,
+    }), { status: 200 }));
+
+    await expect(fetchRuns()).resolves.toEqual({
+      status: "success",
+      data: { items: [RUN, cycleLessRun], total: 2, limit: 25, offset: 0 },
+    });
+  });
+
+  test("rejects missing or invalid cycle ids in run payloads", async () => {
+    const missingCycle = { ...RUN } as Record<string, unknown>;
+    delete missingCycle.cycle_public_id;
+    apiFetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        items: [missingCycle], total: 1, limit: 25, offset: 0,
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        items: [{ ...RUN, cycle_public_id: 42 }], total: 1, limit: 25, offset: 0,
+      }), { status: 200 }));
+
+    await expect(fetchRuns()).resolves.toEqual({ status: "error" });
+    await expect(fetchRuns()).resolves.toEqual({ status: "error" });
+  });
+
   test("does not invent a retry idempotency header", async () => {
     apiFetchMock.mockResolvedValue(new Response("{}", { status: 202, headers: { "Content-Type": "application/json" } }));
     await requestRetry("run-id");

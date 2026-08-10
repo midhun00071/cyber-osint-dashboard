@@ -53,4 +53,31 @@ describe("OperationsPage", () => {
     expect(screen.getByText("No cycle activity has been recorded.")).toBeVisible();
     expect(screen.getByText("No run activity has been recorded.")).toBeVisible();
   });
+
+  test("renders normal and cycle-less runs in the same operations list", async () => {
+    const linkedRun = RUNS.data.items[0];
+    runsMock.mockResolvedValue({
+      status: "success",
+      data: {
+        total: 2,
+        limit: 25,
+        offset: 0,
+        items: [
+          linkedRun,
+          {
+            ...linkedRun,
+            public_id: "cycle-less-run",
+            cycle_public_id: null,
+            source_slug: "legacy-feed",
+            source_name: "Legacy Feed",
+          },
+        ],
+      },
+    });
+
+    render(<OperationsPage />);
+
+    expect(await screen.findByText(/CISA KEV/)).toBeVisible();
+    expect(screen.getByText(/Legacy Feed/)).toBeVisible();
+  });
 });

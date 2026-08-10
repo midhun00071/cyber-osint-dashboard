@@ -44,7 +44,7 @@ class RunCountersResponse(BaseModel):
 class RunResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
     public_id: UUID
-    cycle_public_id: UUID
+    cycle_public_id: UUID | None
     source_public_id: UUID
     source_slug: str
     source_name: str

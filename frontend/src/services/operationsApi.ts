@@ -126,7 +126,7 @@ function run(value: unknown): RunSummary | null {
     "status", "attempt_number", "retry_of_public_id", "accepted_at", "started_at", "finished_at",
     "duration_seconds", "retryable", "summary_message", "counters",
   ])) return null;
-  if (typeof value.public_id !== "string" || typeof value.cycle_public_id !== "string" || typeof value.source_public_id !== "string") return null;
+  if (typeof value.public_id !== "string" || !nullableString(value.cycle_public_id) || typeof value.source_public_id !== "string") return null;
   if (typeof value.source_slug !== "string" || typeof value.source_name !== "string" || typeof value.trigger_type !== "string") return null;
   if (typeof value.status !== "string" || typeof value.attempt_number !== "number" || !nullableString(value.retry_of_public_id)) return null;
   if (typeof value.accepted_at !== "string" || typeof value.started_at !== "string" || !nullableString(value.finished_at)) return null;

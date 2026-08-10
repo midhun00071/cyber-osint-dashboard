@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+from app.api.v1.schemas.operations import RunResponse
 from app.main import app
 
 
@@ -32,3 +33,11 @@ def test_c07_query_rejects_unknown_and_repeated_parameters_before_database_use()
     with TestClient(app) as client:
         assert client.get("/api/v1/sources?unknown=value").status_code == 422
         assert client.get("/api/v1/sources?limit=1&limit=2").status_code == 422
+
+
+def test_c07_run_cycle_public_id_is_required_but_nullable() -> None:
+    schema = RunResponse.model_json_schema()
+    cycle_schema = schema["properties"]["cycle_public_id"]
+
+    assert "cycle_public_id" in schema["required"]
+    assert {"type": "null"} in cycle_schema["anyOf"]

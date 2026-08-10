@@ -385,9 +385,12 @@ class OperationsQueryService:
         }
 
     def _run_record(self, run: IngestionRun, source: IntelligenceSource) -> dict[str, object]:
-        cycle = self._session.get(IngestionCycle, run.cycle_id)
-        if cycle is None:
-            raise OperationsQueryError("Run cycle evidence is unavailable.")
+        cycle_public_id = None
+        if run.cycle_id is not None:
+            cycle = self._session.get(IngestionCycle, run.cycle_id)
+            if cycle is None:
+                raise OperationsQueryError("Run cycle evidence is unavailable.")
+            cycle_public_id = cycle.public_id
         prior_public_id = None
         if run.retry_of_run_id is not None:
             prior_public_id = self._session.scalar(
@@ -401,7 +404,7 @@ class OperationsQueryService:
         ))
         return {
             "public_id": run.public_id,
-            "cycle_public_id": cycle.public_id,
+            "cycle_public_id": cycle_public_id,
             "source_public_id": source.public_id,
             "source_slug": source.slug,
             "source_name": source.name,

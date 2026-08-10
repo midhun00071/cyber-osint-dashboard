@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 
@@ -112,3 +113,77 @@ def test_effective_state_inventory_guard_fails_before_materialization() -> None:
             permissions=frozenset(), limit=100, offset=0, effective_state="eligible"
         )
     assert session.scalars_statements == []
+
+
+class _RunRecordSession:
+    def __init__(self, cycles=None) -> None:
+        self.cycles = {} if cycles is None else cycles
+        self.get_calls = []
+
+    def get(self, model, identifier):
+        self.get_calls.append((model, identifier))
+        return self.cycles.get(identifier)
+
+    def scalar(self, _statement):
+        return None
+
+
+def _run_record_values(cycle_id):
+    now = datetime(2026, 8, 5, 12, tzinfo=UTC)
+    run = SimpleNamespace(
+        id=7,
+        public_id=uuid4(),
+        cycle_id=cycle_id,
+        retry_of_run_id=None,
+        trigger_type="manual",
+        status="succeeded" if cycle_id is None else "success",
+        attempt_number=None if cycle_id is None else 0,
+        created_at=now,
+        started_at=now,
+        completed_at=now + timedelta(seconds=2),
+        safe_summary="Safe run summary.",
+        records_fetched=1,
+        records_created=1,
+        records_updated=0,
+        records_unchanged=0,
+        records_skipped=0,
+        records_failed=0,
+        error_count=0,
+    )
+    source = SimpleNamespace(
+        public_id=uuid4(), slug="cisa-kev", name="CISA KEV"
+    )
+    return run, source
+
+
+def test_cycle_less_run_record_is_valid_and_does_not_query_for_a_cycle() -> None:
+    session = _RunRecordSession()
+    run, source = _run_record_values(None)
+
+    record = OperationsQueryService(session)._run_record(run, source)
+
+    assert record["cycle_public_id"] is None
+    assert session.get_calls == []
+
+
+def test_cycle_linked_run_record_preserves_the_cycle_public_id() -> None:
+    cycle_public_id = uuid4()
+    session = _RunRecordSession({19: SimpleNamespace(public_id=cycle_public_id)})
+    run, source = _run_record_values(19)
+
+    record = OperationsQueryService(session)._run_record(run, source)
+
+    assert record["cycle_public_id"] == cycle_public_id
+    assert len(session.get_calls) == 1
+    assert session.get_calls[0][1] == 19
+
+
+def test_non_null_unresolved_cycle_reference_still_fails_closed() -> None:
+    session = _RunRecordSession()
+    run, source = _run_record_values(23)
+
+    with pytest.raises(OperationsQueryError, match="cycle evidence is unavailable"):
+        OperationsQueryService(session)._run_record(run, source)
+
+    assert len(session.get_calls) == 1
+    assert session.get_calls[0][1] == 23

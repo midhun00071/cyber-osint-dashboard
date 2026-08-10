@@ -52,7 +52,7 @@ export type CycleList = {
 };
 
 export type RunSummary = {
-  public_id: string; cycle_public_id: string; source_public_id: string;
+  public_id: string; cycle_public_id: string | null; source_public_id: string;
   source_slug: string; source_name: string; trigger_type: string; status: string;
   attempt_number: number; retry_of_public_id: string | null; accepted_at: string;
   started_at: string; finished_at: string | null; duration_seconds: number | null;
