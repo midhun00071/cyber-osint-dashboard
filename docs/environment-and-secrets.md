@@ -83,6 +83,11 @@ still be shared only when needed.
 | `BACKEND_PORT` | Backend settings, Docker Compose | Optional | Local/deployment configuration | Runtime | Backend host-port override, for example `8000`. | The current settings field accepts an integer; Compose and the server still require a valid available TCP port. Production maps the selected host port to container port 8000. |
 | `FRONTEND_PORT` | Docker Compose | Optional | Local/deployment configuration | Runtime | Frontend host-port override, for example `3000`. | Production maps it to container port 3000. |
 | `PREFECT_PORT` | Development Compose | Optional | Local development configuration | Runtime | Loopback host port for local Prefect administration; default `4200`. | The bind address is fixed to `127.0.0.1`. Production publishes no Prefect host port and does not consume this variable. |
+| `PREFECT_METADATA_ADMIN_PASSWORD` | Development Compose `prefect-db` | Optional local override | Secret value | Initialization | Local-only bootstrap/administration credential for the dedicated Prefect metadata database. Use a unique generated value in an ignored root `.env` when the local metadata volume is not disposable. | Compose passes it only as the fixed `prefect_bootstrap` role's `POSTGRES_PASSWORD`. The committed fallback is a local-development placeholder, is not supplied to the Prefect server or worker, and must never be reused in staging or production. Changing the environment value after database initialization does not rotate the stored role password. |
+| `PREFECT_POSTGRES_PASSWORD` | Development Compose `prefect-db` and `prefect-server` | Optional local override | Secret value | Initialization and runtime | Local-only credential for the dedicated non-superuser Prefect metadata runtime role. Use a unique generated value distinct from the bootstrap credential in an ignored root `.env` when the local metadata volume is not disposable. | Compose maps the same value to the initializer's `PREFECT_RUNTIME_PASSWORD` and the server's `PREFECT_SERVER_DATABASE_PASSWORD`; the worker does not receive it. The committed fallback is a local-development placeholder and must never be reused in staging or production. |
+| `PREFECT_RUNTIME_USER` | Development Compose `prefect-db` | Fixed internal container configuration | Non-secret local platform configuration | Initialization and health check | Fixed `prefect_runtime` login provisioned for the local Prefect server. | It is a literal Compose value, not an independent operator override. The initialization script validates it as a PostgreSQL identifier and requires it to differ from the fixed bootstrap identity. |
+| `PREFECT_RUNTIME_PASSWORD` | Development Compose `prefect-db` | Fixed internal secret mapping | Secret value | Initialization and health check | Container-internal name that receives `PREFECT_POSTGRES_PASSWORD` for runtime-role provisioning and metadata-database health checks. | It is not an independent operator input. The initialization script requires 1–4096 bytes with no line feed or carriage return, and the health check uses the same mapping without printing it. |
+| `PREFECT_RUNTIME_DB` | Development Compose `prefect-db` | Fixed internal container configuration | Non-secret local platform configuration | Initialization and health check | Fixed `prefect` database owned by the local `prefect_runtime` role. | It is a literal Compose value, not an independent operator override, and the initialization script validates it as a PostgreSQL identifier. |
 | `BACKEND_BIND_ADDRESS` | Production Compose | Optional | Sensitive configuration | Runtime | Host interface for publishing the backend; safe default is `127.0.0.1`. | Keep loopback-bound when an approved TLS terminator fronts the service. |
 | `FRONTEND_BIND_ADDRESS` | Production Compose | Optional | Sensitive configuration | Runtime | Host interface for publishing the frontend; safe default is `127.0.0.1`. | Review before widening the bind address. |
 | `POSTGRES_HOST` | Backend, development Compose | Conditional | Sensitive configuration | Runtime | Database host; local host example is `localhost`, while containers use the service name `db`. | Must be a bare DNS name, canonical IP address, or documented bracketed IPv6 representation. Schemes, credentials, paths, ports, control characters, and ambiguous numeric forms are rejected. |
@@ -117,28 +122,42 @@ still be shared only when needed.
 
 The self-hosted Prefect 3.8.1 image, server API address, state location, worker
 health server, process work-pool type, and `alpha-data-process` pool name are
-fixed platform configuration rather than operator environment inputs. Local
-Compose exposes only `PREFECT_PORT`; it changes the loopback host port without
-widening the fixed `127.0.0.1` bind. Production exposes no Prefect host port.
+fixed platform configuration rather than operator environment inputs. Among
+non-secret Prefect platform controls, local Compose exposes only `PREFECT_PORT`;
+it changes the loopback host port without widening the fixed `127.0.0.1` bind.
+The two local metadata-database secret overrides are documented below.
+Production exposes no Prefect host port and consumes none of these local Prefect
+database variables.
 
-No Prefect username, password, API key, Cloud API URL, or default credential is
-defined in Compose or the environment examples. The current B2-01 protection is
-network-only: local administration is loopback-bound and production services
-use private networks. The server joins only `orchestration`; the worker joins
-only `orchestration` and `database`. Prefect authentication and
-backend-authorized operator controls remain later work, so the production
-administration surface must not be published or routed publicly.
+Development Compose defines two local-only PostgreSQL secret overrides for its
+dedicated Prefect metadata database. `PREFECT_METADATA_ADMIN_PASSWORD` supplies
+the fixed bootstrap role, while `PREFECT_POSTGRES_PASSWORD` supplies the fixed
+non-superuser runtime role and the Prefect server's component-form database
+setting. Compose also passes the fixed internal names `PREFECT_RUNTIME_USER`,
+`PREFECT_RUNTIME_PASSWORD`, and `PREFECT_RUNTIME_DB` to the metadata container;
+they are not three additional operator inputs. No Prefect UI username/password,
+API key, or Cloud API URL is defined. These local PostgreSQL credentials do not
+provide Prefect UI authentication. Local administration therefore remains
+loopback-bound, and the production administration surface must not be published
+or routed publicly.
 
-The server alone mounts `prefect_data` at its explicit `PREFECT_HOME` and owns
-the SQLite state there. The worker uses the internal self-hosted API and does not
-mount the state volume. Do not add a credential, Cloud workspace setting,
-database URL, arbitrary API root, or worker-accessible SQLite mount as an
+In development, the server stores metadata in the internal-only `prefect-db`
+PostgreSQL service and `prefect_postgres_data` volume. It still mounts
+`prefect_data` at its explicit `PREFECT_HOME` for writable Prefect state and UI
+assets; the earlier SQLite file is retained but is not migrated. The worker
+uses the internal self-hosted API, has no metadata-database credential or
+network, and does not mount either state volume. Production retains the
+separately reviewed SQLite baseline: its server alone mounts `prefect_data`,
+joins only `orchestration`, and the worker joins only `orchestration` and
+`database`. Do not add a Prefect UI credential, Cloud workspace setting,
+database URL, arbitrary API root, or worker-accessible state mount as an
 environment override.
 
-C01 adds no new secret. The worker reuses only the application-role database
-configuration already used by the backend: local Compose passes the local
-application role, while production mounts only `postgres_app_password` and sets
-`POSTGRES_PASSWORD_FILE`. The server receives no application, migration, or
+C01's worker adds no new database credential. It reuses only the
+application-role database configuration already used by the backend. Local
+Compose passes the local application role, while production mounts only
+`postgres_app_password` and sets `POSTGRES_PASSWORD_FILE`. The server receives
+no application, migration, or
 bootstrap database setting. The worker receives no migration or bootstrap
 identity. `APP_ENV=production`, protected-environment CORS/trusted-host values,
 and bounded pool settings are supplied because the worker imports the same
