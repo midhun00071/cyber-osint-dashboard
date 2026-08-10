@@ -288,6 +288,8 @@ def _process_entries(
                     "google_threat_publication_validation_error",
                     "A Google Threat publication failed safe validation.",
                     observed_at,
+                    failure_stage=exc.failure_stage,
+                    diagnostic_fingerprint=exc.diagnostic_fingerprint,
                 )
             else:
                 unassigned_failed += 1
@@ -377,6 +379,9 @@ def _record_failure(
     error_type: str,
     message: str,
     observed_at: datetime,
+    *,
+    failure_stage: str | None = None,
+    diagnostic_fingerprint: str | None = None,
 ) -> None:
     audit_record = IngestionRunRecord(
         ingestion_run=run,
@@ -394,6 +399,9 @@ def _record_failure(
             source_record=None,
             error_type=error_type,
             safe_message=message,
+            failure_stage=failure_stage,
+            diagnostic_fingerprint=diagnostic_fingerprint,
+            safe_context=None,
             retryable=False,
             retry_count=0,
             occurred_at=observed_at,

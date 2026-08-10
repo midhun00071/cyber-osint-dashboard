@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.models import IngestionError
 from app.orchestration.contracts import (
     ClassifiedFailure,
     QuotaObservation,
@@ -69,6 +70,9 @@ class Rows:
 
 
 class FakeSession:
+    def __init__(self):
+        self.added = []
+
     def __enter__(self):
         return self
 
@@ -83,7 +87,7 @@ class FakeSession:
         return Rows()
 
     def add(self, record):
-        del record
+        self.added.append(record)
 
     def flush(self):
         return None
@@ -227,9 +231,10 @@ def test_unassigned_entry_is_rejected_without_poisoning_active_source(
         google_item("Unapproved Author", "unassigned"),
     )
 
+    session = FakeSession()
     result = PublicationSourceHandler(
         active_slug,
-        session_factory=FakeSession,
+        session_factory=lambda: session,
         google_client_factory=lambda: FeedClient(feed),
     ).execute(context(active_slug))
 
@@ -237,6 +242,7 @@ def test_unassigned_entry_is_rejected_without_poisoning_active_source(
     assert result.counters.fetched == 0
     assert result.counters.failed == 0
     assert captured == []
+    assert not any(isinstance(item, IngestionError) for item in session.added)
     assert result.progress_proposal is not None
     assert result.progress_proposal.value == SLOT
 
@@ -272,35 +278,72 @@ def test_attributable_malformed_entry_fails_only_owning_source(
     )
     malformed = malformed_google_item(author, "malformed-owner-record")
     feed = shared_feed(google_item(author, "valid-owner-record"), malformed)
+    owner_session = FakeSession()
+    other_session = FakeSession()
+    failed_session = FakeSession()
 
     owner_result = PublicationSourceHandler(
         owner_slug,
-        session_factory=FakeSession,
+        session_factory=lambda: owner_session,
         google_client_factory=lambda: FeedClient(feed),
     ).execute(context(owner_slug))
     other_result = PublicationSourceHandler(
         other_slug,
-        session_factory=FakeSession,
+        session_factory=lambda: other_session,
         google_client_factory=lambda: FeedClient(feed),
     ).execute(context(other_slug))
     failed_result = PublicationSourceHandler(
         owner_slug,
-        session_factory=FakeSession,
+        session_factory=lambda: failed_session,
         google_client_factory=lambda: FeedClient(shared_feed(malformed)),
     ).execute(context(owner_slug))
+    owner_errors = [
+        item for item in owner_session.added if isinstance(item, IngestionError)
+    ]
+    other_errors = [
+        item for item in other_session.added if isinstance(item, IngestionError)
+    ]
+    failed_errors = [
+        item for item in failed_session.added if isinstance(item, IngestionError)
+    ]
 
     assert owner_result.status is ResultStatus.PARTIAL
     assert owner_result.counters.created == 1
     assert owner_result.counters.failed == 1
     assert owner_result.progress_proposal is None
+    assert len(owner_errors) == 1
+    assert owner_errors[0].ingestion_run_id == 5
+    assert owner_errors[0].error_type == "google_threat_publication_validation_error"
+    assert owner_errors[0].failure_stage == "adapter.title_required"
+    assert len(owner_errors[0].diagnostic_fingerprint or "") == 64
+    assert owner_errors[0].safe_context is None
+    assert "malformed-owner-record" not in " ".join(
+        filter(
+            None,
+            [
+                owner_errors[0].error_type,
+                owner_errors[0].safe_message,
+                owner_errors[0].failure_stage,
+                owner_errors[0].diagnostic_fingerprint,
+                owner_errors[0].safe_context,
+            ],
+        )
+    )
     assert other_result.status is ResultStatus.NO_CHANGE
     assert other_result.counters.fetched == 0
     assert other_result.counters.failed == 0
     assert other_result.progress_proposal is not None
     assert other_result.progress_proposal.value == SLOT
+    assert other_errors == []
     assert failed_result.status is ResultStatus.FAILED
     assert failed_result.counters.failed == 1
     assert failed_result.progress_proposal is None
+    assert len(failed_errors) == 1
+    assert failed_errors[0].failure_stage == "adapter.title_required"
+    assert (
+        failed_errors[0].diagnostic_fingerprint
+        == owner_errors[0].diagnostic_fingerprint
+    )
 
 
 def test_unchanged_publication_advances_scheduled_watermark(monkeypatch) -> None:

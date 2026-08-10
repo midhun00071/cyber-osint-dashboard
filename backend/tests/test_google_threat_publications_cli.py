@@ -178,6 +178,22 @@ def run_fake(
             raise GoogleThreatPublicationRecordError(
                 "private invalid title",
                 source_slug=GOOGLE_THREAT_INTELLIGENCE_SOURCE_SLUG,
+                failure_stage="adapter.title_required",
+                diagnostic_fingerprint="a" * 64,
+            )
+        if record == "google-invalid-two":
+            raise GoogleThreatPublicationRecordError(
+                "private invalid summary canary",
+                source_slug=GOOGLE_THREAT_INTELLIGENCE_SOURCE_SLUG,
+                failure_stage="adapter.text_unsupported_characters",
+                diagnostic_fingerprint="b" * 64,
+            )
+        if record == "mandiant-invalid":
+            raise GoogleThreatPublicationRecordError(
+                "private invalid Mandiant title",
+                source_slug=MANDIANT_THREAT_RESEARCH_SOURCE_SLUG,
+                failure_stage="adapter.title_required",
+                diagnostic_fingerprint="c" * 64,
             )
         if record == "mandiant":
             return candidate(MANDIANT_THREAT_RESEARCH_SOURCE_SLUG, "mandiant")
@@ -379,6 +395,9 @@ def test_known_owner_invalid_record_is_audited_to_only_that_source() -> None:
     assert [error.error_type for error in errors] == [
         "google_threat_publication_validation_error"
     ]
+    assert errors[0].failure_stage == "adapter.title_required"
+    assert errors[0].diagnostic_fingerprint == "a" * 64
+    assert errors[0].safe_context is None
     records = [item for item in session.added if isinstance(item, IngestionRunRecord)]
     assert any(record.ingestion_run is google_run for record in records)
     assert not any(
@@ -388,6 +407,73 @@ def test_known_owner_invalid_record_is_audited_to_only_that_source() -> None:
     assert len(pipeline.persist_calls) == 1
     assert "private invalid title" not in stdout
     assert "private invalid title" not in stderr
+    assert "private invalid title" not in " ".join(
+        filter(
+            None,
+            [
+                errors[0].error_type,
+                errors[0].safe_message,
+                errors[0].failure_stage,
+                errors[0].diagnostic_fingerprint,
+                errors[0].safe_context,
+            ],
+        )
+    )
+
+
+def test_mandiant_owned_rejection_records_only_sanitized_diagnostics() -> None:
+    exit_code, stdout, stderr, session, _, pipeline = run_fake(
+        records=("google", "mandiant-invalid"),
+        outcomes=["created"],
+    )
+    google_run, mandiant_run = runs(session)
+    errors = [item for item in session.added if isinstance(item, IngestionError)]
+
+    assert exit_code == 1
+    assert google_run.status == "succeeded"
+    assert google_run.records_created == 1
+    assert mandiant_run.status == "failed"
+    assert mandiant_run.records_failed == 1
+    assert len(errors) == 1
+    assert errors[0].ingestion_run is mandiant_run
+    assert errors[0].failure_stage == "adapter.title_required"
+    assert errors[0].diagnostic_fingerprint == "c" * 64
+    assert errors[0].safe_context is None
+    assert len(pipeline.persist_calls) == 1
+    persisted_evidence = " ".join(
+        filter(
+            None,
+            [
+                errors[0].error_type,
+                errors[0].safe_message,
+                errors[0].failure_stage,
+                errors[0].diagnostic_fingerprint,
+                errors[0].safe_context,
+            ],
+        )
+    )
+    assert "private invalid Mandiant title" not in persisted_evidence
+    assert "private invalid Mandiant title" not in stdout
+    assert "private invalid Mandiant title" not in stderr
+
+
+def test_same_source_rejections_keep_distinct_opaque_diagnostic_identifiers() -> None:
+    exit_code, _, _, session, _, pipeline = run_fake(
+        records=("google-invalid", "google-invalid-two"),
+    )
+    google_run, mandiant_run = runs(session)
+    errors = [item for item in session.added if isinstance(item, IngestionError)]
+
+    assert exit_code == 1
+    assert google_run.status == "failed"
+    assert google_run.records_failed == 2
+    assert mandiant_run.status == "succeeded"
+    assert [error.diagnostic_fingerprint for error in errors] == ["a" * 64, "b" * 64]
+    assert len({error.diagnostic_fingerprint for error in errors}) == 2
+    assert len(pipeline.persist_calls) == 0
+    assert "private invalid summary canary" not in " ".join(
+        error.safe_message for error in errors
+    )
 
 
 def test_feed_truncation_marks_both_runs_partial_and_limits_processing() -> None:

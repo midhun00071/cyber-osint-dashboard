@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import datetime
 from time import perf_counter
+
+from sqlalchemy.orm import Session
 
 from app.ingestion.adapters.google_threat_publications import (
     GoogleThreatPublicationRecordError,
@@ -27,6 +31,7 @@ from app.ingestion.publication_pipeline import (
     normalize_publication_candidate,
 )
 from app.ingestion.services.rss_ingestion_service import RssIngestionService
+from app.models import IngestionError
 from app.orchestration.contracts import (
     ClassifiedFailure,
     FailureCategory,
@@ -64,6 +69,12 @@ PUBLICATION_SOURCE_SLUGS = frozenset(
 MAX_FEED_ENTRIES = 100
 
 
+@dataclass(frozen=True, slots=True)
+class _OwnedValidationDiagnostic:
+    failure_stage: str
+    diagnostic_fingerprint: str | None
+
+
 class PublicationSourceHandler:
     """Fetch one complete bounded feed and persist only the active source."""
 
@@ -98,7 +109,11 @@ class PublicationSourceHandler:
         started = perf_counter()
         try:
             feed_bytes = self._fetch_feed()
-            candidates, pre_persistence_failures = self._parse_active_candidates(feed_bytes)
+            (
+                candidates,
+                pre_persistence_failures,
+                owned_validation_diagnostics,
+            ) = self._parse_active_candidates(feed_bytes)
         except ClassifiedFailure:
             raise
         except Exception as error:
@@ -149,6 +164,12 @@ class PublicationSourceHandler:
                     run_id=context.attempt.run_id,
                     evidence=evidence,
                 )
+                _persist_owned_validation_diagnostics(
+                    session,
+                    run_id=context.attempt.run_id,
+                    diagnostics=owned_validation_diagnostics,
+                    occurred_at=context.scheduled_for,
+                )
                 persist_execution_evidence(session, context=context, result=result)
                 session.flush()
         except Exception as error:
@@ -188,7 +209,7 @@ class PublicationSourceHandler:
     def _parse_active_candidates(
         self,
         feed_bytes: bytes,
-    ) -> tuple[list[object], int]:
+    ) -> tuple[list[object], int, tuple[_OwnedValidationDiagnostic, ...]]:
         if self.source_slug == CERT_EU_SOURCE_SLUG:
             entries = parse_rss_feed_entries(feed_bytes)
             if len(entries) > MAX_FEED_ENTRIES:
@@ -217,7 +238,7 @@ class PublicationSourceHandler:
                     records.append(record)
                 elif conflict:
                     failures += 1
-            return records, failures
+            return records, failures, ()
 
         document = parse_google_threat_feed_entries(
             feed_bytes,
@@ -230,6 +251,7 @@ class PublicationSourceHandler:
             )
         candidates: list[PublicationCandidate] = []
         failures = 0
+        owned_validation_diagnostics: list[_OwnedValidationDiagnostic] = []
         external_identities: dict[str, tuple[str, str]] = {}
         url_identities: dict[str, tuple[str, str]] = {}
         for entry in document.entries:
@@ -238,6 +260,12 @@ class PublicationSourceHandler:
             except GoogleThreatPublicationRecordError as error:
                 if error.source_slug == self.source_slug:
                     failures += 1
+                    owned_validation_diagnostics.append(
+                        _OwnedValidationDiagnostic(
+                            failure_stage=error.failure_stage,
+                            diagnostic_fingerprint=error.diagnostic_fingerprint,
+                        )
+                    )
                 continue
             if candidate.source_slug != self.source_slug:
                 continue
@@ -257,7 +285,34 @@ class PublicationSourceHandler:
                 candidates.append(candidate)
             elif conflict:
                 failures += 1
-        return candidates, failures
+        return candidates, failures, tuple(owned_validation_diagnostics)
+
+
+def _persist_owned_validation_diagnostics(
+    session: Session,
+    *,
+    run_id: int,
+    diagnostics: tuple[_OwnedValidationDiagnostic, ...],
+    occurred_at: datetime,
+) -> None:
+    for diagnostic in diagnostics:
+        session.add(
+            IngestionError(
+                ingestion_run_id=run_id,
+                ingestion_run_record_id=None,
+                source_record_id=None,
+                error_type="google_threat_publication_validation_error",
+                safe_message=(
+                    "A Google Threat publication failed safe validation."
+                ),
+                failure_stage=diagnostic.failure_stage,
+                diagnostic_fingerprint=diagnostic.diagnostic_fingerprint,
+                safe_context=None,
+                retryable=False,
+                retry_count=0,
+                occurred_at=occurred_at,
+            )
+        )
 
 
 def _outcome_evidence(persisted) -> OutcomeEvidence:

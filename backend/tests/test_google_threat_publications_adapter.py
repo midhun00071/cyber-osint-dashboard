@@ -12,6 +12,7 @@ from app.ingestion.adapters.google_threat_publications import (
     GOOGLE_THREAT_INTELLIGENCE_SOURCE_SLUG,
     MANDIANT_THREAT_RESEARCH_SOURCE_SLUG,
     MAX_GOOGLE_THREAT_CATEGORIES,
+    MAX_GOOGLE_THREAT_DIAGNOSTIC_BYTES,
     MAX_GOOGLE_THREAT_FEED_ENTRIES,
     GoogleThreatFeedError,
     GoogleThreatPublicationRecordError,
@@ -100,6 +101,81 @@ def test_exact_author_routes_to_distinct_source(author: str, expected_slug: str)
     assert candidate.safe_source_payload["authoritative_author"] == author
     assert candidate.safe_source_payload["categories"] == ("Threat Research",)
     assert candidate.safe_source_payload["feed_id"] == "feed-id-1"
+
+
+@pytest.mark.parametrize(
+    ("author", "expected_slug"),
+    [
+        (GOOGLE_AUTHOR_NAME, GOOGLE_THREAT_INTELLIGENCE_SOURCE_SLUG),
+        (MANDIANT_AUTHOR_NAME, MANDIANT_THREAT_RESEARCH_SOURCE_SLUG),
+    ],
+)
+def test_owned_rejection_has_stable_sanitized_diagnostics(
+    author: str,
+    expected_slug: str,
+) -> None:
+    private_summary = "PRIVATE_REJECTED_SUMMARY_CANARY"
+    rejected = entry(author=author, title=" ", summary=private_summary)
+
+    with pytest.raises(GoogleThreatPublicationRecordError) as first:
+        adapt_google_threat_publication(rejected)
+    with pytest.raises(GoogleThreatPublicationRecordError) as second:
+        adapt_google_threat_publication(rejected)
+
+    assert first.value.source_slug == expected_slug
+    assert first.value.failure_stage == "adapter.title_required"
+    assert first.value.diagnostic_fingerprint == second.value.diagnostic_fingerprint
+    assert len(first.value.diagnostic_fingerprint or "") == 64
+    assert set(first.value.diagnostic_fingerprint or "") <= set("0123456789abcdef")
+    assert private_summary not in str(first.value)
+    assert private_summary not in str(vars(first.value))
+
+
+def test_distinct_rejected_entries_have_distinct_opaque_fingerprints() -> None:
+    first_entry = entry(
+        title=" ",
+        link="https://cloud.google.com/blog/topics/threat-intelligence/rejected-one/",
+    )
+    second_entry = entry(
+        title=" ",
+        link="https://cloud.google.com/blog/topics/threat-intelligence/rejected-two/",
+    )
+
+    with pytest.raises(GoogleThreatPublicationRecordError) as first:
+        adapt_google_threat_publication(first_entry)
+    with pytest.raises(GoogleThreatPublicationRecordError) as second:
+        adapt_google_threat_publication(second_entry)
+
+    assert first.value.diagnostic_fingerprint != second.value.diagnostic_fingerprint
+    assert "rejected-one" not in str(vars(first.value))
+    assert "rejected-two" not in str(vars(second.value))
+
+
+def test_diagnostic_fingerprint_input_is_bounded_and_fail_closed() -> None:
+    private_tail = "PRIVATE_DIAGNOSTIC_TAIL_CANARY"
+    rejected = entry(
+        title=" ",
+        summary=("x" * (MAX_GOOGLE_THREAT_DIAGNOSTIC_BYTES * 2)) + private_tail,
+    )
+
+    with pytest.raises(GoogleThreatPublicationRecordError) as exc_info:
+        adapt_google_threat_publication(rejected)
+
+    assert exc_info.value.failure_stage == "adapter.title_required"
+    assert len(exc_info.value.diagnostic_fingerprint or "") == 64
+    assert private_tail not in str(vars(exc_info.value))
+
+
+def test_diagnostic_metadata_rejects_arbitrary_codes_and_malformed_hashes() -> None:
+    error = GoogleThreatPublicationRecordError(
+        "fixed safe message",
+        source_slug=GOOGLE_THREAT_INTELLIGENCE_SOURCE_SLUG,
+        failure_stage="PRIVATE_ARBITRARY_VALIDATOR_MESSAGE",
+        diagnostic_fingerprint="not-a-valid-fingerprint",
+    )
+
+    assert error.failure_stage == "adapter.record_invalid"
+    assert error.diagnostic_fingerprint is None
 
 
 @pytest.mark.parametrize(

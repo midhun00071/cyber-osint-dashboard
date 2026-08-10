@@ -38,6 +38,9 @@ MAX_GOOGLE_THREAT_AUTHOR_LENGTH = 200
 MAX_GOOGLE_THREAT_CATEGORY_LENGTH = 100
 MAX_GOOGLE_THREAT_FEED_ID_LENGTH = 300
 MAX_GOOGLE_THREAT_TIMESTAMP_LENGTH = 128
+MAX_GOOGLE_THREAT_DIAGNOSTIC_BYTES = 65_536
+MAX_GOOGLE_THREAT_DIAGNOSTIC_ITEMS = 512
+MAX_GOOGLE_THREAT_DIAGNOSTIC_DEPTH = 8
 GOOGLE_THREAT_PUBLICATION_HOST = "cloud.google.com"
 GOOGLE_THREAT_PUBLICATION_PATH_PREFIX = "/blog/topics/threat-intelligence/"
 GOOGLE_AUTHOR_NAME = "Google Threat Intelligence Group"
@@ -47,6 +50,26 @@ _AUTHOR_TO_SOURCE_SLUG = {
     GOOGLE_AUTHOR_NAME: GOOGLE_THREAT_INTELLIGENCE_SOURCE_SLUG,
     MANDIANT_AUTHOR_NAME: MANDIANT_THREAT_RESEARCH_SOURCE_SLUG,
 }
+
+GOOGLE_THREAT_VALIDATION_FAILURE_STAGES = frozenset(
+    {
+        "adapter.identity_invalid",
+        "adapter.metadata_bounds_exceeded",
+        "adapter.owner_unapproved",
+        "adapter.record_invalid",
+        "adapter.text_markup_unsupported",
+        "adapter.text_too_long",
+        "adapter.text_unsupported_characters",
+        "adapter.timestamp_invalid",
+        "adapter.title_required",
+        "adapter.url_fields_conflict",
+        "adapter.url_invalid",
+        "adapter.url_path_unapproved",
+        "pipeline.candidate_validation",
+        "pipeline.source_policy",
+    }
+)
+DEFAULT_GOOGLE_THREAT_VALIDATION_FAILURE_STAGE = "adapter.record_invalid"
 
 _SKIPPED_CONTENT_TAGS = frozenset(
     {"script", "style", "iframe", "object", "embed", "svg", "math"}
@@ -91,9 +114,27 @@ class GoogleThreatFeedError(GoogleThreatPublicationError):
 class GoogleThreatPublicationRecordError(GoogleThreatPublicationError):
     """One shared-feed publication record failed safe adaptation."""
 
-    def __init__(self, message: str, *, source_slug: str | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        source_slug: str | None = None,
+        failure_stage: str = DEFAULT_GOOGLE_THREAT_VALIDATION_FAILURE_STAGE,
+        diagnostic_fingerprint: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.source_slug = source_slug
+        self.failure_stage = (
+            failure_stage
+            if failure_stage in GOOGLE_THREAT_VALIDATION_FAILURE_STAGES
+            else DEFAULT_GOOGLE_THREAT_VALIDATION_FAILURE_STAGE
+        )
+        self.diagnostic_fingerprint = (
+            diagnostic_fingerprint
+            if isinstance(diagnostic_fingerprint, str)
+            and re.fullmatch(r"[0-9a-f]{64}", diagnostic_fingerprint)
+            else None
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,18 +175,26 @@ def adapt_google_threat_publication(entry: object) -> PublicationCandidate:
 
     try:
         return _adapt_google_threat_publication(entry)
-    except GoogleThreatPublicationRecordError:
+    except GoogleThreatPublicationRecordError as exc:
+        if exc.diagnostic_fingerprint is None:
+            exc.diagnostic_fingerprint = _diagnostic_entry_fingerprint(entry)
         raise
-    except (
-        PublicationCandidateError,
-        PublicationSourceError,
-        OverflowError,
-        TypeError,
-        UnicodeError,
-        ValueError,
-    ) as exc:
+    except PublicationCandidateError as exc:
         raise GoogleThreatPublicationRecordError(
-            "The Google Threat publication record is invalid."
+            "The Google Threat publication record is invalid.",
+            failure_stage="pipeline.candidate_validation",
+            diagnostic_fingerprint=_diagnostic_entry_fingerprint(entry),
+        ) from exc
+    except PublicationSourceError as exc:
+        raise GoogleThreatPublicationRecordError(
+            "The Google Threat publication record is invalid.",
+            failure_stage="pipeline.source_policy",
+            diagnostic_fingerprint=_diagnostic_entry_fingerprint(entry),
+        ) from exc
+    except (OverflowError, TypeError, UnicodeError, ValueError) as exc:
+        raise GoogleThreatPublicationRecordError(
+            "The Google Threat publication record is invalid.",
+            diagnostic_fingerprint=_diagnostic_entry_fingerprint(entry),
         ) from exc
 
 
@@ -156,7 +205,8 @@ def derive_google_threat_external_id(source_slug: str, canonical_url: str) -> st
         canonical_url, str
     ):
         raise GoogleThreatPublicationRecordError(
-            "The Google Threat publication identity is invalid."
+            "The Google Threat publication identity is invalid.",
+            failure_stage="adapter.identity_invalid",
         )
     try:
         digest = sha256(
@@ -164,12 +214,14 @@ def derive_google_threat_external_id(source_slug: str, canonical_url: str) -> st
         ).hexdigest()
     except (TypeError, ValueError, UnicodeError) as exc:
         raise GoogleThreatPublicationRecordError(
-            "The Google Threat publication identity is invalid."
+            "The Google Threat publication identity is invalid.",
+            failure_stage="adapter.identity_invalid",
         ) from exc
     external_id = f"{source_slug}:url-sha256:{digest}"
     if len(external_id) > MAX_PUBLICATION_EXTERNAL_ID_LENGTH:
         raise GoogleThreatPublicationRecordError(
-            "The Google Threat publication identity is invalid."
+            "The Google Threat publication identity is invalid.",
+            failure_stage="adapter.identity_invalid",
         )
     return external_id
 
@@ -228,17 +280,25 @@ def _adapt_google_threat_publication(entry: object) -> PublicationCandidate:
     except GoogleThreatPublicationRecordError as exc:
         if exc.source_slug is None:
             raise GoogleThreatPublicationRecordError(
-                str(exc), source_slug=source_slug
+                str(exc),
+                source_slug=source_slug,
+                failure_stage=exc.failure_stage,
+                diagnostic_fingerprint=exc.diagnostic_fingerprint,
             ) from exc
         raise
-    except (
-        PublicationCandidateError,
-        PublicationSourceError,
-        OverflowError,
-        TypeError,
-        UnicodeError,
-        ValueError,
-    ) as exc:
+    except PublicationCandidateError as exc:
+        raise GoogleThreatPublicationRecordError(
+            "The Google Threat publication record is invalid.",
+            source_slug=source_slug,
+            failure_stage="pipeline.candidate_validation",
+        ) from exc
+    except PublicationSourceError as exc:
+        raise GoogleThreatPublicationRecordError(
+            "The Google Threat publication record is invalid.",
+            source_slug=source_slug,
+            failure_stage="pipeline.source_policy",
+        ) from exc
+    except (OverflowError, TypeError, UnicodeError, ValueError) as exc:
         raise GoogleThreatPublicationRecordError(
             "The Google Threat publication record is invalid.",
             source_slug=source_slug,
@@ -250,7 +310,8 @@ def _source_from_author(entry: dict[str, Any]) -> tuple[str, str]:
     approved = [owner for owner in owners if owner in _AUTHOR_TO_SOURCE_SLUG]
     if len(set(approved)) != 1 or len(set(owners)) != 1:
         raise GoogleThreatPublicationRecordError(
-            "The Google Threat publication author is not approved."
+            "The Google Threat publication author is not approved.",
+            failure_stage="adapter.owner_unapproved",
         )
     owner = approved[0]
     return _AUTHOR_TO_SOURCE_SLUG[owner], owner
@@ -264,31 +325,36 @@ def _authoritative_author_values(entry: dict[str, Any]) -> list[str]:
         detail = entry.get("author_detail")
         if not isinstance(detail, dict) or "name" not in detail:
             raise GoogleThreatPublicationRecordError(
-                "The Google Threat publication author is not approved."
+                "The Google Threat publication author is not approved.",
+                failure_stage="adapter.owner_unapproved",
             )
         values.append(_normalize_author_field(detail.get("name")))
     if "authors" in entry:
         authors = entry.get("authors")
         if not isinstance(authors, list) or not authors:
             raise GoogleThreatPublicationRecordError(
-                "The Google Threat publication author is not approved."
+                "The Google Threat publication author is not approved.",
+                failure_stage="adapter.owner_unapproved",
             )
         for author in authors:
             if isinstance(author, dict):
                 if "name" not in author:
                     raise GoogleThreatPublicationRecordError(
-                        "The Google Threat publication author is not approved."
+                        "The Google Threat publication author is not approved.",
+                        failure_stage="adapter.owner_unapproved",
                     )
                 values.append(_normalize_author_field(author.get("name")))
             elif isinstance(author, str):
                 values.append(_normalize_author_field(author))
             else:
                 raise GoogleThreatPublicationRecordError(
-                    "The Google Threat publication author is not approved."
+                    "The Google Threat publication author is not approved.",
+                    failure_stage="adapter.owner_unapproved",
                 )
     if not values:
         raise GoogleThreatPublicationRecordError(
-            "The Google Threat publication author is not approved."
+            "The Google Threat publication author is not approved.",
+            failure_stage="adapter.owner_unapproved",
         )
     return values
 
@@ -308,12 +374,14 @@ def _all_author_values(entry: dict[str, Any]) -> list[object]:
 def _normalize_author_field(value: object) -> str:
     if not isinstance(value, str):
         raise GoogleThreatPublicationRecordError(
-            "The Google Threat publication author is not approved."
+            "The Google Threat publication author is not approved.",
+            failure_stage="adapter.owner_unapproved",
         )
     normalized = re.sub(r"\s+", " ", value).strip()
     if not normalized:
         raise GoogleThreatPublicationRecordError(
-            "The Google Threat publication author is not approved."
+            "The Google Threat publication author is not approved.",
+            failure_stage="adapter.owner_unapproved",
         )
     return normalized
 
@@ -343,11 +411,13 @@ def _canonical_google_threat_url(source_slug: str, values: list[object]) -> str:
             raw_parsed = urlparse(value)
         except ValueError as exc:
             raise GoogleThreatPublicationRecordError(
-                "The Google Threat publication URL is invalid."
+                "The Google Threat publication URL is invalid.",
+                failure_stage="adapter.url_invalid",
             ) from exc
         if raw_parsed.fragment or raw_parsed.params or ";" in raw_parsed.path:
             raise GoogleThreatPublicationRecordError(
-                "The Google Threat publication URL is invalid."
+                "The Google Threat publication URL is invalid.",
+                failure_stage="adapter.url_invalid",
             )
         try:
             canonical = canonicalize_publication_url(source_slug, value)
@@ -368,17 +438,20 @@ def _canonical_google_threat_url(source_slug: str, values: list[object]) -> str:
             or any(segment in {".", ".."} for segment in path.split("/"))
         ):
             raise GoogleThreatPublicationRecordError(
-                "The Google Threat publication URL path is not approved."
+                "The Google Threat publication URL path is not approved.",
+                failure_stage="adapter.url_path_unapproved",
             )
         accepted.append(canonical)
     unique = sorted(set(accepted))
     if not unique:
         raise GoogleThreatPublicationRecordError(
-            "The Google Threat publication URL is invalid."
+            "The Google Threat publication URL is invalid.",
+            failure_stage="adapter.url_invalid",
         )
     if len(unique) != 1:
         raise GoogleThreatPublicationRecordError(
-            "The Google Threat publication URL fields conflict."
+            "The Google Threat publication URL fields conflict.",
+            failure_stage="adapter.url_fields_conflict",
         )
     return unique[0]
 
@@ -400,23 +473,27 @@ def _entry_datetime(entry: dict[str, Any], field_name: str) -> datetime | None:
     if parsed is None:
         if isinstance(raw, str) and raw.strip():
             raise GoogleThreatPublicationRecordError(
-                "The Google Threat publication timestamp is invalid."
+                "The Google Threat publication timestamp is invalid.",
+                failure_stage="adapter.timestamp_invalid",
             )
         return None
     if not isinstance(parsed, struct_time):
         raise GoogleThreatPublicationRecordError(
-            "The Google Threat publication timestamp is invalid."
+            "The Google Threat publication timestamp is invalid.",
+            failure_stage="adapter.timestamp_invalid",
         )
     if isinstance(raw, str) and len(raw) > MAX_GOOGLE_THREAT_TIMESTAMP_LENGTH:
         raise GoogleThreatPublicationRecordError(
-            "The Google Threat publication timestamp is invalid."
+            "The Google Threat publication timestamp is invalid.",
+            failure_stage="adapter.timestamp_invalid",
         )
     try:
         timestamp = calendar.timegm(parsed)
         return datetime.fromtimestamp(timestamp, tz=UTC)
     except (ValueError, OverflowError, OSError) as exc:
         raise GoogleThreatPublicationRecordError(
-            "The Google Threat publication timestamp is invalid."
+            "The Google Threat publication timestamp is invalid.",
+            failure_stage="adapter.timestamp_invalid",
         ) from exc
 
 
@@ -446,7 +523,8 @@ def _bounded_unique_texts(
             normalized.append(text)
     if len(normalized) > maximum_items:
         raise GoogleThreatPublicationRecordError(
-            "The Google Threat publication metadata list is too large."
+            "The Google Threat publication metadata list is too large.",
+            failure_stage="adapter.metadata_bounds_exceeded",
         )
     return tuple(normalized)
 
@@ -455,7 +533,8 @@ def _required_text(value: object, maximum_length: int) -> str:
     text = _optional_text(value, maximum_length)
     if not text:
         raise GoogleThreatPublicationRecordError(
-            "The Google Threat publication title is required."
+            "The Google Threat publication title is required.",
+            failure_stage="adapter.title_required",
         )
     return text
 
@@ -467,7 +546,8 @@ def _optional_text(value: object, maximum_length: int) -> str | None:
     text = _plain_text(value)
     if len(text) > maximum_length:
         raise GoogleThreatPublicationRecordError(
-            "The Google Threat publication text is too long."
+            "The Google Threat publication text is too long.",
+            failure_stage="adapter.text_too_long",
         )
     _validate_safe_text(text)
     return text or None
@@ -491,12 +571,14 @@ def _plain_text(value: str) -> str:
         parser.close()
     except (AssertionError, ValueError) as exc:
         raise GoogleThreatPublicationRecordError(
-            "The Google Threat publication text contains unsupported markup."
+            "The Google Threat publication text contains unsupported markup.",
+            failure_stage="adapter.text_markup_unsupported",
         ) from exc
     text = re.sub(r"\s+", " ", _unescape_repeated(parser.text)).strip()
     if _contains_residual_markup(text):
         raise GoogleThreatPublicationRecordError(
-            "The Google Threat publication text contains unsupported markup."
+            "The Google Threat publication text contains unsupported markup.",
+            failure_stage="adapter.text_markup_unsupported",
         )
     return text
 
@@ -609,15 +691,88 @@ def _find_tag_end(value: str, position: int) -> int | None:
 
 def _raise_unsupported_markup() -> None:
     raise GoogleThreatPublicationRecordError(
-        "The Google Threat publication text contains unsupported markup."
+        "The Google Threat publication text contains unsupported markup.",
+        failure_stage="adapter.text_markup_unsupported",
     )
 
 
 def _validate_safe_text(value: str) -> None:
     if any(_is_unsupported_text_character(character) for character in value):
         raise GoogleThreatPublicationRecordError(
-            "The Google Threat publication text contains unsupported characters."
+            "The Google Threat publication text contains unsupported characters.",
+            failure_stage="adapter.text_unsupported_characters",
         )
+
+
+def _diagnostic_entry_fingerprint(entry: object) -> str:
+    """Return a bounded opaque fingerprint without retaining source values."""
+
+    digest = sha256(b"google-threat-rejected-entry-v1\x00")
+    remaining_bytes = MAX_GOOGLE_THREAT_DIAGNOSTIC_BYTES
+    remaining_items = MAX_GOOGLE_THREAT_DIAGNOSTIC_ITEMS
+
+    def add(value: bytes) -> None:
+        nonlocal remaining_bytes
+        digest.update(str(len(value)).encode("ascii"))
+        digest.update(b":")
+        if remaining_bytes <= 0:
+            digest.update(b"limit")
+            return
+        bounded = value[:remaining_bytes]
+        digest.update(bounded)
+        remaining_bytes -= len(bounded)
+        if len(bounded) != len(value):
+            digest.update(b"truncated")
+
+    def visit(value: object, depth: int) -> None:
+        nonlocal remaining_items
+        if remaining_items <= 0:
+            add(b"item-limit")
+            return
+        remaining_items -= 1
+        if depth > MAX_GOOGLE_THREAT_DIAGNOSTIC_DEPTH:
+            add(b"depth-limit")
+            return
+        if value is None:
+            add(b"none")
+        elif isinstance(value, bool):
+            add(b"bool:1" if value else b"bool:0")
+        elif isinstance(value, str):
+            add(b"str")
+            add(str(len(value)).encode("ascii"))
+            bounded_characters = value[: max(remaining_bytes, 1)]
+            add(bounded_characters.encode("utf-8", errors="backslashreplace"))
+        elif isinstance(value, bytes):
+            add(b"bytes")
+            add(value)
+        elif isinstance(value, int):
+            add(b"int")
+            add(str(value).encode("ascii"))
+        elif isinstance(value, float):
+            add(b"float")
+            add(value.hex().encode("ascii"))
+        elif isinstance(value, dict):
+            add(b"dict")
+            for key, item in value.items():
+                if remaining_items <= 0:
+                    break
+                visit(key, depth + 1)
+                visit(item, depth + 1)
+        elif isinstance(value, (list, tuple, struct_time)):
+            add(b"sequence")
+            for item in value:
+                if remaining_items <= 0:
+                    break
+                visit(item, depth + 1)
+        else:
+            add(b"unsupported")
+            add(type(value).__name__.encode("ascii", errors="backslashreplace"))
+
+    try:
+        visit(entry, 0)
+    except Exception:
+        digest.update(b"safe-fallback")
+    return digest.hexdigest()
 
 
 def _is_unsupported_text_character(character: str) -> bool:
