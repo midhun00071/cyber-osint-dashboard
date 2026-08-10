@@ -34,6 +34,7 @@ from app.orchestration.persistence import DEPLOYMENT_REFERENCE
 
 DEPLOYMENT_NAME = "alpha-data-ingestion-cycle"
 WORK_POOL_NAME = "alpha-data-process"
+PROCESS_WORKING_DIR = "/opt/alpha-data/backend"
 CRON = "17 */2 * * *"
 TIMEZONE = "Asia/Dubai"
 DEPLOYMENT_CONCURRENCY = 1
@@ -67,6 +68,7 @@ def build_runner_deployment(*, paused: bool = True) -> RunnerDeployment:
         ),
         parameters={},
         work_pool_name=spec.work_pool_name,
+        job_variables={"working_dir": PROCESS_WORKING_DIR},
         description="C01 parent ingestion cycle; source bindings are supplied by C02.",
         tags=["alpha-data", "c01", "ingestion"],
     )
@@ -207,6 +209,7 @@ __all__ = [
     "CRON",
     "DEPLOYMENT_CONCURRENCY",
     "DEPLOYMENT_NAME",
+    "PROCESS_WORKING_DIR",
     "TIMEZONE",
     "WORK_POOL_NAME",
     "build_runner_deployment",

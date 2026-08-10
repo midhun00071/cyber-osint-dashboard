@@ -47,9 +47,12 @@ CLI. The CLI does not collect source data.
 
 The worker image copies only `backend/requirements.txt` and `backend/app` into
 the fixed `/opt/alpha-data/backend` work directory, with
-`PYTHONPATH=/opt/alpha-data/backend`. Both Prefect services retain fixed
-UID/GID `10001:10001`. No source bind mount, Docker socket, privileged mode, or
-host network is added.
+`PYTHONPATH=/opt/alpha-data/backend`. The deployment also fixes the Process
+worker job variable `working_dir` to `/opt/alpha-data/backend`, allowing the
+unchanged relative flow entrypoint to resolve against the bundled code instead
+of a temporary run directory. Both Prefect services retain fixed UID/GID
+`10001:10001`. No source bind mount, Docker socket, privileged mode, or host
+network is added.
 
 ## Fixed flow and deployment identity
 
@@ -60,6 +63,8 @@ host network is added.
 | Deployment | `alpha-data-ingestion-cycle` |
 | Stable deployment reference | `alpha-data-ingestion-cycle` |
 | Work pool | `alpha-data-process` |
+| Process worker job variable | `working_dir=/opt/alpha-data/backend` |
+| Flow entrypoint | `app/orchestration/flows.py:parent_ingestion_cycle` |
 | Cron | `17 */2 * * *` |
 | Timezone | `Asia/Dubai` |
 | Deployment concurrency | `1`, collision strategy `CANCEL_NEW` |
@@ -224,11 +229,14 @@ completion.
 
 ## Deployment validation and registration
 
-Registration uses fixed developer-controlled names and produces one deployment
-with one cron schedule. An existing deployment must have exactly one matching
-cron/timezone schedule; zero, duplicate, non-cron, or conflicting schedules fail
-before apply. Reapplying the same fixed definition is idempotent. Compose starts
-only the server and worker and never invokes registration.
+Registration uses fixed developer-controlled names and paths and produces one
+deployment with one cron schedule. The Process worker receives exactly
+`{"working_dir": "/opt/alpha-data/backend"}` as its deployment job variables;
+the registration CLI and API do not accept a caller-controlled working
+directory. An existing deployment must have exactly one matching cron/timezone
+schedule; zero, duplicate, non-cron, or conflicting schedules fail before
+apply. Reapplying the same fixed definition is idempotent. Compose starts only
+the server and worker and never invokes registration.
 
 Activation fails unless all of these conditions hold:
 
