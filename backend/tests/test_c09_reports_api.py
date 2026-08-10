@@ -69,6 +69,30 @@ def test_export_has_safe_headers_and_commits_audit(authorized) -> None:
     assert authorized.commits == 1
 
 
+def test_export_exposes_content_disposition_only_to_approved_origin(authorized) -> None:
+    payload = {"report_type": "uae_intelligence", "format": "csv", "limit": 10}
+    with TestClient(app) as client:
+        approved = client.post(
+            "/api/v1/reports/export",
+            json=payload,
+            headers={"Origin": "http://localhost:3000"},
+        )
+        unapproved = client.post(
+            "/api/v1/reports/export",
+            json=payload,
+            headers={"Origin": "https://dashboard.example.com.evil.test"},
+        )
+
+    assert approved.status_code == 200
+    assert approved.headers["Access-Control-Allow-Origin"] == "http://localhost:3000"
+    assert approved.headers["Access-Control-Expose-Headers"] == "Content-Disposition"
+    assert approved.headers["Content-Disposition"] == (
+        'attachment; filename="alpha-data-safe.csv"'
+    )
+    assert unapproved.status_code == 200
+    assert "Access-Control-Allow-Origin" not in unapproved.headers
+
+
 @pytest.mark.parametrize(
     "payload",
     [

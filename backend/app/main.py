@@ -274,6 +274,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
     allow_headers=["Content-Type", "X-CSRF-Token"],
+    expose_headers=["Content-Disposition"],
 )
 # The edge applies the same ceiling, but the backend remains safe when reached
 # directly on its private network.
