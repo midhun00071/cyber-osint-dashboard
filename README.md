@@ -7,11 +7,13 @@ authoritative: content routes require `content.read`, and user-management and
 audit-search routes are Administrator-only. Hiding a frontend button is not
 authorization.
 
-Frontend login and protected-navigation integration remain pending, so
-unauthenticated frontend data requests correctly receive `401`. No real account
-has been provisioned, APR-13 remains pending, and the manual bootstrap CLI has
-not been executed. SSO is absent and remains approval-gated. See
-`docs/c06-identity-auth-rbac-audit.md`.
+C07 integrates frontend login, authenticated bootstrap, protected navigation,
+and permission-aware controls; unauthenticated data requests still receive
+`401`, and backend authorization remains authoritative. Repository validation
+does not provision a real staging account or execute the manual bootstrap CLI.
+SSO is absent and remains approval-gated. See
+`docs/c06-identity-auth-rbac-audit.md` and
+`docs/c07-authenticated-operations-experience.md`.
 
 ## Project overview
 
@@ -47,9 +49,11 @@ The current MVP includes the database schema and migrations, manual defensive
 ingestion and enrichment services, read-only APIs, backend-connected dashboard
 views, security hardening, automated tests, development runners, a self-hosted
 Prefect 3.8.1 server and process worker, and production-oriented Docker
-documentation. Ingestion remains manual-only: there is no active scheduler,
-startup ingestion, recurring background ingestion, public ingestion API, or
-frontend ingestion trigger. C01 adds typed source-execution contracts, a
+documentation. Scheduled ingestion remains inactive: there is no startup
+ingestion or public ingestion API, the production handler mapping is empty, and
+the single deployment definition is paused by default. C07 provides authorized,
+audited operator controls, but they do not bypass source policy or make an
+unavailable handler executable. C01 adds typed source-execution contracts, a
 deterministic parent/source flow core, bounded retry and progress handling, and
 a paused-by-default deployment definition. No source-specific handler is bound,
 no deployment has been activated, and no live source schedule is claimed.
@@ -148,8 +152,8 @@ Implemented source workflows:
 - Frontend article detail page connected to the read-only article detail API
 - Frontend recent trends panel connected to existing read-only APIs, with
   bounded stored-data severity, category, and timeline visualizations
-- Some dashboard preview panels remain deterministic frontend preview data until
-  their dedicated backend views are implemented.
+- Release dashboard panels use authenticated backend APIs or explicit
+  unavailable/empty states; no production preview dataset is displayed.
 
 The local development environment, backend foundation, database schema, and
 backend-connected frontend are implemented. NVD ingestion, FIRST EPSS enrichment,
@@ -482,9 +486,11 @@ migration identity, a separate least-privilege runtime application identity,
 and fixed read-only, logical-backup, and retention-planning groups. Production
 delivers the three login passwords through separate secret files and publishes
 no PostgreSQL host port. The named `postgres_data` volume is persistent storage,
-not a backup. Automated backup and tested recovery are not implemented, and
-destructive retention remains disabled until its safety and recovery evidence
-exists.
+not a backup. C09 implements encrypted PostgreSQL and Prefect backup/restore
+tooling, strict validation, dry-run retention, and isolated local recovery
+evidence. Off-host storage, production activation, and measured staging RPO/RTO
+remain manual gates; destructive retention requires the explicit reviewed
+confirmation described in the C09 runbook.
 
 Routine shutdown and destructive recovery procedures belong in the production
 deployment guide. `docker compose down -v` deletes the persistent PostgreSQL
@@ -1001,8 +1007,8 @@ read-only APIs. Search, filters, and offset pagination combine at the backend;
 changing a filter resets the frontend view to the first page.
 The dashboard also composes bounded latest CVE and article API results for a
 recent stored-data trends panel; this is not a complete historical analytics
-module. Other dashboard preview panels still use deterministic frontend preview
-data until their dedicated backend views are implemented. Raw source payloads,
+module. Release panels use backend results or truthful unavailable/empty states,
+not deterministic production preview data. Raw source payloads,
 request headers, secrets, and ingestion audit internals are intentionally not
 returned, and these endpoints never trigger ingestion or external network calls.
 
@@ -1070,19 +1076,20 @@ authoritative detailed references:
 
 ## Known limitations
 
-- Operational ingestion remains manual-only. C01 defines generic flows and one
-  paused-by-default deployment specification, but no source handler is bound,
-  no schedule is active, and there is no startup ingestion, public ingestion
-  route, or frontend ingestion control.
-- Some dashboard preview panels still use deterministic preview data; the
-  implemented article, vulnerability, summary, detail, and recent-trend views
-  use read-only backend APIs as described above.
-- TLS termination, HSTS trust, a reverse proxy, and a load balancer are not
-  included.
-- Automated PostgreSQL backups, representative restore testing, and validated
-  disaster recovery are not included. The persistent volume is not a backup.
-- Logs are bounded locally, but centralized logging, production monitoring, and
-  alerting are not integrated.
+- Scheduled ingestion is inactive. C01 defines one paused-by-default two-hour
+  deployment and C07 provides audited operator controls, but the production
+  source-handler mapping remains empty and no live schedule is claimed.
+- Release dashboard panels are backend-connected or show truthful
+  unavailable/empty states; the trends view is intentionally bounded rather
+  than a complete historical analytics module.
+- C09 includes the Caddy TLS edge and HSTS policy, but public DNS, public
+  certificate issuance, and mentor-accessible staging remain manual evidence.
+- C09 includes encrypted PostgreSQL and Prefect backup/restore tooling and
+  isolated local rehearsal evidence. Approved off-host storage and measured
+  staging RPO/RTO remain manual gates. The persistent volume is not a backup.
+- Logs and private Prometheus/Alertmanager configuration are bounded locally.
+  External alert ownership, delivery, and centralized off-host logging remain
+  unactivated/manual integrations.
 - CI/CD deployment, Kubernetes or another orchestration platform for container
   deployment, autoscaling, zero-downtime deployment, and automated secret
   rotation are not implemented. Prefect provides workflow orchestration only.
@@ -1092,8 +1099,9 @@ authoritative detailed references:
 - Current production Compose separates the privileged PostgreSQL bootstrap
   identity from non-superuser migration and runtime application identities;
   read-only, logical-backup, and retention-planning groups remain bounded to
-  their implemented duties. Staging/production provisioning, backup execution,
-  destructive retention, and recovery evidence remain future operational work.
+  their implemented duties. Staging provisioning, approved off-host backup
+  transfer, destructive retention activation, and staging recovery measurement
+  remain manual operational work.
 - Production load, capacity, failover, and public-internet deployment have not
   been validated.
 - The backend production image currently installs the shared requirements file,

@@ -541,11 +541,12 @@ the profiled one-shot `migrate` service; application startup does not run
 migrations or create tables.
 
 The production `postgres_data` named volume provides persistent storage across
-container recreation. It is not a backup. Automated backup, representative
-restore testing, and disaster recovery are not implemented. `docker compose
-down -v` deletes the persistent PostgreSQL volume and is a destructive operation,
-not routine cleanup; it requires explicit authorization and verified recovery
-evidence.
+container recreation. It is not a backup. C09 adds age-encrypted PostgreSQL and
+Prefect backup/restore tooling, strict metadata/checksum validation, dry-run
+retention, and isolated local recovery evidence. Approved off-host storage and
+measured staging RPO/RTO remain manual gates. `docker compose down -v` deletes
+the persistent PostgreSQL volume and is a destructive operation, not routine
+cleanup; it requires explicit authorization and verified recovery evidence.
 
 Prefect state is separate from application data. The single server stores its
 SQLite database inside `PREFECT_HOME` on the named `prefect_data` volume. Only
@@ -792,9 +793,10 @@ origins, and never uses a wildcard.
 Security middleware applies `X-Content-Type-Options: nosniff`,
 `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, a restrictive
 `Permissions-Policy`, and an API Content Security Policy. A server-generated
-`X-Request-ID` correlates responses and safe completion logs. HSTS is not added
-because TLS termination is not implemented by the application stack; an
-approved external TLS boundary must own transport security.
+`X-Request-ID` correlates responses and safe completion logs. C09 adds the Caddy
+edge as the only public service boundary; its HTTPS site owns HSTS and the
+browser CSP while HTTP redirects to the exact HTTPS authority. Public DNS,
+certificate issuance, and mentor-accessible staging remain external evidence.
 
 Opaque database-backed browser sessions, role-based backend authorization, and
 append-only audit of human API access are implemented. The protected analyst
@@ -814,8 +816,10 @@ Unknown exceptions become a stable 500 response; request validation, not-found,
 date-range, and database-query failures have bounded public messages. Security,
 CORS, and request-ID middleware cover successful and handled error responses.
 Ingestion uses separate safe run/record/error evidence as described above.
-Production container logs are size/rotation bounded, but centralized log
-aggregation, monitoring, alerting, and retention governance are not implemented.
+Production container logs are size/rotation bounded. C09 adds private
+Prometheus and Alertmanager configuration with bounded retention and a local
+null receiver. External alert delivery, recipient/provider ownership, TLS expiry
+probing, and centralized off-host log aggregation remain manual integrations.
 
 ## Testing and validation architecture
 

@@ -235,7 +235,9 @@ def test_shutdown_backup_and_destructive_boundaries_are_explicit() -> None:
         "`down` removes the compose service containers and networks but retains named volumes",
         "`docker compose down -v` deletes",
         "it is not routine cleanup",
-        "automated postgresql backup and restore are not implemented",
+        "c09 package implements age-encrypted postgresql and prefect backup/restore",
+        "off-host destination and owner",
+        "measure recovery objectives",
         "`postgres_data` volume is not a backup",
         "restore has been tested",
     ):

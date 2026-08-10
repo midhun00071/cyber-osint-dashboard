@@ -8,10 +8,10 @@ routes require `content.read`; user management and audit search are
 Administrator-only, and backend authorization is authoritative. Frontend
 button visibility is never authorization.
 
-Frontend login and protected-navigation integration remain pending. No real
-account has been provisioned, APR-13 remains pending, and the manual bootstrap
-CLI has not been executed. SSO is absent and approval-gated. C05 sources remain
-disabled and unscheduled.
+C07 implements frontend login, protected navigation, and permission-aware
+controls. Repository validation does not provision a real staging account or
+execute the manual bootstrap CLI. SSO is absent and approval-gated. C05 sources
+remain disabled and unscheduled.
 
 ## Purpose and audience
 
@@ -715,10 +715,12 @@ volumes by default.
 
 ## Backup and recovery responsibility
 
-Automated PostgreSQL backup and restore are not implemented by this repository.
-A real production deployment must define backup frequency, retention,
-encryption, access control, integrity verification, restore testing, recovery
-objectives, and incident ownership. Protect backup credentials and contents as
+The C09 package implements age-encrypted PostgreSQL and Prefect backup/restore,
+strict metadata/checksum validation, dry-run retention, and isolated local
+rehearsal evidence. A real staging/production deployment must still approve the
+off-host destination and owner, select frequency, activate retention, provision
+least-privilege credentials, measure recovery objectives, and assign incident
+ownership. Protect backup credentials and contents as
 sensitive production data.
 
 The existence of the `postgres_data` volume is not a backup. The volume can be

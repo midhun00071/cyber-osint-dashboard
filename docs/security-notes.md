@@ -8,10 +8,10 @@ bearer authentication, SSO, self-registration, or a frontend bypass.
 
 Backend authorization is authoritative. Content routes require `content.read`;
 user-management routes and audit search are Administrator-only. Hiding a
-frontend button is not authorization. Frontend login and protected-navigation
-integration remain pending. No real account has been provisioned, APR-13 is
-pending, and the manual bootstrap CLI has not been executed. SSO remains absent
-and approval-gated.
+frontend button is not authorization. C07 implements frontend login,
+authenticated bootstrap, protected navigation, and permission-aware controls.
+Repository validation does not provision a real staging account or execute the
+manual bootstrap CLI. SSO remains absent and approval-gated.
 
 ## Purpose
 

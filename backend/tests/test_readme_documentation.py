@@ -43,17 +43,18 @@ def test_readme_preserves_defensive_and_untrusted_content_boundaries() -> None:
         assert required_phrase in readme
 
 
-def test_readme_states_manual_only_ingestion_without_stale_scheduler_claims() -> None:
+def test_readme_states_inactive_scheduled_ingestion_without_live_claims() -> None:
     raw_readme = readme_text()
     readme = normalized_readme()
 
     for required_phrase in (
-        "ingestion remains manual-only",
-        "no active scheduler",
+        "scheduled ingestion remains inactive",
         "startup ingestion",
-        "recurring background ingestion",
         "public ingestion api",
-        "frontend ingestion trigger",
+        "production handler mapping is empty",
+        "single deployment definition is paused by default",
+        "authorized, audited operator controls",
+        "do not bypass source policy",
         "no command below runs on fastapi startup",
     ):
         assert required_phrase in readme
@@ -179,8 +180,9 @@ def test_readme_records_current_database_and_persistence_limitations() -> None:
         "three login passwords through separate secret files",
         "publishes no postgresql host port",
         "named `postgres_data` volume is persistent storage, not a backup",
-        "automated backup and tested recovery are not implemented",
-        "destructive retention remains disabled until its safety and recovery evidence exists",
+        "c09 implements encrypted postgresql and prefect backup/restore tooling",
+        "off-host storage, production activation, and measured staging rpo/rto remain manual gates",
+        "destructive retention requires the explicit reviewed confirmation",
         "`docker compose down -v` deletes the persistent postgresql volume",
         "it is not routine cleanup",
         "explicit authorization",
@@ -195,15 +197,15 @@ def test_readme_represents_production_limitations_honestly() -> None:
     readme = normalized_readme()
 
     for required_phrase in (
-        "tls termination",
-        "reverse proxy",
-        "load balancer",
-        "automated postgresql backups",
-        "representative restore testing",
-        "validated disaster recovery",
-        "centralized logging",
-        "production monitoring",
-        "alerting",
+        "caddy tls edge and hsts policy",
+        "public dns",
+        "public certificate issuance",
+        "mentor-accessible staging remain manual evidence",
+        "encrypted postgresql and prefect backup/restore tooling",
+        "approved off-host storage",
+        "measured staging rpo/rto remain manual gates",
+        "centralized off-host logging",
+        "external alert ownership",
         "ci/cd deployment",
         "kubernetes or another orchestration platform",
         "zero-downtime deployment",
@@ -250,7 +252,7 @@ def test_readme_documents_c05_disabled_fixture_only_contract() -> None:
     assert "c05-official-public-sources.md" in document
 
 
-def test_readme_documents_current_c06_authentication_and_pending_frontend() -> None:
+def test_readme_documents_current_authentication_and_c07_frontend() -> None:
     readme = normalized_readme()
     for phrase in (
         "opaque database-backed browser sessions",
@@ -259,10 +261,12 @@ def test_readme_documents_current_c06_authentication_and_pending_frontend() -> N
         "content routes require `content.read`",
         "user-management and audit-search routes are administrator-only",
         "hiding a frontend button is not authorization",
-        "frontend login and protected-navigation integration remain pending",
-        "no real account has been provisioned",
-        "apr-13 remains pending",
-        "manual bootstrap cli has not been executed",
+        "c07 integrates frontend login",
+        "authenticated bootstrap",
+        "protected navigation",
+        "permission-aware controls",
+        "does not provision a real staging account",
+        "manual bootstrap cli",
         "sso is absent and remains approval-gated",
         "`get`, `post`, `patch`, and `options`",
         "`content-type` and `x-csrf-token`",

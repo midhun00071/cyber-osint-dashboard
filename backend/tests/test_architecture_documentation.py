@@ -440,7 +440,8 @@ def test_trust_security_logging_and_error_boundaries_are_documented() -> None:
         "Raw source payloads and internal exception details",
         "React escapes text",
         "Backend authorization is authoritative",
-        "centralized log aggregation, monitoring, alerting",
+        "private Prometheus and Alertmanager configuration",
+        "centralized off-host log aggregation remain manual integrations",
     ):
         assert phrase in document
 
