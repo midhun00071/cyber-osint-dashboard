@@ -181,12 +181,7 @@ class NvdSourceHandler:
                 for record in records:
                     persisted = service.persist(record, observed_at=context.scheduled_for)
                     outcomes.append(persisted.outcome)
-                    evidence.append(
-                        OutcomeEvidence(
-                            outcome=persisted.outcome,
-                            safe_detail="C02 processed one validated NVD CVE record.",
-                        )
-                    )
+                    evidence.append(_outcome_evidence(persisted))
                 counters = counters_from_outcomes(outcomes)
                 result = make_result(
                     source_slug=NVD_SOURCE_SLUG,
@@ -259,6 +254,23 @@ def _normalize_unique(wrappers: list[dict[str, object]]):
         elif existing.content_hash != normalized.content_hash:
             raise ValueError("The NVD response contains conflicting duplicate CVEs.")
     return ordered
+
+
+def _outcome_evidence(persisted) -> OutcomeEvidence:
+    source_record_id = getattr(persisted.source_record, "id", None)
+    intelligence_item_id = persisted.intelligence_item_id
+    if persisted.outcome in {"created", "updated", "unchanged"}:
+        if source_record_id is None or intelligence_item_id is None:
+            raise ValueError("The NVD canonical persistence linkage is unavailable.")
+    else:
+        source_record_id = None
+        intelligence_item_id = None
+    return OutcomeEvidence(
+        outcome=persisted.outcome,
+        source_record_id=source_record_id,
+        intelligence_item_id=intelligence_item_id,
+        safe_detail="C02 processed one validated NVD CVE record.",
+    )
 
 
 __all__ = [

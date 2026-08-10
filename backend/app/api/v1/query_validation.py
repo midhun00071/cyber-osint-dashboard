@@ -22,6 +22,12 @@ ARTICLE_ITEM_TYPE_VALUES = tuple(
     value for value in ITEM_TYPE_VALUES if value != "vulnerability"
 )
 SEVERITY_VALUES = ("unknown", "none", "low", "medium", "high", "critical")
+LIST_SORT_VALUES = (
+    "recently_ingested",
+    "newest_published",
+    "oldest_published",
+)
+DEFAULT_LIST_SORT = LIST_SORT_VALUES[0]
 CANONICAL_SLUG_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 CVE_ID_PATTERN = re.compile(r"^CVE-[0-9]{4}-[0-9]{4,}$")
 CANONICAL_PUBLIC_UUID_PATTERN = re.compile(

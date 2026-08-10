@@ -10,6 +10,7 @@ import type { BadgeTone } from "@/types/dashboard";
 import type {
   GeographicScope,
   KevStatus,
+  ListSort,
   UaeRelevanceStatus,
   VulnerabilityListResponse,
   VulnerabilitySeverity,
@@ -53,6 +54,11 @@ const relevanceOptions: readonly {
 ] as const;
 
 const limitOptions = [10, 25, 50] as const;
+const sortOptions: readonly { label: string; value: ListSort }[] = [
+  { label: "Recently ingested", value: "recently_ingested" },
+  { label: "Newest published", value: "newest_published" },
+  { label: "Oldest published", value: "oldest_published" },
+] as const;
 const currentUtcYear = new Date().getUTCFullYear();
 const publishedYearOptions = Array.from(
   { length: currentUtcYear - 2019 },
@@ -72,11 +78,12 @@ type InitialTableState = Readonly<{
   relevance: UaeRelevanceStatus | "";
   scope: GeographicScope | "";
   severity: VulnerabilitySeverity | "";
+  sort: ListSort;
 }>;
 
 function initialTableState(originPath: "/" | "/vulnerabilities", search: string): InitialTableState {
   if (originPath === "/") {
-    return { limit: 10, offset: 0, publishedYear: "", query: "", relevance: "", scope: "", severity: "" };
+    return { limit: 10, offset: 0, publishedYear: "", query: "", relevance: "", scope: "", severity: "", sort: "recently_ingested" };
   }
   const params = new URLSearchParams(search);
   const parsedLimit = Number(params.get("limit"));
@@ -96,6 +103,9 @@ function initialTableState(originPath: "/" | "/vulnerabilities", search: string)
     severity: severityOptions.some((option) => option.value === params.get("severity"))
       ? params.get("severity") as VulnerabilitySeverity
       : "",
+    sort: sortOptions.some((option) => option.value === params.get("sort"))
+      ? params.get("sort") as ListSort
+      : "recently_ingested",
   };
 }
 
@@ -210,6 +220,7 @@ function VulnerabilitiesTableContent({ originPath = "/vulnerabilities" }: Readon
   const [relevance, setRelevance] = useState<UaeRelevanceStatus | "">(initial.relevance);
   const [limit, setLimit] = useState<number>(initial.limit);
   const [offset, setOffset] = useState(initial.offset);
+  const [sort, setSort] = useState<ListSort>(initial.sort);
   const [state, setState] = useState<TableState>({ status: "loading" });
 
   useEffect(() => {
@@ -227,6 +238,7 @@ function VulnerabilitiesTableContent({ originPath = "/vulnerabilities" }: Readon
             published_year: publishedYear || undefined,
             q: query,
             severity: severity || undefined,
+            sort,
             uae_relevance_status: relevance || undefined,
           },
           controller.signal,
@@ -250,7 +262,7 @@ function VulnerabilitiesTableContent({ originPath = "/vulnerabilities" }: Readon
     void loadVulnerabilities();
 
     return () => controller.abort();
-  }, [limit, offset, publishedYear, query, relevance, scope, severity]);
+  }, [limit, offset, publishedYear, query, relevance, scope, severity, sort]);
 
   const total = state.status === "success" ? state.data.total : 0;
   const pageStart = total === 0 ? 0 : offset + 1;
@@ -299,9 +311,10 @@ function VulnerabilitiesTableContent({ originPath = "/vulnerabilities" }: Readon
     if (relevance) params.set("relevance", relevance);
     if (limit !== 10) params.set("limit", String(limit));
     if (offset) params.set("offset", String(offset));
+    if (sort !== "recently_ingested") params.set("sort", sort);
     const search = params.toString();
     return `/vulnerabilities${search ? `?${search}` : ""}`;
-  }, [limit, offset, originPath, publishedYear, query, relevance, scope, severity]);
+  }, [limit, offset, originPath, publishedYear, query, relevance, scope, severity, sort]);
 
   return (
     <div className="vulnerabilityTableShell">
@@ -386,6 +399,24 @@ function VulnerabilitiesTableContent({ originPath = "/vulnerabilities" }: Readon
           >
             {relevanceOptions.map((option) => (
               <option key={option.label} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Sort</span>
+          <select
+            id="vulnerability-sort"
+            name="vulnerability_sort"
+            onChange={(event) => {
+              setSort(event.target.value as ListSort);
+              setOffset(0);
+            }}
+            value={sort}
+          >
+            {sortOptions.map((option) => (
+              <option key={option.value} value={option.value}>
                 {option.label}
               </option>
             ))}

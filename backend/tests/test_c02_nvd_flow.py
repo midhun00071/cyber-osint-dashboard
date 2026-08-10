@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 from pydantic import SecretStr
 
+from app.models import IngestionRunRecord
 from app.orchestration.contracts import (
     ClassifiedFailure,
     ProgressKind,
@@ -52,6 +53,9 @@ class Rows:
 
 
 class FakeSession:
+    def __init__(self):
+        self.added = []
+
     def __enter__(self):
         return self
 
@@ -66,7 +70,7 @@ class FakeSession:
         return Rows()
 
     def add(self, record):
-        del record
+        self.added.append(record)
 
     def flush(self):
         return None
@@ -116,7 +120,13 @@ def install_service(monkeypatch, outcomes=("created",)):
 
         def persist(self, record, *, observed_at):
             del record, observed_at
-            return SimpleNamespace(outcome=queued.pop(0))
+            outcome = queued.pop(0)
+            linked = outcome in {"created", "updated", "unchanged"}
+            return SimpleNamespace(
+                outcome=outcome,
+                source_record=SimpleNamespace(id=17) if linked else None,
+                intelligence_item_id=23 if linked else None,
+            )
 
     monkeypatch.setattr(
         "app.orchestration.source_handlers.nvd.NvdIngestionService",
@@ -124,7 +134,13 @@ def install_service(monkeypatch, outcomes=("created",)):
     )
 
 
-def handler_for(client, *, api_key=None, sleeper=lambda value: None):
+def handler_for(
+    client,
+    *,
+    api_key=None,
+    sleeper=lambda value: None,
+    session_factory=FakeSession,
+):
     captured = {}
 
     def factory(key, supplied_sleeper):
@@ -133,12 +149,58 @@ def handler_for(client, *, api_key=None, sleeper=lambda value: None):
         return client
 
     handler = NvdSourceHandler(
-        session_factory=FakeSession,
+        session_factory=session_factory,
         client_factory=factory,
         settings_provider=lambda: SimpleNamespace(nvd_api_key=api_key),
         sleeper=sleeper,
     )
     return handler, captured
+
+
+def test_successful_nvd_outcome_persists_available_canonical_linkage(monkeypatch) -> None:
+    install_service(monkeypatch)
+    session = FakeSession()
+    client = FakeClient([page([wrapper("CVE-2026-1001")])])
+    handler, _ = handler_for(client, session_factory=lambda: session)
+
+    handler.execute(context())
+
+    outcome_records = [
+        record
+        for record in session.added
+        if isinstance(record, IngestionRunRecord)
+        and record.safe_detail == "C02 processed one validated NVD CVE record."
+    ]
+    assert len(outcome_records) == 1
+    assert outcome_records[0].action == "created"
+    assert outcome_records[0].source_record_id == 17
+    assert outcome_records[0].intelligence_item_id == 23
+
+
+def test_successful_nvd_outcome_without_canonical_linkage_fails_closed(monkeypatch) -> None:
+    class Service:
+        def __init__(self, session):
+            del session
+
+        def persist(self, record, *, observed_at):
+            del record, observed_at
+            return SimpleNamespace(
+                outcome="created",
+                source_record=None,
+                intelligence_item_id=None,
+            )
+
+    monkeypatch.setattr(
+        "app.orchestration.source_handlers.nvd.NvdIngestionService",
+        Service,
+    )
+    client = FakeClient([page([wrapper("CVE-2026-1001")])])
+    handler, _ = handler_for(client)
+
+    with pytest.raises(ClassifiedFailure) as exc_info:
+        handler.execute(context())
+
+    assert "failed safe validation" in str(exc_info.value)
 
 
 def test_initial_window_is_two_hours_and_advances_to_scheduled_slot(monkeypatch) -> None:

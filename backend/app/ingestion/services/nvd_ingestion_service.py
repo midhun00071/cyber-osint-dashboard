@@ -44,6 +44,8 @@ class NvdPersistenceResult:
     cve_id: str
     outcome: str
     message: str | None = None
+    source_record: SourceRecord | None = None
+    intelligence_item_id: int | None = None
 
     def __post_init__(self) -> None:
         if self.outcome not in VALID_OUTCOMES:
@@ -105,9 +107,18 @@ class NvdIngestionService:
                 return self._failed(normalized.cve_id, conflict)
 
             if identifier is None and source_record is None:
-                self._create_records(source, normalized, observation_time)
+                item, source_record = self._create_records(
+                    source,
+                    normalized,
+                    observation_time,
+                )
                 self._session.flush()
-                return NvdPersistenceResult(normalized.cve_id, "created")
+                return self._result(
+                    normalized.cve_id,
+                    "created",
+                    source_record=source_record,
+                    intelligence_item_id=getattr(item, "id", None),
+                )
 
             item = (
                 identifier.intelligence_item
@@ -146,11 +157,21 @@ class NvdIngestionService:
                 )
                 self._session.flush()
                 outcome = "updated" if extension_created else "unchanged"
-                return NvdPersistenceResult(normalized.cve_id, outcome)
+                return self._result(
+                    normalized.cve_id,
+                    outcome,
+                    source_record=source_record,
+                    intelligence_item_id=getattr(item, "id", None),
+                )
 
             self._apply_update(item, source_record, normalized, observation_time)
             self._session.flush()
-            return NvdPersistenceResult(normalized.cve_id, "updated")
+            return self._result(
+                normalized.cve_id,
+                "updated",
+                source_record=source_record,
+                intelligence_item_id=getattr(item, "id", None),
+            )
         except SQLAlchemyError as exc:
             raise NvdPersistenceError(
                 "Database error while persisting normalized NVD data."
@@ -229,7 +250,7 @@ class NvdIngestionService:
         source: IntelligenceSource,
         normalized: NormalizedNvdCve,
         observed_at: datetime,
-    ) -> None:
+    ) -> tuple[IntelligenceItem, SourceRecord]:
         item = IntelligenceItem(
             item_type="vulnerability",
             canonical_title=normalized.title,
@@ -277,6 +298,7 @@ class NvdIngestionService:
         self._session.add(vulnerability)
         self._session.add(source_record)
         self._session.add(identifier)
+        return item, source_record
 
     def _create_source_record(
         self,
@@ -392,4 +414,21 @@ class NvdIngestionService:
 
     @staticmethod
     def _failed(cve_id: str, message: str) -> NvdPersistenceResult:
-        return NvdPersistenceResult(cve_id=cve_id, outcome="failed", message=message)
+        return NvdIngestionService._result(cve_id, "failed", message)
+
+    @staticmethod
+    def _result(
+        cve_id: str,
+        outcome: str,
+        message: str | None = None,
+        *,
+        source_record: SourceRecord | None = None,
+        intelligence_item_id: int | None = None,
+    ) -> NvdPersistenceResult:
+        return NvdPersistenceResult(
+            cve_id=cve_id,
+            outcome=outcome,
+            message=message,
+            source_record=source_record,
+            intelligence_item_id=intelligence_item_id,
+        )

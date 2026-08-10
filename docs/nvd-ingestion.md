@@ -60,11 +60,19 @@ extension, an updated NVD record repairs it with normalized NVD values and empty
 EPSS/KEV enrichment fields. This repair also occurs when the source content hash
 is unchanged, and the local outcome is reported as updated.
 
+For scheduled ingestion, every successful canonical `created`, `updated`, or
+`unchanged` result retains the persisted NVD source record and canonical
+intelligence-item identity. The source handler writes those available IDs into
+the immutable run outcome evidence in the same transaction. Validation failures
+and other outcomes without a canonical entity remain unlinked; historical run
+evidence is not rewritten or backfilled.
+
 ## Safety boundary
 
-NVD ingestion remains manual-only. Nothing in this design runs during FastAPI
-startup or through a scheduler. There is no frontend or dashboard integration,
-and no live network request is made by the normalizer or its tests.
+NVD collection never runs during FastAPI startup or through a public API route.
+Live requests are limited to explicit operator commands and the separately
+reviewed scheduled source handler. The normalizer and automated tests remain
+offline and make no live network requests.
 
 ## Manual ingestion command
 
@@ -243,7 +251,7 @@ or CISA requests.
 - Migrations and schema changes.
 - PostgreSQL integration testing for the manual ingestion CLI beyond the
   existing offline automated test suite.
-- Scheduled or startup ingestion.
+- Schedule, source-policy, or startup-ingestion changes.
 - FastAPI ingestion routes.
 - Dashboard and frontend changes.
 - Automatic retries or historical backfills.

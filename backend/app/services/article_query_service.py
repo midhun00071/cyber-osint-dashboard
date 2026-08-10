@@ -11,7 +11,11 @@ from sqlalchemy import Select, func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, load_only, raiseload, selectinload
 
-from app.api.v1.query_validation import ARTICLE_ITEM_TYPE_VALUES
+from app.api.v1.query_validation import (
+    ARTICLE_ITEM_TYPE_VALUES,
+    DEFAULT_LIST_SORT,
+    LIST_SORT_VALUES,
+)
 from app.api.v1.schemas.articles import ArticleListResponse, ArticleSummary
 from app.models import (
     IntelligenceItem,
@@ -47,8 +51,13 @@ class ArticleQueryFilters:
     published_to_exclusive: datetime | None = None
     geographic_scope: str | None = None
     uae_relevance_status: str | None = None
+    sort: str = DEFAULT_LIST_SORT
     limit: int = 25
     offset: int = 0
+
+    def __post_init__(self) -> None:
+        if self.sort not in LIST_SORT_VALUES:
+            raise ValueError("Invalid article list sort.")
 
     @property
     def normalized_query(self) -> str | None:
@@ -73,11 +82,7 @@ class ArticleQueryService:
             page_items = list(
                 self._session.execute(
                     base_statement.options(*self._public_load_options())
-                    .order_by(
-                        IntelligenceItem.source_published_at.desc().nulls_last(),
-                        IntelligenceItem.last_seen_at.desc(),
-                        IntelligenceItem.id.desc(),
-                    )
+                    .order_by(*self._sort_expressions(filters.sort))
                     .limit(filters.limit)
                     .offset(filters.offset)
                 )
@@ -93,6 +98,22 @@ class ArticleQueryService:
             limit=filters.limit,
             offset=filters.offset,
         )
+
+    @staticmethod
+    def _sort_expressions(sort: str) -> tuple:
+        if sort == "recently_ingested":
+            return IntelligenceItem.created_at.desc(), IntelligenceItem.id.desc()
+        if sort == "newest_published":
+            return (
+                IntelligenceItem.source_published_at.desc().nulls_last(),
+                IntelligenceItem.id.desc(),
+            )
+        if sort == "oldest_published":
+            return (
+                IntelligenceItem.source_published_at.asc().nulls_last(),
+                IntelligenceItem.id.asc(),
+            )
+        raise ValueError("Invalid article list sort.")
 
     def get_article(self, public_id: UUID) -> ArticleSummary:
         statement = (

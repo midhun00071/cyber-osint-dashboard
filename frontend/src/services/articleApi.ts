@@ -126,6 +126,7 @@ function buildArticleUrl(filters: ArticleFilters): string {
   const params = new URLSearchParams({
     limit: String(filters.limit),
     offset: String(filters.offset),
+    sort: filters.sort,
   });
 
   setTrimmedParam(params, "q", filters.q);

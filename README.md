@@ -976,9 +976,9 @@ endpoints:
 The two list endpoints use bounded offset pagination: `limit` defaults to `25`
 and accepts `1` through `100`, while `offset` defaults to `0` and accepts `0`
 through `10,000`. Out-of-range values return sanitized HTTP `422`. Every
-currently implemented query parameter is single-value; repeated scalar names,
-unknown names, and unimplemented names such as `sort` return `422` after
-percent-decoding. Different supported parameters can still be combined. The
+currently implemented query parameter is single-value; repeated scalar names
+and unknown names return `422` after percent-decoding. Different supported
+parameters can still be combined. The
 dashboard summary accepts only `window_days`; article/intelligence detail,
 `GET /`, `GET /api/health`, and `GET /api/version` accept no query parameters.
 
@@ -1019,10 +1019,21 @@ page uses this endpoint for the four top KPI cards and uses
 `GET /api/v1/intelligence/items` for the vulnerability table. The vulnerability
 table links each CVE by public UUID to a frontend vulnerability detail page, and
 the latest articles feed links each article to a frontend article detail page.
-The dashboard latest-articles feed and vulnerability table both send
+Both list endpoints default to `recently_ingested` and accept exactly three
+strict `sort` values: `recently_ingested` orders canonical
+`IntelligenceItem.created_at` descending, `newest_published` orders
+the canonical source publication timestamp descending, and
+`oldest_published` orders it ascending. Every mode uses the canonical item ID as
+a deterministic tie-breaker, applies ordering before offset pagination, and
+keeps unknown publication timestamps last. Invalid values return sanitized
+HTTP `422`; callers cannot provide a column or SQL direction. “Recently
+ingested” therefore means newly created in this application and is intentionally
+different from “newest published,” which may describe older material collected
+today. The dashboard latest-articles feed and vulnerability table both send
 backend-driven geographic-scope and UAE relevance-status filters through those
 read-only APIs. Search, filters, and offset pagination combine at the backend;
-changing a filter resets the frontend view to the first page.
+changing a filter or sort resets the frontend view to the first page without
+discarding unrelated active filters.
 The dashboard also composes bounded latest CVE and article API results for a
 recent stored-data trends panel; this is not a complete historical analytics
 module. Release panels use backend results or truthful unavailable/empty states,

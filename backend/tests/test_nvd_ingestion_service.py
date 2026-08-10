@@ -254,6 +254,39 @@ def test_repeated_identical_cve_is_unchanged_without_duplicates() -> None:
     assert session.source_records[0].first_seen_at == OBSERVED_AT
 
 
+def test_successful_results_retain_canonical_audit_identities() -> None:
+    session = FakeSession()
+    normalized, created = persist_new(session)
+    unchanged = NvdIngestionService(session).persist(  # type: ignore[arg-type]
+        normalized,
+        observed_at=UPDATED_AT,
+    )
+    updated = NvdIngestionService(session).persist(  # type: ignore[arg-type]
+        replace(normalized, content_hash="f" * 64),
+        observed_at=UPDATED_AT,
+    )
+
+    for result in (created, unchanged, updated):
+        assert result.source_record is session.source_records[0]
+        assert result.source_record.id is not None
+        assert result.intelligence_item_id == session.items[0].id
+
+
+def test_failed_result_does_not_fabricate_canonical_audit_identities() -> None:
+    session = FakeSession()
+    normalized, _ = persist_new(session)
+    session.items[0].item_type = "cyber_news"
+
+    result = NvdIngestionService(session).persist(  # type: ignore[arg-type]
+        normalized,
+        observed_at=UPDATED_AT,
+    )
+
+    assert result.outcome == "failed"
+    assert result.source_record is None
+    assert result.intelligence_item_id is None
+
+
 def test_changed_hash_updates_nvd_fields_and_preserves_analyst_enrichment() -> None:
     session = FakeSession()
     normalized, _ = persist_new(session)

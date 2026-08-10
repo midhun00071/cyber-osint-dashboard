@@ -11,6 +11,7 @@ import type {
   ArticleCategory,
   ArticleListResponse,
   GeographicScope,
+  ListSort,
   UaeRelevanceStatus,
 } from "@/types/article";
 import type { BadgeTone } from "@/types/dashboard";
@@ -83,6 +84,11 @@ const sourceOptions = [
 ] as const;
 
 const limit = 6;
+const sortOptions: readonly { label: string; value: ListSort }[] = [
+  { label: "Recently ingested", value: "recently_ingested" },
+  { label: "Newest published", value: "newest_published" },
+  { label: "Oldest published", value: "oldest_published" },
+] as const;
 
 type FeedState =
   | { status: "loading" }
@@ -96,11 +102,12 @@ type InitialFeedState = Readonly<{
   relevance: UaeRelevanceStatus | "";
   scope: GeographicScope | "";
   source: string;
+  sort: ListSort;
 }>;
 
 function initialFeedState(originPath: "/" | "/threat-feed", search: string): InitialFeedState {
   if (originPath === "/") {
-    return { category: "", offset: 0, query: "", relevance: "", scope: "", source: "" };
+    return { category: "", offset: 0, query: "", relevance: "", scope: "", source: "", sort: "recently_ingested" };
   }
   const params = new URLSearchParams(search);
   const category = categoryOptions.some((option) => option.value === params.get("category"))
@@ -123,6 +130,9 @@ function initialFeedState(originPath: "/" | "/threat-feed", search: string): Ini
     relevance,
     scope,
     source,
+    sort: sortOptions.some((option) => option.value === params.get("sort"))
+      ? params.get("sort") as ListSort
+      : "recently_ingested",
   };
 }
 
@@ -197,6 +207,7 @@ function LatestArticlesFeedContent({ originPath = "/threat-feed" }: Readonly<{ o
   const [scope, setScope] = useState<GeographicScope | "">(initial.scope);
   const [relevance, setRelevance] = useState<UaeRelevanceStatus | "">(initial.relevance);
   const [offset, setOffset] = useState(initial.offset);
+  const [sort, setSort] = useState<ListSort>(initial.sort);
   const [state, setState] = useState<FeedState>({ status: "loading" });
 
   useEffect(() => {
@@ -214,6 +225,7 @@ function LatestArticlesFeedContent({ originPath = "/threat-feed" }: Readonly<{ o
             offset,
             q: query,
             source_slug: source || undefined,
+            sort,
             uae_relevance_status: relevance || undefined,
           },
           controller.signal,
@@ -237,7 +249,7 @@ function LatestArticlesFeedContent({ originPath = "/threat-feed" }: Readonly<{ o
     void loadArticles();
 
     return () => controller.abort();
-  }, [category, offset, query, relevance, scope, source]);
+  }, [category, offset, query, relevance, scope, source, sort]);
 
   const articles = useMemo(
     () => (state.status === "success" ? state.data.items : []),
@@ -285,9 +297,10 @@ function LatestArticlesFeedContent({ originPath = "/threat-feed" }: Readonly<{ o
     if (scope) params.set("scope", scope);
     if (relevance) params.set("relevance", relevance);
     if (offset) params.set("offset", String(offset));
+    if (sort !== "recently_ingested") params.set("sort", sort);
     const search = params.toString();
     return `/threat-feed${search ? `?${search}` : ""}`;
-  }, [category, offset, originPath, query, relevance, scope, source]);
+  }, [category, offset, originPath, query, relevance, scope, source, sort]);
 
   return (
     <div className="articleFeedShell">
@@ -350,6 +363,24 @@ function LatestArticlesFeedContent({ originPath = "/threat-feed" }: Readonly<{ o
           >
             {scopeOptions.map((option) => (
               <option key={option.label} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Sort</span>
+          <select
+            id="article-sort"
+            name="article_sort"
+            onChange={(event) => {
+              setSort(event.target.value as ListSort);
+              setOffset(0);
+            }}
+            value={sort}
+          >
+            {sortOptions.map((option) => (
+              <option key={option.value} value={option.value}>
                 {option.label}
               </option>
             ))}

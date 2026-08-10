@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from app.api.v1.query_validation import (
     GEOGRAPHIC_SCOPE_VALUES,
     ITEM_TYPE_VALUES,
+    DEFAULT_LIST_SORT,
+    LIST_SORT_VALUES,
     MAX_PAGINATION_OFFSET,
     MAX_SEARCH_LENGTH,
     PublishedYear,
@@ -52,6 +54,7 @@ validate_intelligence_list_query = validate_query_parameters(
         "cve_id",
         "geographic_scope",
         "uae_relevance_status",
+        "sort",
     }
 )
 validate_no_query_parameters = validate_query_parameters(set())
@@ -78,6 +81,7 @@ def list_intelligence_items(
     cve_id: str | None = Query(default=None, min_length=1, max_length=40),
     geographic_scope: str | None = Query(default=None, min_length=1, max_length=40),
     uae_relevance_status: str | None = Query(default=None, min_length=1, max_length=40),
+    sort: str = Query(default=DEFAULT_LIST_SORT, min_length=1, max_length=40),
     db_session: Session = Depends(get_db_session),
 ) -> IntelligenceItemListResponse:
     """Return stored intelligence items with safe filtering and pagination."""
@@ -117,6 +121,12 @@ def list_intelligence_items(
             allowed_values=UAE_RELEVANCE_STATUS_VALUES,
             field_name="uae_relevance_status",
         ),
+        sort=normalize_enum_filter(
+            sort,
+            allowed_values=LIST_SORT_VALUES,
+            field_name="sort",
+        )
+        or DEFAULT_LIST_SORT,
         limit=limit,
         offset=offset,
     )

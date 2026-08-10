@@ -133,6 +133,7 @@ describe("VulnerabilitiesTable", () => {
           published_year: currentYear,
           q: "CVE-2026",
           severity: "high",
+          sort: "recently_ingested",
           uae_relevance_status: "confirmed",
         },
         expect.any(AbortSignal),
@@ -164,6 +165,7 @@ describe("VulnerabilitiesTable", () => {
           published_year: undefined,
           q: "",
           severity: undefined,
+          sort: "recently_ingested",
           uae_relevance_status: undefined,
         },
         expect.any(AbortSignal),
@@ -245,6 +247,30 @@ describe("VulnerabilitiesTable", () => {
     );
   });
 
+  test("changing server sort resets pagination and preserves active filters", async () => {
+    const user = userEvent.setup();
+    fetchVulnerabilitiesMock.mockResolvedValue({
+      status: "success",
+      data: makeVulnerabilityList({ total: 22 }),
+    });
+    render(<VulnerabilitiesTable />);
+    await screen.findByText("Showing 1-10 of 22 stored CVEs");
+    await user.selectOptions(screen.getByLabelText("Severity"), "high");
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.selectOptions(screen.getByLabelText("Sort"), "oldest_published");
+
+    await waitFor(() =>
+      expect(fetchVulnerabilitiesMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          offset: 0,
+          severity: "high",
+          sort: "oldest_published",
+        }),
+        expect.any(AbortSignal),
+      ),
+    );
+  });
+
   test("Apply resets pagination and the applied year persists across pages", async () => {
     const user = userEvent.setup();
     const currentYear = new Date().getUTCFullYear();
@@ -308,13 +334,14 @@ describe("VulnerabilitiesTable", () => {
   });
 
   test("restores filters, row count, and pagination from the return URL", async () => {
-    window.history.replaceState({}, "", "/vulnerabilities?q=CVE-2026&severity=high&scope=uae&limit=25&offset=25");
+    window.history.replaceState({}, "", "/vulnerabilities?q=CVE-2026&severity=high&scope=uae&limit=25&offset=25&sort=newest_published");
     render(<VulnerabilitiesTable />);
-    await waitFor(() => expect(fetchVulnerabilitiesMock).toHaveBeenCalledWith(expect.objectContaining({ q: "CVE-2026", severity: "high", geographic_scope: "uae", limit: 25, offset: 25 }), expect.any(AbortSignal)));
+    await waitFor(() => expect(fetchVulnerabilitiesMock).toHaveBeenCalledWith(expect.objectContaining({ q: "CVE-2026", severity: "high", geographic_scope: "uae", limit: 25, offset: 25, sort: "newest_published" }), expect.any(AbortSignal)));
     expect(screen.getByLabelText("Search CVEs")).toHaveValue("CVE-2026");
     expect(screen.getByLabelText("Rows")).toHaveValue("25");
+    expect(screen.getByLabelText("Sort")).toHaveValue("newest_published");
     const detailLink = await screen.findByRole("link", { name: "CVE-2026-12345" });
-    expect(decodeURIComponent(detailLink.getAttribute("href") ?? "")).toContain("returnTo=/vulnerabilities?q=CVE-2026&severity=high&scope=uae&limit=25&offset=25");
+    expect(decodeURIComponent(detailLink.getAttribute("href") ?? "")).toContain("sort=newest_published");
   });
 
   test("uses Overview as the return context when embedded on Overview", async () => {

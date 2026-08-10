@@ -163,6 +163,7 @@ describe("LatestArticlesFeed", () => {
           offset: 0,
           q: "cloud alert",
           source_slug: "censys-arc-research",
+          sort: "recently_ingested",
           uae_relevance_status: "probable",
         },
         expect.any(AbortSignal),
@@ -193,6 +194,7 @@ describe("LatestArticlesFeed", () => {
           offset: 0,
           q: "",
           source_slug: undefined,
+          sort: "recently_ingested",
           uae_relevance_status: undefined,
         },
         expect.any(AbortSignal),
@@ -300,6 +302,30 @@ describe("LatestArticlesFeed", () => {
     );
   });
 
+  test("changing server sort resets pagination and preserves active filters", async () => {
+    const user = userEvent.setup();
+    fetchArticlesMock.mockResolvedValue({
+      status: "success",
+      data: makeArticleList({ total: 13 }),
+    });
+    render(<LatestArticlesFeed />);
+    await screen.findByText("Showing 1-6 of 13 stored articles");
+    await user.selectOptions(screen.getByLabelText("Category"), "threat_report");
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.selectOptions(screen.getByLabelText("Sort"), "newest_published");
+
+    await waitFor(() =>
+      expect(fetchArticlesMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          category: "threat_report",
+          offset: 0,
+          sort: "newest_published",
+        }),
+        expect.any(AbortSignal),
+      ),
+    );
+  });
+
   test("detail links preserve applied filters and pagination in a bounded return URL", async () => {
     const user = userEvent.setup();
     fetchArticlesMock.mockResolvedValue({ status: "success", data: makeArticleList({ total: 13 }) });
@@ -317,14 +343,15 @@ describe("LatestArticlesFeed", () => {
   });
 
   test("restores filters and pagination from a safe return URL", async () => {
-    window.history.replaceState({}, "", "/threat-feed?q=cloud&category=cyber_news&scope=regional&offset=6");
+    window.history.replaceState({}, "", "/threat-feed?q=cloud&category=cyber_news&scope=regional&offset=6&sort=oldest_published");
     render(<LatestArticlesFeed />);
-    await waitFor(() => expect(fetchArticlesMock).toHaveBeenCalledWith(expect.objectContaining({ q: "cloud", category: "cyber_news", geographic_scope: "regional", offset: 6 }), expect.any(AbortSignal)));
+    await waitFor(() => expect(fetchArticlesMock).toHaveBeenCalledWith(expect.objectContaining({ q: "cloud", category: "cyber_news", geographic_scope: "regional", offset: 6, sort: "oldest_published" }), expect.any(AbortSignal)));
     expect(screen.getByLabelText("Search articles")).toHaveValue("cloud");
     expect(screen.getByLabelText("Category")).toHaveValue("cyber_news");
     expect(screen.getByLabelText("Geographic scope")).toHaveValue("regional");
+    expect(screen.getByLabelText("Sort")).toHaveValue("oldest_published");
     const detailLink = await screen.findByRole("link", { name: "Synthetic defensive advisory" });
-    expect(decodeURIComponent(detailLink.getAttribute("href") ?? "")).toContain("returnTo=/threat-feed?q=cloud&category=cyber_news&scope=regional&offset=6");
+    expect(decodeURIComponent(detailLink.getAttribute("href") ?? "")).toContain("sort=oldest_published");
   });
 
   test("uses Overview as the return context when embedded on Overview", async () => {

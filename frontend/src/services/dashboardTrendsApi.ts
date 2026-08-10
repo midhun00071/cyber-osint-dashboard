@@ -18,6 +18,7 @@ export async function fetchDashboardTrends(
         {
           limit: trendSampleLimit,
           offset: 0,
+          sort: "newest_published",
         },
         signal,
       ),
@@ -25,6 +26,7 @@ export async function fetchDashboardTrends(
         {
           limit: trendSampleLimit,
           offset: 0,
+          sort: "newest_published",
         },
         signal,
       ),

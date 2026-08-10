@@ -79,16 +79,33 @@ class FakeSession:
         filtered = self._filter_items(sql, params)
         if "count(" in sql.lower():
             return FakeExecuteResult([], scalar_value=len(filtered))
-        ordered = sorted(
-            filtered,
-            key=lambda item: (
-                item.source_modified_at or item.last_seen_at or item.created_at,
-                item.last_seen_at,
-                item.created_at,
-                str(item.public_id),
-            ),
-            reverse=True,
-        )
+        order_sql = sql.partition("ORDER BY")[2]
+        stable_id = lambda item: item.id or item.public_id.int
+        if "intelligence_items.source_published_at ASC" in order_sql:
+            ordered = sorted(
+                filtered,
+                key=lambda item: (
+                    item.source_published_at is None,
+                    item.source_published_at or datetime.max.replace(tzinfo=UTC),
+                    stable_id(item),
+                ),
+            )
+        elif "intelligence_items.source_published_at DESC" in order_sql:
+            ordered = sorted(
+                filtered,
+                key=lambda item: (
+                    item.source_published_at is not None,
+                    item.source_published_at or datetime.min.replace(tzinfo=UTC),
+                    stable_id(item),
+                ),
+                reverse=True,
+            )
+        else:
+            ordered = sorted(
+                filtered,
+                key=lambda item: (item.created_at, stable_id(item)),
+                reverse=True,
+            )
         limit_clause = getattr(statement, "_limit_clause", None)
         offset_clause = getattr(statement, "_offset_clause", None)
         limit = getattr(limit_clause, "value", None)
@@ -218,6 +235,7 @@ def assert_success_response_headers(response) -> None:
 
 def make_vulnerability_item(
     *,
+    item_id: int | None = None,
     public_id: UUID | None = None,
     cve_id: str = "CVE-2026-12345",
     title: str = "Example vulnerability title",
@@ -225,7 +243,7 @@ def make_vulnerability_item(
     severity: str = "high",
     source_slug: str = "nvd",
     source_name: str = "National Vulnerability Database",
-    source_published_at: datetime = NOW,
+    source_published_at: datetime | None = NOW,
     source_modified_at: datetime | None = None,
     last_seen_at: datetime | None = None,
     first_seen_at: datetime | None = None,
@@ -240,6 +258,7 @@ def make_vulnerability_item(
     geographic_scope: str = "global",
     uae_relevance_status: str = "unknown",
     uae_relevance_confidence: Decimal | None = None,
+    created_at: datetime = NOW,
 ) -> IntelligenceItem:
     item_public_id = public_id or uuid4()
     item_last_seen_at = last_seen_at or NOW
@@ -260,6 +279,7 @@ def make_vulnerability_item(
         updated_at=NOW,
     )
     item = IntelligenceItem(
+        id=item_id,
         public_id=item_public_id,
         item_type="vulnerability",
         canonical_title=title,
@@ -277,7 +297,7 @@ def make_vulnerability_item(
         uae_relevance_reason=None,
         uae_relevance_method="unassigned",
         analyst_review_status="pending",
-        created_at=NOW,
+        created_at=created_at,
         updated_at=NOW,
     )
     vulnerability = Vulnerability(
@@ -1084,25 +1104,61 @@ def test_item_type_filter_can_include_non_vulnerability_records(client) -> None:
     assert data["items"][0]["severity"] is None
 
 
-def test_default_sort_is_newest_first_with_stable_results(client) -> None:
-    older = make_vulnerability_item(
+def test_vulnerability_sort_modes_are_distinct_stable_and_paginated(client) -> None:
+    older_publication_new_ingest = make_vulnerability_item(
+        item_id=1,
         cve_id="CVE-2026-06000",
-        source_modified_at=datetime(2026, 7, 7, 8, 0, tzinfo=UTC),
-        last_seen_at=datetime(2026, 7, 7, 8, 30, tzinfo=UTC),
+        source_published_at=datetime(2026, 1, 1, tzinfo=UTC),
+        created_at=datetime(2026, 7, 7, 12, 0, tzinfo=UTC),
     )
-    newer = make_vulnerability_item(
+    newer_publication_old_ingest = make_vulnerability_item(
+        item_id=2,
         cve_id="CVE-2026-06001",
-        source_modified_at=datetime(2026, 7, 7, 11, 30, tzinfo=UTC),
-        last_seen_at=datetime(2026, 7, 7, 11, 0, tzinfo=UTC),
+        source_published_at=datetime(2026, 6, 1, tzinfo=UTC),
+        created_at=datetime(2026, 7, 7, 8, 0, tzinfo=UTC),
+    )
+    same_publication_high_id = make_vulnerability_item(
+        item_id=3,
+        cve_id="CVE-2026-06002",
+        source_published_at=datetime(2026, 6, 1, tzinfo=UTC),
+        created_at=datetime(2026, 7, 7, 8, 0, tzinfo=UTC),
+    )
+    session = FakeSession(
+        [older_publication_new_ingest, newer_publication_old_ingest, same_publication_high_id]
     )
 
-    response = client(FakeSession([older, newer])).get("/api/v1/intelligence/items")
+    recent = client(session).get("/api/v1/intelligence/items?sort=recently_ingested")
+    newest_page = client(session).get(
+        "/api/v1/intelligence/items?sort=newest_published&limit=2&offset=1"
+    )
+    oldest = client(session).get("/api/v1/intelligence/items?sort=oldest_published")
 
-    assert response.status_code == 200
-    assert [entry["cve_id"] for entry in response.json()["items"]] == [
+    assert [entry["cve_id"] for entry in recent.json()["items"]] == [
+        "CVE-2026-06000",
+        "CVE-2026-06002",
+        "CVE-2026-06001",
+    ]
+    assert newest_page.json()["total"] == 3
+    assert [entry["cve_id"] for entry in newest_page.json()["items"]] == [
         "CVE-2026-06001",
         "CVE-2026-06000",
     ]
+    assert [entry["cve_id"] for entry in oldest.json()["items"]] == [
+        "CVE-2026-06000",
+        "CVE-2026-06001",
+        "CVE-2026-06002",
+    ]
+
+
+@pytest.mark.parametrize("sort", ["created_at", "newest_published desc", "unknown"])
+def test_invalid_vulnerability_sort_is_rejected(client, sort: str) -> None:
+    response = client(FakeSession()).get(
+        "/api/v1/intelligence/items",
+        params={"sort": sort},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == VALIDATION_ERROR_DETAIL
 
 
 def test_detail_endpoint_returns_one_safe_item(client) -> None:

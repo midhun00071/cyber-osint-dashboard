@@ -14,6 +14,11 @@ export type UaeRelevanceStatus =
   | "not_relevant"
   | "unknown";
 
+export type ListSort =
+  | "recently_ingested"
+  | "newest_published"
+  | "oldest_published";
+
 export type ArticleFilters = {
   category?: ArticleCategory;
   geographic_scope?: GeographicScope;
@@ -21,6 +26,7 @@ export type ArticleFilters = {
   offset: number;
   q?: string;
   source_slug?: string;
+  sort: ListSort;
   uae_relevance_status?: UaeRelevanceStatus;
 };
 

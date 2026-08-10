@@ -152,6 +152,7 @@ def make_article(
     primary_source: bool = True,
     with_source_record: bool = True,
     raw_payload_marker: str = "secret-raw-payload",
+    created_at: datetime = NOW,
 ) -> IntelligenceItem:
     item = IntelligenceItem(
         id=index,
@@ -172,7 +173,7 @@ def make_article(
         uae_relevance_reason="analyst-only reason",
         uae_relevance_method="manual",
         analyst_review_status="reviewed",
-        created_at=NOW,
+        created_at=created_at,
         updated_at=NOW,
     )
     item.source_records = []
@@ -321,6 +322,14 @@ def _extract_filters(statement) -> dict[str, object]:
     if "uae_relevance_status_1" in params:
         filters["uae_relevance_status"] = params["uae_relevance_status_1"]
     filters["query"] = _extract_query(params)
+    order_sql = sql.partition("ORDER BY")[2]
+    filters["sort"] = (
+        "oldest_published"
+        if "intelligence_items.source_published_at ASC" in order_sql
+        else "newest_published"
+        if "intelligence_items.source_published_at DESC" in order_sql
+        else "recently_ingested"
+    )
     return filters
 
 
@@ -422,16 +431,26 @@ def _filtered_articles(
             if lowered in item.canonical_title.lower()
             or (item.summary is not None and lowered in item.summary.lower())
         ]
-    return sorted(
-        matches,
-        key=lambda item: (
-            item.source_published_at is not None,
-            item.source_published_at or datetime.min.replace(tzinfo=UTC),
-            item.last_seen_at,
-            item.id,
-        ),
-        reverse=True,
-    )
+    if filters["sort"] == "oldest_published":
+        return sorted(
+            matches,
+            key=lambda item: (
+                item.source_published_at is None,
+                item.source_published_at or datetime.max.replace(tzinfo=UTC),
+                item.id,
+            ),
+        )
+    if filters["sort"] == "newest_published":
+        return sorted(
+            matches,
+            key=lambda item: (
+                item.source_published_at is not None,
+                item.source_published_at or datetime.min.replace(tzinfo=UTC),
+                item.id,
+            ),
+            reverse=True,
+        )
+    return sorted(matches, key=lambda item: (item.created_at, item.id), reverse=True)
 
 
 def test_articles_endpoint_returns_empty_result(client) -> None:
@@ -1092,33 +1111,66 @@ def test_source_and_tag_filters_are_database_level_exists_predicates() -> None:
     assert " JOIN " not in sql.split("WHERE", 1)[0]
 
 
-def test_sorting_is_newest_first_nulls_last_and_stable(client) -> None:
+def test_article_sort_modes_are_distinct_stable_nulls_last_and_paginated(client) -> None:
     same_date_low_id = make_article(
         index=1,
         title="Same date lower id",
         item_published_at=datetime(2026, 7, 3, tzinfo=UTC),
         last_seen_at=datetime(2026, 7, 3, 9, tzinfo=UTC),
+        created_at=datetime(2026, 7, 5, tzinfo=UTC),
     )
-    null_date = make_article(index=2, title="Null date", item_published_at=None)
+    null_date = make_article(
+        index=2,
+        title="Null date",
+        item_published_at=None,
+        created_at=datetime(2026, 7, 6, tzinfo=UTC),
+    )
     newest = make_article(
         index=3,
         title="Newest",
         item_published_at=datetime(2026, 7, 4, tzinfo=UTC),
+        created_at=datetime(2026, 7, 2, tzinfo=UTC),
     )
     same_date_high_id = make_article(
         index=4,
         title="Same date higher id",
         item_published_at=datetime(2026, 7, 3, tzinfo=UTC),
         last_seen_at=datetime(2026, 7, 3, 9, tzinfo=UTC),
+        created_at=datetime(2026, 7, 1, tzinfo=UTC),
     )
 
     session = FakeSession([same_date_low_id, null_date, newest, same_date_high_id])
-    first = client(session).get("/api/v1/articles")
-    second = client(session).get("/api/v1/articles")
+    recent = client(session).get("/api/v1/articles?sort=recently_ingested")
+    newest_page = client(session).get(
+        "/api/v1/articles?sort=newest_published&limit=2&offset=1"
+    )
+    oldest = client(session).get("/api/v1/articles?sort=oldest_published")
 
-    expected = ["Newest", "Same date higher id", "Same date lower id", "Null date"]
-    assert [entry["title"] for entry in first.json()["items"]] == expected
-    assert [entry["title"] for entry in second.json()["items"]] == expected
+    assert [entry["title"] for entry in recent.json()["items"]] == [
+        "Null date",
+        "Same date lower id",
+        "Newest",
+        "Same date higher id",
+    ]
+    assert newest_page.json()["total"] == 4
+    assert [entry["title"] for entry in newest_page.json()["items"]] == [
+        "Same date higher id",
+        "Same date lower id",
+    ]
+    assert [entry["title"] for entry in oldest.json()["items"]] == [
+        "Same date lower id",
+        "Same date higher id",
+        "Newest",
+        "Null date",
+    ]
+
+
+@pytest.mark.parametrize("sort", ["created_at", "oldest_published asc", "unknown"])
+def test_invalid_article_sort_is_rejected(client, sort: str) -> None:
+    response = client(FakeSession()).get("/api/v1/articles", params={"sort": sort})
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == VALIDATION_ERROR_DETAIL
 
 
 def test_primary_source_is_selected_over_non_primary_linked_source(client) -> None:

@@ -15,6 +15,7 @@ from app.api.v1.schemas.intelligence import (
     IntelligenceItemListResponse,
     IntelligenceItemSummary,
 )
+from app.api.v1.query_validation import DEFAULT_LIST_SORT, LIST_SORT_VALUES
 from app.ingestion.services.epss_enrichment_service import EPSS_SOURCE_SLUG
 from app.models import (
     IntelligenceItem,
@@ -50,8 +51,13 @@ class IntelligenceQueryFilters:
     cve_id: str | None = None
     geographic_scope: str | None = None
     uae_relevance_status: str | None = None
+    sort: str = DEFAULT_LIST_SORT
     limit: int = 25
     offset: int = 0
+
+    def __post_init__(self) -> None:
+        if self.sort not in LIST_SORT_VALUES:
+            raise ValueError("Invalid intelligence list sort.")
 
     @property
     def normalized_item_type(self) -> str:
@@ -125,16 +131,7 @@ class IntelligenceQueryService:
                 self._session.execute(
                     statement
                     .options(*self._public_load_options())
-                    .order_by(
-                        func.coalesce(
-                            IntelligenceItem.source_modified_at,
-                            IntelligenceItem.last_seen_at,
-                            IntelligenceItem.created_at,
-                        ).desc(),
-                        IntelligenceItem.last_seen_at.desc(),
-                        IntelligenceItem.created_at.desc(),
-                        IntelligenceItem.public_id.desc(),
-                    )
+                    .order_by(*self._sort_expressions(filters.sort))
                     .limit(filters.limit)
                     .offset(filters.offset)
                 )
@@ -151,6 +148,22 @@ class IntelligenceQueryService:
             limit=filters.limit,
             offset=filters.offset,
         )
+
+    @staticmethod
+    def _sort_expressions(sort: str) -> tuple:
+        if sort == "recently_ingested":
+            return IntelligenceItem.created_at.desc(), IntelligenceItem.id.desc()
+        if sort == "newest_published":
+            return (
+                IntelligenceItem.source_published_at.desc().nulls_last(),
+                IntelligenceItem.id.desc(),
+            )
+        if sort == "oldest_published":
+            return (
+                IntelligenceItem.source_published_at.asc().nulls_last(),
+                IntelligenceItem.id.asc(),
+            )
+        raise ValueError("Invalid intelligence list sort.")
 
     def get_item(self, item_public_id: UUID) -> IntelligenceItemSummary:
         statement = (
