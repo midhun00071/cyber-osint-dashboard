@@ -1,7 +1,8 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 
 import { SafeExternalLink } from "@/components/SafeExternalLink";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
@@ -13,6 +14,7 @@ import type {
   UaeRelevanceStatus,
 } from "@/types/article";
 import type { BadgeTone } from "@/types/dashboard";
+import { buildDetailHref } from "@/utils/detailNavigation";
 import { formatUaeRelevanceWithConfidence } from "@/utils/uaeConfidence";
 
 const categoryOptions: readonly {
@@ -87,6 +89,43 @@ type FeedState =
   | { status: "success"; data: ArticleListResponse }
   | { status: "error" };
 
+type InitialFeedState = Readonly<{
+  category: ArticleCategory | "";
+  offset: number;
+  query: string;
+  relevance: UaeRelevanceStatus | "";
+  scope: GeographicScope | "";
+  source: string;
+}>;
+
+function initialFeedState(originPath: "/" | "/threat-feed", search: string): InitialFeedState {
+  if (originPath === "/") {
+    return { category: "", offset: 0, query: "", relevance: "", scope: "", source: "" };
+  }
+  const params = new URLSearchParams(search);
+  const category = categoryOptions.some((option) => option.value === params.get("category"))
+    ? params.get("category") as ArticleCategory
+    : "";
+  const scope = scopeOptions.some((option) => option.value === params.get("scope"))
+    ? params.get("scope") as GeographicScope
+    : "";
+  const relevance = relevanceOptions.some((option) => option.value === params.get("relevance"))
+    ? params.get("relevance") as UaeRelevanceStatus
+    : "";
+  const source = sourceOptions.some((option) => option.value === params.get("source"))
+    ? params.get("source") ?? ""
+    : "";
+  const parsedOffset = Number(params.get("offset"));
+  return {
+    category,
+    offset: Number.isSafeInteger(parsedOffset) && parsedOffset >= 0 ? parsedOffset : 0,
+    query: (params.get("q") ?? "").slice(0, 120),
+    relevance,
+    scope,
+    source,
+  };
+}
+
 function formatDate(value: string | null): string {
   if (!value) {
     return "Unknown";
@@ -147,15 +186,17 @@ function summarize(value: string | null): string {
   return normalized.length > 220 ? `${normalized.slice(0, 217)}...` : normalized;
 }
 
-export function LatestArticlesFeed() {
-  const [queryInput, setQueryInput] = useState("");
-  const [query, setQuery] = useState("");
-  const [category, setCategory] = useState<ArticleCategory | "">("");
-  const [sourceInput, setSourceInput] = useState("");
-  const [source, setSource] = useState("");
-  const [scope, setScope] = useState<GeographicScope | "">("");
-  const [relevance, setRelevance] = useState<UaeRelevanceStatus | "">("");
-  const [offset, setOffset] = useState(0);
+function LatestArticlesFeedContent({ originPath = "/threat-feed" }: Readonly<{ originPath?: "/" | "/threat-feed" }>) {
+  const routeSearch = useSearchParams().toString();
+  const initial = useMemo(() => initialFeedState(originPath, routeSearch), [originPath, routeSearch]);
+  const [queryInput, setQueryInput] = useState(initial.query);
+  const [query, setQuery] = useState(initial.query);
+  const [category, setCategory] = useState<ArticleCategory | "">(initial.category);
+  const [sourceInput, setSourceInput] = useState(initial.source);
+  const [source, setSource] = useState(initial.source);
+  const [scope, setScope] = useState<GeographicScope | "">(initial.scope);
+  const [relevance, setRelevance] = useState<UaeRelevanceStatus | "">(initial.relevance);
+  const [offset, setOffset] = useState(initial.offset);
   const [state, setState] = useState<FeedState>({ status: "loading" });
 
   useEffect(() => {
@@ -235,13 +276,28 @@ export function LatestArticlesFeed() {
     scope !== "" ||
     relevance !== "";
 
+  const returnPath = useMemo(() => {
+    if (originPath === "/") return "/";
+    const params = new URLSearchParams();
+    if (query) params.set("q", query);
+    if (category) params.set("category", category);
+    if (source) params.set("source", source);
+    if (scope) params.set("scope", scope);
+    if (relevance) params.set("relevance", relevance);
+    if (offset) params.set("offset", String(offset));
+    const search = params.toString();
+    return `/threat-feed${search ? `?${search}` : ""}`;
+  }, [category, offset, originPath, query, relevance, scope, source]);
+
   return (
     <div className="articleFeedShell">
       <form className="articleFilters" onSubmit={applyFilters}>
         <label>
           <span>Search articles</span>
           <input
+            id="article-search"
             maxLength={120}
+            name="article_search"
             onChange={(event) => setQueryInput(event.target.value)}
             placeholder="Title or summary"
             type="search"
@@ -251,6 +307,8 @@ export function LatestArticlesFeed() {
         <label>
           <span>Category</span>
           <select
+            id="article-category"
+            name="article_category"
             onChange={(event) => {
               setCategory(event.target.value as ArticleCategory | "");
               setOffset(0);
@@ -267,6 +325,8 @@ export function LatestArticlesFeed() {
         <label>
           <span>Source</span>
           <select
+            id="article-source"
+            name="article_source"
             onChange={(event) => setSourceInput(event.target.value)}
             value={sourceInput}
           >
@@ -280,6 +340,8 @@ export function LatestArticlesFeed() {
         <label>
           <span>Geographic scope</span>
           <select
+            id="article-scope"
+            name="article_scope"
             onChange={(event) => {
               setScope(event.target.value as GeographicScope | "");
               setOffset(0);
@@ -296,6 +358,8 @@ export function LatestArticlesFeed() {
         <label>
           <span>UAE relevance</span>
           <select
+            id="article-relevance"
+            name="article_relevance"
             onChange={(event) => {
               setRelevance(event.target.value as UaeRelevanceStatus | "");
               setOffset(0);
@@ -364,7 +428,7 @@ export function LatestArticlesFeed() {
                 />
               </div>
               <h3>
-                <Link href={`/articles/${encodeURIComponent(article.public_id)}`}>
+                <Link href={buildDetailHref(`/articles/${encodeURIComponent(article.public_id)}`, returnPath)}>
                   {article.title}
                 </Link>
               </h3>
@@ -390,7 +454,7 @@ export function LatestArticlesFeed() {
               <div className="articleActionRow">
                 <Link
                   className="safeSourceLink"
-                  href={`/articles/${encodeURIComponent(article.public_id)}`}
+                  href={buildDetailHref(`/articles/${encodeURIComponent(article.public_id)}`, returnPath)}
                 >
                   View details
                 </Link>
@@ -434,5 +498,13 @@ export function LatestArticlesFeed() {
         </div>
       </div>
     </div>
+  );
+}
+
+export function LatestArticlesFeed(props: Readonly<{ originPath?: "/" | "/threat-feed" }>) {
+  return (
+    <Suspense fallback={<div className="tableLoadingState" aria-busy="true" role="status">Loading stored articles</div>}>
+      <LatestArticlesFeedContent {...props} />
+    </Suspense>
   );
 }

@@ -3,6 +3,7 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { NativeDateTimeFields } from "@/components/forms/NativeDateTimeFields";
 import {
   changeUserExpiry,
   changeUserRole,
@@ -13,6 +14,9 @@ import {
 } from "@/services/adminUsersApi";
 import type { AdminUserList } from "@/types/adminUser";
 import type { RoleKey } from "@/types/auth";
+import type { LocalDateTimeParts } from "@/utils/localDateTime";
+import { emptyLocalDateTime, isPartialLocalDateTime, localDateTimeToIso } from "@/utils/localDateTime";
+import { formatStatusLabel } from "@/utils/statusLabel";
 
 const ROLES: RoleKey[] = ["viewer", "analyst", "ingestion_operator", "administrator"];
 
@@ -20,8 +24,8 @@ function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
 }
 
-function expiryValue(value: string): string | null {
-  return value ? new Date(value).toISOString() : null;
+function expiryValue(value: LocalDateTimeParts): string | null {
+  return localDateTimeToIso(value) ?? null;
 }
 
 export default function AdminUsersPage() {
@@ -32,9 +36,9 @@ export default function AdminUsersPage() {
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<RoleKey>("viewer");
-  const [createExpiry, setCreateExpiry] = useState("");
+  const [createExpiry, setCreateExpiry] = useState<LocalDateTimeParts>(() => emptyLocalDateTime());
   const [roleDrafts, setRoleDrafts] = useState<Record<string, RoleKey>>({});
-  const [expiryDrafts, setExpiryDrafts] = useState<Record<string, string>>({});
+  const [expiryDrafts, setExpiryDrafts] = useState<Record<string, LocalDateTimeParts>>({});
   const mountedRef = useRef(false);
 
   const load = useCallback(async (signal?: AbortSignal) => {
@@ -62,6 +66,7 @@ export default function AdminUsersPage() {
 
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isPartialLocalDateTime(createExpiry)) return;
     setBusy("create");
     try {
       const result = await createAdminUser({
@@ -75,7 +80,7 @@ export default function AdminUsersPage() {
       if (result.status === "success") {
         setUsername("");
         setDisplayName("");
-        setCreateExpiry("");
+        setCreateExpiry(emptyLocalDateTime());
         setRole("viewer");
         await load();
       } else setError(true);
@@ -109,13 +114,18 @@ export default function AdminUsersPage() {
   }
 
   async function updateExpiry(publicId: string, clear = false) {
+    const draft = expiryDrafts[publicId] ?? emptyLocalDateTime();
+    if (!clear && isPartialLocalDateTime(draft)) return;
     if (!window.confirm(clear ? "Remove this account expiry?" : "Change this account expiry?")) return;
-    const next = clear ? null : expiryValue(expiryDrafts[publicId] ?? "");
+    const next = clear ? null : expiryValue(draft);
     setBusy(`${publicId}:expiry`);
     const result = await changeUserExpiry(publicId, next);
     if (!mountedRef.current) return;
     setBusy(null);
-    if (result.status === "success") await load(); else setError(true);
+    if (result.status === "success") {
+      if (clear) setExpiryDrafts((current) => ({ ...current, [publicId]: emptyLocalDateTime() }));
+      await load();
+    } else setError(true);
   }
 
   async function revoke(publicId: string) {
@@ -131,9 +141,9 @@ export default function AdminUsersPage() {
     <ProtectedRoute permission="user.read">
       <section className="operationsPage">
         <header className="pageHeader"><p className="pageKicker">Administrator</p><h1>User access</h1><p>Allow-listed account state, role, expiry, and session controls. Backend authorization remains authoritative.</p></header>
-        <section className="dashboardPanel"><h2>Create user</h2><form onSubmit={create}><label>Username<input required minLength={3} maxLength={64} value={username} onChange={(event) => setUsername(event.target.value)} /></label><label>Display name<input required minLength={1} maxLength={160} value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label><label>Temporary password<input required minLength={12} maxLength={128} type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} /></label><label>Role<select value={role} onChange={(event) => setRole(event.target.value as RoleKey)}>{ROLES.map((item) => <option key={item} value={item}>{item}</option>)}</select></label><label>Account expiry<input type="datetime-local" value={createExpiry} onChange={(event) => setCreateExpiry(event.target.value)} /></label><button disabled={busy !== null} type="submit">{busy === "create" ? "Creating…" : "Create user"}</button></form></section>
+        <section className="dashboardPanel"><div className="panelHeader"><h2>Create user</h2><p className="panelNote">Create one approved account using a temporary password. Backend authorization and password policy remain authoritative.</p></div><form className="controlForm createUserForm" onSubmit={create}><label>Username<input id="new-user-username" name="username" required minLength={3} maxLength={64} value={username} onChange={(event) => setUsername(event.target.value)} /></label><label>Display name<input id="new-user-display-name" name="display_name" required minLength={1} maxLength={160} value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label><label>Temporary password<input id="new-user-password" name="temporary_password" required minLength={12} maxLength={128} type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} /></label><label>Role<select id="new-user-role" name="role" value={role} onChange={(event) => setRole(event.target.value as RoleKey)}>{ROLES.map((item) => <option key={item} value={item}>{formatStatusLabel(item)}</option>)}</select></label><NativeDateTimeFields disabled={busy !== null} id="new-user-expiry" label="Account expiry" name="account_expiry" onChange={setCreateExpiry} value={createExpiry} /><div className="formActionRow"><button className="buttonPrimary" disabled={busy !== null} type="submit">{busy === "create" ? "Creating…" : "Create user"}</button></div></form></section>
         {error ? <p className="inlineAlert" role="alert">User administration could not be completed safely.</p> : null}
-        {!data ? <p role="status" aria-busy="true">Loading users…</p> : data.items.length === 0 ? <p>No user accounts are available.</p> : <div className="responsiveTable"><table><thead><tr><th>User</th><th>Role</th><th>Status</th><th>Expiry</th><th>Last authenticated</th><th>Controls</th></tr></thead><tbody>{data.items.map((user) => <tr key={user.public_id}><td><strong>{user.display_name}</strong><small>{user.username}</small></td><td>{user.role}<select aria-label={`New role for ${user.username}`} value={roleDrafts[user.public_id] ?? user.role} onChange={(event) => setRoleDrafts({ ...roleDrafts, [user.public_id]: event.target.value as RoleKey })}>{ROLES.map((item) => <option key={item} value={item}>{item}</option>)}</select></td><td>{user.status}</td><td>{user.account_expires_at ? new Date(user.account_expires_at).toLocaleString() : "No expiry"}<input aria-label={`New expiry for ${user.username}`} type="datetime-local" value={expiryDrafts[user.public_id] ?? ""} onChange={(event) => setExpiryDrafts({ ...expiryDrafts, [user.public_id]: event.target.value })} /></td><td>{user.last_authenticated_at ? new Date(user.last_authenticated_at).toLocaleString() : "Never"}</td><td><div className="tableActions"><button disabled={busy !== null} onClick={() => void status(user.public_id, user.status)} type="button">{user.status === "active" ? "Disable" : "Enable"}</button><button disabled={busy !== null} onClick={() => void updateRole(user.public_id, user.role)} type="button">Change role</button><button disabled={busy !== null} onClick={() => void updateExpiry(user.public_id)} type="button">Change expiry</button><button disabled={busy !== null} onClick={() => void updateExpiry(user.public_id, true)} type="button">Clear expiry</button><button disabled={busy !== null} onClick={() => void revoke(user.public_id)} type="button">Revoke sessions</button></div></td></tr>)}</tbody></table></div>}
+        {!data ? <p role="status" aria-busy="true">Loading users…</p> : data.items.length === 0 ? <p>No user accounts are available.</p> : <div className="responsiveTable userAccessTable"><table><thead><tr><th>User</th><th>Role</th><th>Status</th><th>Expiry</th><th>Last authenticated</th><th>Security controls</th></tr></thead><tbody>{data.items.map((user) => { const roleId = `user-role-${user.public_id}`; const expiryId = `user-expiry-${user.public_id}`; const expiryDraft = expiryDrafts[user.public_id] ?? emptyLocalDateTime(); return <tr key={user.public_id}><td><strong>{user.display_name}</strong><small>{user.username}</small></td><td><span>{formatStatusLabel(user.role)}</span><label className="tableControlLabel" htmlFor={roleId}>New role</label><select aria-label={`New role for ${user.username}`} id={roleId} name={`role_${user.public_id}`} value={roleDrafts[user.public_id] ?? user.role} onChange={(event) => setRoleDrafts({ ...roleDrafts, [user.public_id]: event.target.value as RoleKey })}>{ROLES.map((item) => <option key={item} value={item}>{formatStatusLabel(item)}</option>)}</select></td><td>{formatStatusLabel(user.status)}</td><td><span>{user.account_expires_at ? new Date(user.account_expires_at).toLocaleString() : "No expiry"}</span><NativeDateTimeFields className="tableDateTimeField" disabled={busy !== null} id={expiryId} label={`New expiry for ${user.username}`} name={`expiry_${user.public_id}`} onChange={(value) => setExpiryDrafts({ ...expiryDrafts, [user.public_id]: value })} value={expiryDraft} /></td><td>{user.last_authenticated_at ? new Date(user.last_authenticated_at).toLocaleString() : "Never"}</td><td><div className="tableActions actionStack"><button className={user.status === "active" ? "buttonDanger" : "buttonPrimary"} disabled={busy !== null} onClick={() => void status(user.public_id, user.status)} type="button">{user.status === "active" ? "Disable account" : "Enable account"}</button><button className="buttonSecondary" disabled={busy !== null} onClick={() => void updateRole(user.public_id, user.role)} type="button">Change role</button><button className="buttonSecondary" disabled={busy !== null} onClick={() => void updateExpiry(user.public_id)} type="button">Change expiry</button><button className="buttonSecondary" disabled={busy !== null} onClick={() => void updateExpiry(user.public_id, true)} type="button">Clear expiry</button><button className="buttonDanger" disabled={busy !== null} onClick={() => void revoke(user.public_id)} type="button">Revoke sessions</button></div></td></tr>;})}</tbody></table></div>}
       </section>
     </ProtectedRoute>
   );

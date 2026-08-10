@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 
 import { SafeExternalLink } from "@/components/SafeExternalLink";
 import { ItemProvenancePanel } from "@/components/analyst/ItemProvenancePanel";
@@ -16,6 +16,7 @@ import type {
   UaeRelevanceStatus,
 } from "@/types/article";
 import type { BadgeTone } from "@/types/dashboard";
+import { getDetailReturn } from "@/utils/detailNavigation";
 import { formatUaeRelevanceWithConfidence } from "@/utils/uaeConfidence";
 
 type DetailState =
@@ -87,6 +88,11 @@ function getPublicIdParam(value: string | string[] | undefined): string | null {
 function ArticleDetailContent() {
   const params = useParams<{ publicId?: string | string[] }>();
   const publicId = useMemo(() => getPublicIdParam(params.publicId), [params]);
+  const routeSearch = useSearchParams().toString();
+  const returnNavigation = useMemo(
+    () => getDetailReturn(routeSearch, "/threat-feed"),
+    [routeSearch],
+  );
   const [state, setState] = useState<DetailState>({ status: "loading" });
 
   useEffect(() => {
@@ -138,8 +144,8 @@ function ArticleDetailContent() {
             The requested article is unavailable, inactive, or outside the safe
             article feed.
           </p>
-          <Link className="safeSourceLink" href="/">
-            Back to dashboard
+          <Link className="safeSourceLink" href={returnNavigation.href}>
+            {returnNavigation.label}
           </Link>
         </div>
       </main>
@@ -166,8 +172,8 @@ function ArticleDetailContent() {
             Stored article details could not be loaded right now. Try again
             after the backend or database is available.
           </p>
-          <Link className="safeSourceLink" href="/">
-            Back to dashboard
+          <Link className="safeSourceLink" href={returnNavigation.href}>
+            {returnNavigation.label}
           </Link>
         </div>
       </main>
@@ -181,8 +187,8 @@ function ArticleDetailContent() {
     <main className="articleDetailPage">
       <article className="articleDetailShell">
         <div className="articleDetailNav">
-          <Link className="safeSourceLink" href="/">
-            Back to dashboard
+          <Link className="safeSourceLink" href={returnNavigation.href}>
+            {returnNavigation.label}
           </Link>
           <SafeExternalLink className="safeSourceLink" url={article.source_url}>
             Open source
@@ -245,5 +251,5 @@ function ArticleDetailContent() {
 }
 
 export default function ArticleDetailPage() {
-  return <ProtectedRoute><ArticleDetailContent /></ProtectedRoute>;
+  return <ProtectedRoute><Suspense fallback={<main className="articleDetailPage"><div className="tableLoadingState" aria-busy="true" role="status">Loading article details</div></main>}><ArticleDetailContent /></Suspense></ProtectedRoute>;
 }

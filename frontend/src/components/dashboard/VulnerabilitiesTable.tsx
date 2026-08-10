@@ -1,7 +1,8 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { fetchVulnerabilities } from "@/services/vulnerabilityApi";
@@ -13,6 +14,7 @@ import type {
   VulnerabilityListResponse,
   VulnerabilitySeverity,
 } from "@/types/vulnerability";
+import { buildDetailHref } from "@/utils/detailNavigation";
 
 const severityOptions: readonly {
   label: string;
@@ -61,6 +63,41 @@ type TableState =
   | { status: "loading" }
   | { status: "success"; data: VulnerabilityListResponse }
   | { status: "error" };
+
+type InitialTableState = Readonly<{
+  limit: number;
+  offset: number;
+  publishedYear: number | "";
+  query: string;
+  relevance: UaeRelevanceStatus | "";
+  scope: GeographicScope | "";
+  severity: VulnerabilitySeverity | "";
+}>;
+
+function initialTableState(originPath: "/" | "/vulnerabilities", search: string): InitialTableState {
+  if (originPath === "/") {
+    return { limit: 10, offset: 0, publishedYear: "", query: "", relevance: "", scope: "", severity: "" };
+  }
+  const params = new URLSearchParams(search);
+  const parsedLimit = Number(params.get("limit"));
+  const parsedOffset = Number(params.get("offset"));
+  const parsedYear = Number(params.get("year"));
+  return {
+    limit: limitOptions.includes(parsedLimit as (typeof limitOptions)[number]) ? parsedLimit : 10,
+    offset: Number.isSafeInteger(parsedOffset) && parsedOffset >= 0 ? parsedOffset : 0,
+    publishedYear: publishedYearOptions.includes(parsedYear) ? parsedYear : "",
+    query: (params.get("q") ?? "").slice(0, 120),
+    relevance: relevanceOptions.some((option) => option.value === params.get("relevance"))
+      ? params.get("relevance") as UaeRelevanceStatus
+      : "",
+    scope: scopeOptions.some((option) => option.value === params.get("scope"))
+      ? params.get("scope") as GeographicScope
+      : "",
+    severity: severityOptions.some((option) => option.value === params.get("severity"))
+      ? params.get("severity") as VulnerabilitySeverity
+      : "",
+  };
+}
 
 function formatDate(value: string | null): string {
   if (!value) {
@@ -161,16 +198,18 @@ function kevTone(status: KevStatus | null): BadgeTone {
   return "neutral";
 }
 
-export function VulnerabilitiesTable() {
-  const [queryInput, setQueryInput] = useState("");
-  const [query, setQuery] = useState("");
-  const [severity, setSeverity] = useState<VulnerabilitySeverity | "">("");
-  const [publishedYearInput, setPublishedYearInput] = useState<number | "">("");
-  const [publishedYear, setPublishedYear] = useState<number | "">("");
-  const [scope, setScope] = useState<GeographicScope | "">("");
-  const [relevance, setRelevance] = useState<UaeRelevanceStatus | "">("");
-  const [limit, setLimit] = useState<number>(10);
-  const [offset, setOffset] = useState(0);
+function VulnerabilitiesTableContent({ originPath = "/vulnerabilities" }: Readonly<{ originPath?: "/" | "/vulnerabilities" }>) {
+  const routeSearch = useSearchParams().toString();
+  const initial = useMemo(() => initialTableState(originPath, routeSearch), [originPath, routeSearch]);
+  const [queryInput, setQueryInput] = useState(initial.query);
+  const [query, setQuery] = useState(initial.query);
+  const [severity, setSeverity] = useState<VulnerabilitySeverity | "">(initial.severity);
+  const [publishedYearInput, setPublishedYearInput] = useState<number | "">(initial.publishedYear);
+  const [publishedYear, setPublishedYear] = useState<number | "">(initial.publishedYear);
+  const [scope, setScope] = useState<GeographicScope | "">(initial.scope);
+  const [relevance, setRelevance] = useState<UaeRelevanceStatus | "">(initial.relevance);
+  const [limit, setLimit] = useState<number>(initial.limit);
+  const [offset, setOffset] = useState(initial.offset);
   const [state, setState] = useState<TableState>({ status: "loading" });
 
   useEffect(() => {
@@ -250,13 +289,29 @@ export function VulnerabilitiesTable() {
     scope !== "" ||
     relevance !== "";
 
+  const returnPath = useMemo(() => {
+    if (originPath === "/") return "/";
+    const params = new URLSearchParams();
+    if (query) params.set("q", query);
+    if (severity) params.set("severity", severity);
+    if (publishedYear) params.set("year", String(publishedYear));
+    if (scope) params.set("scope", scope);
+    if (relevance) params.set("relevance", relevance);
+    if (limit !== 10) params.set("limit", String(limit));
+    if (offset) params.set("offset", String(offset));
+    const search = params.toString();
+    return `/vulnerabilities${search ? `?${search}` : ""}`;
+  }, [limit, offset, originPath, publishedYear, query, relevance, scope, severity]);
+
   return (
     <div className="vulnerabilityTableShell">
       <form className="vulnerabilityFilters" onSubmit={applyFilters}>
         <label>
           <span>Search CVEs</span>
           <input
+            id="vulnerability-search"
             maxLength={120}
+            name="vulnerability_search"
             onChange={(event) => setQueryInput(event.target.value)}
             placeholder="CVE ID, title, or summary"
             type="search"
@@ -266,6 +321,8 @@ export function VulnerabilitiesTable() {
         <label>
           <span>Severity</span>
           <select
+            id="vulnerability-severity"
+            name="vulnerability_severity"
             onChange={(event) => {
               setSeverity(event.target.value as VulnerabilitySeverity | "");
               setOffset(0);
@@ -282,6 +339,8 @@ export function VulnerabilitiesTable() {
         <label>
           <span>Publication year</span>
           <select
+            id="vulnerability-year"
+            name="vulnerability_year"
             onChange={(event) => {
               const value = event.target.value;
               setPublishedYearInput(value ? Number(value) : "");
@@ -299,6 +358,8 @@ export function VulnerabilitiesTable() {
         <label>
           <span>Geographic scope</span>
           <select
+            id="vulnerability-scope"
+            name="vulnerability_scope"
             onChange={(event) => {
               setScope(event.target.value as GeographicScope | "");
               setOffset(0);
@@ -315,6 +376,8 @@ export function VulnerabilitiesTable() {
         <label>
           <span>UAE relevance</span>
           <select
+            id="vulnerability-relevance"
+            name="vulnerability_relevance"
             onChange={(event) => {
               setRelevance(event.target.value as UaeRelevanceStatus | "");
               setOffset(0);
@@ -331,6 +394,8 @@ export function VulnerabilitiesTable() {
         <label>
           <span>Rows</span>
           <select
+            id="vulnerability-row-limit"
+            name="vulnerability_row_limit"
             onChange={(event) => {
               setLimit(Number(event.target.value));
               setOffset(0);
@@ -400,13 +465,13 @@ export function VulnerabilitiesTable() {
                 <tr key={item.public_id}>
                   <td>
                     <strong>
-                      <Link href={`/vulnerabilities/${encodeURIComponent(item.public_id)}`}>
+                      <Link href={buildDetailHref(`/vulnerabilities/${encodeURIComponent(item.public_id)}`, returnPath)}>
                         {item.cve_id ?? "Unassigned CVE"}
                       </Link>
                     </strong>
                     <span>{item.title}</span>
                     <small>
-                      <Link href={`/vulnerabilities/${encodeURIComponent(item.public_id)}`}>
+                      <Link href={buildDetailHref(`/vulnerabilities/${encodeURIComponent(item.public_id)}`, returnPath)}>
                         Open vulnerability detail
                       </Link>
                     </small>
@@ -471,5 +536,13 @@ export function VulnerabilitiesTable() {
         </div>
       </div>
     </div>
+  );
+}
+
+export function VulnerabilitiesTable(props: Readonly<{ originPath?: "/" | "/vulnerabilities" }>) {
+  return (
+    <Suspense fallback={<div className="tableLoadingState" aria-busy="true" role="status">Loading stored vulnerabilities</div>}>
+      <VulnerabilitiesTableContent {...props} />
+    </Suspense>
   );
 }

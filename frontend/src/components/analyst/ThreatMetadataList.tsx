@@ -34,7 +34,7 @@ export function ThreatMetadataList() {
   const total = state.status === "success" ? state.data.total : 0;
   return <div className="vulnerabilityTableShell">
     <form className="vulnerabilityFilters" onSubmit={submit}>
-      <label><span>Search threat metadata</span><input maxLength={120} onChange={(event) => setInput(event.target.value)} placeholder="Name, alias, or ATT&CK ID" type="search" value={input} /></label>
+      <label><span>Search threat metadata</span><input id="threat-metadata-search" name="threat_metadata_search" maxLength={120} onChange={(event) => setInput(event.target.value)} placeholder="Name, alias, or ATT&CK ID" type="search" value={input} /></label>
       <div className="filterActions"><button type="submit">Apply</button><button onClick={() => { setInput(""); setQuery(""); setOffset(0); }} type="button">Clear</button></div>
     </form>
     {state.status === "loading" ? <div className="tableLoadingState" aria-busy="true" role="status">Loading stored threat metadata</div> : null}

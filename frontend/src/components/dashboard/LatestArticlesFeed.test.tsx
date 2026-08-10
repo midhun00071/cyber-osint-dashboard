@@ -7,6 +7,9 @@ import { fetchArticles } from "@/services/articleApi";
 import { makeArticle, makeArticleList } from "@/test/fixtures";
 import type { ArticleListResult } from "@/types/article";
 
+const { useSearchParamsMock } = vi.hoisted(() => ({ useSearchParamsMock: vi.fn() }));
+
+vi.mock("next/navigation", () => ({ useSearchParams: useSearchParamsMock }));
 vi.mock("@/services/articleApi", () => ({
   fetchArticles: vi.fn(),
 }));
@@ -35,6 +38,8 @@ function pendingUntilAbort(signal?: AbortSignal): Promise<ArticleListResult> {
 
 describe("LatestArticlesFeed", () => {
   beforeEach(() => {
+    window.history.replaceState({}, "", "/threat-feed");
+    useSearchParamsMock.mockImplementation(() => new URLSearchParams(window.location.search));
     fetchArticlesMock.mockResolvedValue({
       status: "success",
       data: makeArticleList(),
@@ -79,7 +84,7 @@ describe("LatestArticlesFeed", () => {
     const titleLink = await screen.findByRole("link", { name: unsafeTitle });
     expect(titleLink).toHaveAttribute(
       "href",
-      "/articles/11111111-2222-4333-8444-555555555555",
+      "/articles/11111111-2222-4333-8444-555555555555?returnTo=%2Fthreat-feed",
     );
     const firstArticle = titleLink.closest("article");
     expect(firstArticle).not.toBeNull();
@@ -293,6 +298,39 @@ describe("LatestArticlesFeed", () => {
         expect.any(AbortSignal),
       ),
     );
+  });
+
+  test("detail links preserve applied filters and pagination in a bounded return URL", async () => {
+    const user = userEvent.setup();
+    fetchArticlesMock.mockResolvedValue({ status: "success", data: makeArticleList({ total: 13 }) });
+    render(<LatestArticlesFeed />);
+    await screen.findByText("Synthetic defensive advisory");
+    await user.type(screen.getByLabelText("Search articles"), "cloud alert");
+    await user.selectOptions(screen.getByLabelText("Category"), "threat_report");
+    await user.selectOptions(screen.getByLabelText("Geographic scope"), "global");
+    await user.selectOptions(screen.getByLabelText("UAE relevance"), "possible");
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    const detailLink = await screen.findByRole("link", { name: "Synthetic defensive advisory" });
+    const href = detailLink.getAttribute("href") ?? "";
+    expect(decodeURIComponent(href)).toContain("returnTo=/threat-feed?q=cloud+alert&category=threat_report&scope=global&relevance=possible&offset=6");
+  });
+
+  test("restores filters and pagination from a safe return URL", async () => {
+    window.history.replaceState({}, "", "/threat-feed?q=cloud&category=cyber_news&scope=regional&offset=6");
+    render(<LatestArticlesFeed />);
+    await waitFor(() => expect(fetchArticlesMock).toHaveBeenCalledWith(expect.objectContaining({ q: "cloud", category: "cyber_news", geographic_scope: "regional", offset: 6 }), expect.any(AbortSignal)));
+    expect(screen.getByLabelText("Search articles")).toHaveValue("cloud");
+    expect(screen.getByLabelText("Category")).toHaveValue("cyber_news");
+    expect(screen.getByLabelText("Geographic scope")).toHaveValue("regional");
+    const detailLink = await screen.findByRole("link", { name: "Synthetic defensive advisory" });
+    expect(decodeURIComponent(detailLink.getAttribute("href") ?? "")).toContain("returnTo=/threat-feed?q=cloud&category=cyber_news&scope=regional&offset=6");
+  });
+
+  test("uses Overview as the return context when embedded on Overview", async () => {
+    render(<LatestArticlesFeed originPath="/" />);
+    const link = await screen.findByRole("link", { name: "Synthetic defensive advisory" });
+    expect(link).toHaveAttribute("href", "/articles/11111111-2222-4333-8444-555555555555?returnTo=%2F");
   });
 
   test.each([

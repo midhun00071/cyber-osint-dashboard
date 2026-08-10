@@ -5,8 +5,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { fetchCycles, fetchOperationsSummary, fetchRuns } from "@/services/operationsApi";
 import type { CycleList, OperationsSummary, RunList } from "@/types/operations";
+import { formatStatusLabel } from "@/utils/statusLabel";
 
 type OperationsData = { summary: OperationsSummary; cycles: CycleList; runs: RunList };
+
+type StatusCountRow = Readonly<{ count: number; label: string }>;
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
@@ -14,6 +17,16 @@ function isAbortError(error: unknown): boolean {
 
 function timestamp(value: string | null): string {
   return value ? new Date(value).toLocaleString() : "Not available";
+}
+
+function statusCountRows(counts: Readonly<Record<string, number>>): StatusCountRow[] {
+  const aggregated = new Map<string, number>();
+  for (const [rawStatus, count] of Object.entries(counts)) {
+    const label = formatStatusLabel(rawStatus);
+    aggregated.set(label, (aggregated.get(label) ?? 0) + count);
+  }
+  return Array.from(aggregated, ([label, count]) => ({ count, label }))
+    .sort((left, right) => left.label.localeCompare(right.label));
 }
 
 export default function OperationsPage() {
@@ -82,6 +95,7 @@ export default function OperationsPage() {
 
   const running = data?.summary.run_counts_by_status.running ?? 0;
   const checkpointPending = data?.summary.run_counts_by_status.checkpoint_pending ?? 0;
+  const statusCounts = data ? statusCountRows(data.summary.run_counts_by_status) : [];
 
   return (
     <ProtectedRoute permission="ingestion.read">
@@ -99,9 +113,9 @@ export default function OperationsPage() {
             <article><span>Checkpoint pending runs</span><strong>{checkpointPending}</strong></article>
             <article><span>Sources needing attention</span><strong>{data.summary.source_attention_count}</strong></article>
           </div>
-          <section className="dashboardPanel"><h2>Status counts</h2>{Object.keys(data.summary.run_counts_by_status).length === 0 ? <p>No run status evidence is available.</p> : <ul className="statusList">{Object.entries(data.summary.run_counts_by_status).map(([name, count]) => <li key={name}><span>{name}</span><strong>{count}</strong></li>)}</ul>}</section>
-          <section className="dashboardPanel"><h2>Active or recent cycles</h2>{data.cycles.items.length === 0 ? <p>No cycle activity has been recorded.</p> : <ul className="statusList">{data.cycles.items.map((cycle) => <li key={cycle.public_id}><span>{cycle.status} · {cycle.trigger_type} · {timestamp(cycle.started_at)}</span><strong>{cycle.sources_completed}/{cycle.sources_expected}</strong></li>)}</ul>}</section>
-          <section className="dashboardPanel"><h2>Active or recent runs</h2>{data.runs.items.length === 0 ? <p>No run activity has been recorded.</p> : <ul className="statusList">{data.runs.items.map((run) => <li key={run.public_id}><span>{run.source_name} · {run.status} · {run.trigger_type}</span><strong>Attempt {run.attempt_number}</strong></li>)}</ul>}</section>
+          <section className="dashboardPanel"><h2>Status counts</h2>{statusCounts.length === 0 ? <p>No run status evidence is available.</p> : <ul className="statusList">{statusCounts.map(({ label, count }) => <li key={label}><span>{label}</span><strong>{count}</strong></li>)}</ul>}</section>
+          <section className="dashboardPanel"><h2>Active or recent cycles</h2>{data.cycles.items.length === 0 ? <p>No cycle activity has been recorded.</p> : <ul className="statusList">{data.cycles.items.map((cycle) => <li key={cycle.public_id}><span>{formatStatusLabel(cycle.status)} · {formatStatusLabel(cycle.trigger_type)} · {timestamp(cycle.started_at)}</span><strong>{cycle.sources_completed}/{cycle.sources_expected}</strong></li>)}</ul>}</section>
+          <section className="dashboardPanel"><h2>Active or recent runs</h2>{data.runs.items.length === 0 ? <p>No run activity has been recorded.</p> : <ul className="statusList">{data.runs.items.map((run) => <li key={run.public_id}><span>{run.source_name} · {formatStatusLabel(run.status)} · {formatStatusLabel(run.trigger_type)}</span><strong>Attempt {run.attempt_number}</strong></li>)}</ul>}</section>
         </>}
       </section>
     </ProtectedRoute>

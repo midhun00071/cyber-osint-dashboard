@@ -42,7 +42,7 @@ export default function DashboardOverviewPage() {
           eyebrow="Backend CVE data"
           title="Vulnerabilities"
         >
-          <VulnerabilitiesTable />
+          <VulnerabilitiesTable originPath="/" />
         </DashboardPanel>
 
         <DashboardPanel
@@ -50,7 +50,7 @@ export default function DashboardOverviewPage() {
           eyebrow="Backend article data"
           title="Latest articles"
         >
-          <LatestArticlesFeed />
+          <LatestArticlesFeed originPath="/" />
         </DashboardPanel>
 
         <DashboardPanel eyebrow="Environment" title="Backend health">

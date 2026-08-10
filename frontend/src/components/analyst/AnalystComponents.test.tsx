@@ -26,6 +26,7 @@ function deferred<T>() { let resolve!: (value: T) => void; const promise = new P
 
 describe("C08 analyst components", () => {
   beforeEach(() => {
+    window.history.replaceState({}, "", "/");
     indicatorsMock.mockReset(); provenanceMock.mockReset(); threatMock.mockReset(); uaeMock.mockReset(); sourcesMock.mockReset();
     sourcesMock.mockResolvedValue({ status: "success", data: { items: [], total: 0, limit: 100, offset: 0 } });
   });
@@ -128,6 +129,50 @@ describe("C08 analyst components", () => {
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "error.test" } });
     fireEvent.click(screen.getByRole("button", { name: "Search stored indicators" }));
     expect(await screen.findByText("Indicator search unavailable")).toBeVisible();
+  });
+
+  test("UaeIntelligenceList restores list state and links details back to that context", async () => {
+    window.history.replaceState({}, "", "/uae-intelligence?q=dubai&relevance=potential&offset=25");
+    uaeMock.mockResolvedValue({ status: "success", data: { total: 26, limit: 25, offset: 25, items: [uaeItem()] } });
+    render(<UaeIntelligenceList />);
+    await waitFor(() => expect(uaeMock).toHaveBeenCalledWith("potential", "dubai", 25, expect.any(AbortSignal)));
+    const detail = await screen.findByRole("link", { name: "Dubai defensive notice" });
+    expect(decodeURIComponent(detail.getAttribute("href") ?? "")).toContain("returnTo=/uae-intelligence?q=dubai&relevance=potential&offset=25");
+    expect(screen.getAllByText("security advisory")).toHaveLength(2);
+    expect(screen.getByText("UAE")).toBeVisible();
+    window.history.replaceState({}, "", "/");
+  });
+
+  test("IndicatorSearch blocks obviously malformed values without any request", async () => {
+    render(<IndicatorSearch />);
+    const input = screen.getByRole("searchbox", { name: "Indicator value" });
+    expect(input).toHaveAttribute("id", "indicator-value");
+    expect(input).toHaveAttribute("name", "indicator_value");
+    fireEvent.change(input, { target: { value: "999.1.2.3" } });
+    fireEvent.click(screen.getByRole("button", { name: "Search stored indicators" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("valid IPv4 address");
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(indicatorsMock).not.toHaveBeenCalled();
+  });
+
+  test("IndicatorSearch permits and submits a 128-character hexadecimal hash", async () => {
+    const hash = "a".repeat(128);
+    indicatorsMock.mockResolvedValue({ status: "success", data: { total: 0, limit: 25, offset: 0, items: [] } });
+    render(<IndicatorSearch />);
+    const input = screen.getByRole("searchbox", { name: "Indicator value" });
+    expect(input).toHaveAttribute("maxlength", "128");
+    fireEvent.change(input, { target: { value: hash } });
+    expect(input).toHaveValue(hash);
+    fireEvent.click(screen.getByRole("button", { name: "Search stored indicators" }));
+    await waitFor(() => expect(indicatorsMock).toHaveBeenCalledWith(hash, 0, expect.any(AbortSignal)));
+  });
+
+  test("IndicatorSearch accepts supported values for offline lookup", async () => {
+    indicatorsMock.mockResolvedValue({ status: "success", data: { total: 0, limit: 25, offset: 0, items: [] } });
+    render(<IndicatorSearch />);
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "2001:db8::1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Search stored indicators" }));
+    await waitFor(() => expect(indicatorsMock).toHaveBeenCalledWith("2001:db8::1", 0, expect.any(AbortSignal)));
   });
 
   test("ItemProvenancePanel covers loading, success, safe links, and bounded evidence", async () => {

@@ -46,13 +46,44 @@ describe("AdminUsersPage", () => {
     await waitFor(() => expect(screen.getByLabelText("Temporary password")).toHaveValue(""));
   });
 
+  test("combines an optional account-expiry pair with the existing local-to-UTC contract and clears both parts", async () => {
+    render(<AdminUsersPage />);
+    await screen.findByText("Synthetic Operator");
+    fireEvent.change(screen.getByLabelText("Username"), { target: { value: "new.operator" } });
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "New Operator" } });
+    fireEvent.change(screen.getByLabelText("Temporary password"), { target: { value: "long-test-password" } });
+    fireEvent.change(screen.getByLabelText("Account expiry date"), { target: { value: "2026-09-01" } });
+    fireEvent.change(screen.getByLabelText("Account expiry time"), { target: { value: "13:45" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create user" }));
+    await waitFor(() => expect(createMock).toHaveBeenCalledWith(expect.objectContaining({
+      accountExpiresAt: new Date("2026-09-01T13:45").toISOString(),
+    })));
+    await waitFor(() => {
+      expect(screen.getByLabelText("Account expiry date")).toHaveValue("");
+      expect(screen.getByLabelText("Account expiry time")).toHaveValue("");
+    });
+  });
+
+  test("does not create a user from a partial account-expiry pair", async () => {
+    render(<AdminUsersPage />);
+    await screen.findByText("Synthetic Operator");
+    fireEvent.change(screen.getByLabelText("Username"), { target: { value: "new.operator" } });
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "New Operator" } });
+    fireEvent.change(screen.getByLabelText("Temporary password"), { target: { value: "long-test-password" } });
+    fireEvent.change(screen.getByLabelText("Account expiry date"), { target: { value: "2026-09-01" } });
+    expect(screen.getByRole("alert")).toHaveTextContent("Enter both a date and time for account expiry.");
+    fireEvent.click(screen.getByRole("button", { name: "Create user" }));
+    expect(createMock).not.toHaveBeenCalled();
+  });
+
   test("requires confirmation for disable, role, expiry, and session operations", async () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     render(<AdminUsersPage />);
     await screen.findByText("Synthetic Operator");
     fireEvent.change(screen.getByLabelText("New role for operator"), { target: { value: "analyst" } });
-    fireEvent.change(screen.getByLabelText("New expiry for operator"), { target: { value: "2026-09-01T00:00" } });
-    fireEvent.click(screen.getByRole("button", { name: "Disable" }));
+    fireEvent.change(screen.getByLabelText("New expiry for operator date"), { target: { value: "2026-09-01" } });
+    fireEvent.change(screen.getByLabelText("New expiry for operator time"), { target: { value: "00:00" } });
+    fireEvent.click(screen.getByRole("button", { name: "Disable account" }));
     fireEvent.click(screen.getByRole("button", { name: "Change role" }));
     fireEvent.click(screen.getByRole("button", { name: "Change expiry" }));
     fireEvent.click(screen.getByRole("button", { name: "Revoke sessions" }));
@@ -61,6 +92,36 @@ describe("AdminUsersPage", () => {
     expect(roleMock).not.toHaveBeenCalled();
     expect(expiryMock).not.toHaveBeenCalled();
     expect(revokeMock).not.toHaveBeenCalled();
+  });
+
+  test("does not confirm or send a partial row-expiry pair", async () => {
+    const confirm = vi.spyOn(window, "confirm");
+    render(<AdminUsersPage />);
+    await screen.findByText("Synthetic Operator");
+    fireEvent.change(screen.getByLabelText("New expiry for operator date"), { target: { value: "2026-09-01" } });
+    expect(screen.getByLabelText("New expiry for operator date")).toHaveAttribute("aria-invalid", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Change expiry" }));
+    expect(confirm).not.toHaveBeenCalled();
+    expect(expiryMock).not.toHaveBeenCalled();
+  });
+
+  test("maps a complete row expiry and clears both draft parts on confirmed clear", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<AdminUsersPage />);
+    await screen.findByText("Synthetic Operator");
+    const date = screen.getByLabelText("New expiry for operator date");
+    const time = screen.getByLabelText("New expiry for operator time");
+    fireEvent.change(date, { target: { value: "2026-09-01" } });
+    fireEvent.change(time, { target: { value: "08:30" } });
+    fireEvent.click(screen.getByRole("button", { name: "Change expiry" }));
+    await waitFor(() => expect(expiryMock).toHaveBeenCalledWith(USER.public_id, new Date("2026-09-01T08:30").toISOString()));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Clear expiry" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Clear expiry" }));
+    await waitFor(() => expect(expiryMock).toHaveBeenLastCalledWith(USER.public_id, null));
+    await waitFor(() => {
+      expect(date).toHaveValue("");
+      expect(time).toHaveValue("");
+    });
   });
 
   test("uses the public identifier for confirmed lifecycle changes", async () => {

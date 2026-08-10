@@ -7,9 +7,9 @@ import { fetchArticleDetail } from "@/services/articleApi";
 import { makeArticle } from "@/test/fixtures";
 import type { ArticleDetailResult } from "@/types/article";
 
-const { useParamsMock } = vi.hoisted(() => ({ useParamsMock: vi.fn() }));
+const { useParamsMock, useSearchParamsMock } = vi.hoisted(() => ({ useParamsMock: vi.fn(), useSearchParamsMock: vi.fn() }));
 
-vi.mock("next/navigation", () => ({ useParams: useParamsMock }));
+vi.mock("next/navigation", () => ({ useParams: useParamsMock, useSearchParams: useSearchParamsMock }));
 vi.mock("@/components/auth/ProtectedRoute", () => ({ ProtectedRoute: ({ children }: { children: ReactNode }) => children }));
 vi.mock("@/services/articleApi", () => ({
   fetchArticleDetail: vi.fn(),
@@ -30,7 +30,9 @@ function pendingUntilAbort(signal?: AbortSignal): Promise<ArticleDetailResult> {
 
 describe("ArticleDetailPage", () => {
   beforeEach(() => {
+    window.history.replaceState({}, "", `/articles/${publicId}`);
     useParamsMock.mockReturnValue({ publicId });
+    useSearchParamsMock.mockImplementation(() => new URLSearchParams(window.location.search));
     fetchArticleDetailMock.mockImplementation((_id, signal) =>
       pendingUntilAbort(signal),
     );
@@ -61,9 +63,9 @@ describe("ArticleDetailPage", () => {
     expect(screen.getByText("Synthetic Source")).toBeVisible();
     expect(screen.getByText("UAE")).toBeVisible();
     expect(screen.getAllByText("Confirmed · High confidence (95%)")).toHaveLength(2);
-    expect(screen.getByRole("link", { name: "Back to dashboard" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Back to Threat Feed" })).toHaveAttribute(
       "href",
-      "/",
+      "/threat-feed",
     );
     expect(screen.getByRole("link", { name: "Open source" })).toHaveAttribute(
       "href",
@@ -96,9 +98,9 @@ describe("ArticleDetailPage", () => {
     render(<ArticleDetailPage />);
 
     expect(await screen.findByRole("heading", { name: "Article not found" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "Back to dashboard" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Back to Threat Feed" })).toHaveAttribute(
       "href",
-      "/",
+      "/threat-feed",
     );
   });
 
@@ -141,5 +143,41 @@ describe("ArticleDetailPage", () => {
     expect(signal?.aborted).toBe(false);
     unmount();
     expect(signal?.aborted).toBe(true);
+  });
+
+  test("returns to the originating filtered list and rejects external return targets", async () => {
+    fetchArticleDetailMock.mockResolvedValue({ status: "success", data: makeArticle() });
+    window.history.replaceState({}, "", `/articles/${publicId}?returnTo=${encodeURIComponent("/uae-intelligence?q=dubai&offset=25")}`);
+    const rendered = render(<ArticleDetailPage />);
+    expect(await screen.findByRole("link", { name: "Back to UAE Intelligence" })).toHaveAttribute("href", "/uae-intelligence?q=dubai&offset=25");
+    rendered.unmount();
+
+    window.history.replaceState({}, "", `/articles/${publicId}?returnTo=${encodeURIComponent("/threat-feed?q=cloud&category=threat_report&scope=global&offset=6")}`);
+    const threatFeed = render(<ArticleDetailPage />);
+    expect(await screen.findByRole("link", { name: "Back to Threat Feed" })).toHaveAttribute("href", "/threat-feed?q=cloud&category=threat_report&scope=global&offset=6");
+    threatFeed.unmount();
+
+    window.history.replaceState({}, "", `/articles/${publicId}?returnTo=${encodeURIComponent("/")}`);
+    const overview = render(<ArticleDetailPage />);
+    expect(await screen.findByRole("link", { name: "Back to Overview" })).toHaveAttribute("href", "/");
+    overview.unmount();
+
+    window.history.replaceState({}, "", `/articles/${publicId}?returnTo=${encodeURIComponent("//attacker.invalid/")}`);
+    render(<ArticleDetailPage />);
+    expect(await screen.findByRole("link", { name: "Back to Threat Feed" })).toHaveAttribute("href", "/threat-feed");
+  });
+
+  test.each([
+    ["external", "https://attacker.invalid/threat-feed"],
+    ["protocol-relative", "//attacker.invalid/threat-feed"],
+    ["backslash", "/threat-feed\\attacker"],
+    ["fragment-only", "#threat-feed"],
+    ["javascript", "javascript:alert(1)"],
+    ["data", "data:text/html,unsafe"],
+  ])("rejects a %s return target", async (_label, returnTo) => {
+    fetchArticleDetailMock.mockResolvedValue({ status: "success", data: makeArticle() });
+    window.history.replaceState({}, "", `/articles/${publicId}?returnTo=${encodeURIComponent(returnTo)}`);
+    render(<ArticleDetailPage />);
+    expect(await screen.findByRole("link", { name: "Back to Threat Feed" })).toHaveAttribute("href", "/threat-feed");
   });
 });

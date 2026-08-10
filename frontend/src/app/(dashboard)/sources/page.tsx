@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { controlSource, fetchSources, requestManualRun } from "@/services/operationsApi";
-import type { SourceList, SourceOperation } from "@/types/operations";
+import type { SourceList, SourceOperation, SourceSummary } from "@/types/operations";
+import { formatStatusLabel } from "@/utils/statusLabel";
 
 function timestamp(value: string | null): string {
   return value ? new Date(value).toLocaleString() : "Not available";
@@ -11,6 +13,30 @@ function timestamp(value: string | null): string {
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
+}
+
+function actionLabel(action: SourceOperation): string {
+  return {
+    manual_run: "Run once",
+    retry: "Retry",
+    pause: "Pause temporarily",
+    resume: "Resume source",
+    disable: "Disable source",
+    enable: "Enable source",
+  }[action];
+}
+
+function actionDescription(action: SourceOperation): string {
+  if (action === "pause") return "Pause stops execution temporarily while retaining the source configuration.";
+  if (action === "disable") return "Disable takes the source out of service until it is explicitly enabled.";
+  if (action === "manual_run") return "Run one bounded source attempt outside the normal parent-cycle evaluation.";
+  return `${actionLabel(action)} using the existing governed source policy.`;
+}
+
+function scheduleText(source: SourceSummary): { primary: string; secondary: string } {
+  if (source.next_scheduled_at) return { primary: `Next evaluation: ${timestamp(source.next_scheduled_at)}`, secondary: "Coordinated scheduling evidence" };
+  if (source.latest_run?.trigger_type === "scheduled") return { primary: "Evaluated by parent cycle", secondary: "No independent source schedule" };
+  return { primary: "No independent source schedule", secondary: source.operator_state === "enabled" ? "Parent-cycle eligibility is evaluated centrally" : "Source is not currently eligible" };
 }
 
 export default function SourcesPage() {
@@ -77,7 +103,7 @@ export default function SourcesPage() {
 
   async function operate(slug: string, action: SourceOperation) {
     if (action === "retry") return;
-    if (action !== "manual_run" && !window.confirm(`Confirm ${action} for ${slug}?`)) return;
+    if (!window.confirm(`${actionDescription(action)}\n\nConfirm for ${slug}?`)) return;
     setBusy(`${slug}:${action}`);
     const result = action === "manual_run"
       ? await requestManualRun(slug, crypto.randomUUID())
@@ -99,18 +125,19 @@ export default function SourcesPage() {
       {!data ? <p role="status" aria-busy="true">Loading approved sources…</p> : data.items.length === 0 ? (
         <p>No approved sources are available.</p>
       ) : (
-        <div className="responsiveTable"><table><thead><tr><th>Source</th><th>State</th><th>Readiness</th><th>Progress</th><th>Latest run</th><th>Scheduling</th><th>Actions</th></tr></thead><tbody>
-          {data.items.map((source) => (
+        <div className="responsiveTable sourcesTable"><table><thead><tr><th>Source</th><th>State and readiness</th><th>Progress evidence</th><th>Latest run</th><th>Scheduling</th><th>Actions</th></tr></thead><tbody>
+          {data.items.map((source) => {
+            const schedule = scheduleText(source);
+            return (
             <tr key={source.public_id}>
               <td><strong>{source.name}</strong><small>{source.slug}</small><small>{source.source_type} · {source.content_type}</small></td>
-              <td><span>Policy: {source.policy_state}</span><small>Operator: {source.operator_state}</small><small>Effective: {source.effective_state}</small><small>Freshness: {source.freshness}</small></td>
-              <td><span>{source.execution_available ? "Execution available" : "Execution unavailable"}</span><small>Credentials required: {source.credential_required ? "Yes" : "No"}</small><small>Credentials configured: {source.credential_configured ? "Yes" : "No"}</small><small>Quota: {source.quota_state ?? "Not limited"}</small><small>Backoff until: {timestamp(source.backoff_until)}</small></td>
+              <td><div className="sourcePrimaryState"><StatusBadge label={formatStatusLabel(source.effective_state)} tone={source.execution_available ? "success" : source.operator_state === "paused" ? "warning" : "neutral"} /><strong>{source.execution_available ? "Ready for governed execution" : "Execution unavailable"}</strong></div><small>Operator: {formatStatusLabel(source.operator_state)} · Policy: {formatStatusLabel(source.policy_state)}</small><small>Freshness: {formatStatusLabel(source.freshness)}</small><small>Credentials: {source.credential_required ? source.credential_configured ? "Configured" : "Required" : "Not required"} · Quota: {source.quota_state ? formatStatusLabel(source.quota_state) : "Not limited"}</small><small>Backoff until: {timestamp(source.backoff_until)}</small></td>
               <td><span>Kind: {source.progress.kind}</span><small>Version: {source.progress.version ?? "None"}</small><small>Committed: {timestamp(source.progress.committed_at)}</small><small>Fingerprint: {source.progress.fingerprint ?? "None"}</small></td>
-              <td>{source.latest_run ? <><span>Status: {source.latest_run.status}</span><small>Trigger: {source.latest_run.trigger_type}</small><small>Attempt: {source.latest_run.attempt_number}</small><small>Started: {timestamp(source.latest_run.started_at)}</small><small>Finished: {timestamp(source.latest_run.finished_at)}</small></> : "No runs"}</td>
-              <td>Next scheduled: {timestamp(source.next_scheduled_at)}</td>
-              <td><div className="tableActions">{source.available_actions.map((action) => action === "retry" ? <span key={action}>retry (use run history)</span> : <button disabled={busy !== null} key={action} onClick={() => void operate(source.slug, action)} type="button">{busy === `${source.slug}:${action}` ? "Working…" : action.replace("_", " ")}</button>)}{source.available_actions.length === 0 ? "None" : null}</div></td>
+              <td>{source.latest_run ? <><strong>{formatStatusLabel(source.latest_run.status)}</strong><small>Trigger: {formatStatusLabel(source.latest_run.trigger_type)} · Attempt: {source.latest_run.attempt_number}</small><small>Started: {timestamp(source.latest_run.started_at)}</small><small>Finished: {timestamp(source.latest_run.finished_at)}</small></> : "No runs"}</td>
+              <td><strong>{schedule.primary}</strong><small>{schedule.secondary}</small></td>
+              <td><div className="tableActions actionStack">{source.available_actions.map((action) => action === "retry" ? <span key={action}>Retry from Run History</span> : <button aria-label={`${actionLabel(action)} for ${source.name}`} className={action === "disable" ? "buttonDanger" : action === "manual_run" ? "buttonPrimary" : "buttonSecondary"} disabled={busy !== null} key={action} onClick={() => void operate(source.slug, action)} title={actionDescription(action)} type="button">{busy === `${source.slug}:${action}` ? "Working…" : actionLabel(action)}</button>)}{source.available_actions.length === 0 ? "None" : null}</div></td>
             </tr>
-          ))}
+          );})}
         </tbody></table></div>
       )}
     </section>

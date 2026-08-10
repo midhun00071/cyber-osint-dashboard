@@ -33,9 +33,10 @@ describe("SourcesPage", () => {
     fetchSourcesMock.mockResolvedValue({ ...RESPONSE, data: { ...RESPONSE.data, items: [{ ...SOURCE, checkpoint_value: "must-not-render", credential_reference_id: "must-not-render" } as typeof SOURCE] } });
     render(<SourcesPage />);
     expect(await screen.findByText("CISA KEV")).toBeVisible();
-    for (const phrase of ["Policy: implemented_enabled", "Operator: enabled", "Effective: eligible", "Freshness: stale", "Credentials required: No", "Credentials configured: Yes", "Kind: checkpoint", "Version: 2", `Fingerprint: ${"a".repeat(64)}`, "Quota: available", "Status: success", "Trigger: scheduled", "Attempt: 1"]) {
+    for (const phrase of ["Eligible", "Execution unavailable", "Operator: Enabled · Policy: Implemented Enabled", "Freshness: Stale", "Credentials: Not required · Quota: Available", "Kind: checkpoint", "Version: 2", `Fingerprint: ${"a".repeat(64)}`, "Succeeded", "Trigger: Scheduled · Attempt: 1"]) {
       expect(screen.getByText(phrase)).toBeVisible();
     }
+    expect(screen.getByText(/Next evaluation:/)).toBeVisible();
     expect(screen.queryByText("must-not-render")).not.toBeInTheDocument();
   });
 
@@ -52,6 +53,14 @@ describe("SourcesPage", () => {
     document.dispatchEvent(new Event("visibilitychange"));
     await waitFor(() => expect(fetchSourcesMock).toHaveBeenCalledTimes(2));
     expect(await screen.findByText("CISA KEV")).toBeVisible();
+  });
+
+  test("distinguishes parent-cycle execution from an independent source schedule", async () => {
+    fetchSourcesMock.mockResolvedValue({ ...RESPONSE, data: { ...RESPONSE.data, items: [{ ...SOURCE, next_scheduled_at: null }] } });
+    render(<SourcesPage />);
+    expect(await screen.findByText("Evaluated by parent cycle")).toBeVisible();
+    expect(screen.getByText("No independent source schedule")).toBeVisible();
+    expect(screen.queryByText(/Next scheduled: Not available/)).not.toBeInTheDocument();
   });
 
   test("skips overlapping interval ticks instead of starting another request", async () => {
@@ -80,7 +89,7 @@ describe("SourcesPage", () => {
     controlSourceMock.mockResolvedValue({ status: "success", data: {} });
     vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<SourcesPage />);
-    fireEvent.click(await screen.findByRole("button", { name: "pause" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Pause temporarily for CISA KEV" }));
     await waitFor(() => expect(controlSourceMock).toHaveBeenCalledWith("cisa-kev", "pause"));
     await waitFor(() => expect(fetchSourcesMock).toHaveBeenCalledTimes(2));
   });

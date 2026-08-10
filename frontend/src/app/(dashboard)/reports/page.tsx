@@ -48,9 +48,9 @@ export default function ReportsPage() {
     {loading ? <p aria-busy="true" role="status">Loading report catalog…</p> : null}
     {error ? <p className="inlineAlert" role="alert">The report service could not complete the request safely.</p> : null}
     {catalog ? <form className="c09Form" onSubmit={(event) => { event.preventDefault(); void download(); }}>
-      <label>Report type<select value={reportType} onChange={(event) => setReportType(event.target.value as ReportType)}>{catalog.reports.map((item) => <option key={item.report_type} value={item.report_type}>{item.label}</option>)}</select></label>
-      <label>Format<select value={format} onChange={(event) => setFormat(event.target.value as ReportFormat)}><option value="csv">CSV</option><option value="pdf">PDF</option></select></label>
-      <label>Row limit<input type="number" min={1} max={catalog.maximum_rows} value={limit} onChange={(event) => setLimit(Math.min(100, Math.max(1, Number(event.target.value))))} /></label>
+      <label>Report type<select id="report-type" name="report_type" value={reportType} onChange={(event) => setReportType(event.target.value as ReportType)}>{catalog.reports.map((item) => <option key={item.report_type} value={item.report_type}>{item.label}</option>)}</select></label>
+      <label>Format<select id="report-format" name="format" value={format} onChange={(event) => setFormat(event.target.value as ReportFormat)}><option value="csv">CSV</option><option value="pdf">PDF</option></select></label>
+      <label>Row limit<input id="report-limit" name="limit" type="number" min={1} max={catalog.maximum_rows} value={limit} onChange={(event) => setLimit(Math.min(100, Math.max(1, Number(event.target.value))))} /></label>
       {hasPermission("report.export") ? <button disabled={downloading} type="submit">{downloading ? "Preparing download…" : "Export report"}</button> : <p>You can view report options but do not have export permission.</p>}
     </form> : null}
   </section></ProtectedRoute>;

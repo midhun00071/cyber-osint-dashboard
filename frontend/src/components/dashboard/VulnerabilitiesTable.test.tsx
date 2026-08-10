@@ -7,6 +7,9 @@ import { fetchVulnerabilities } from "@/services/vulnerabilityApi";
 import { makeVulnerability, makeVulnerabilityList } from "@/test/fixtures";
 import type { VulnerabilityListResult } from "@/types/vulnerability";
 
+const { useSearchParamsMock } = vi.hoisted(() => ({ useSearchParamsMock: vi.fn() }));
+
+vi.mock("next/navigation", () => ({ useSearchParams: useSearchParamsMock }));
 vi.mock("@/services/vulnerabilityApi", () => ({
   fetchVulnerabilities: vi.fn(),
 }));
@@ -33,6 +36,8 @@ function pendingUntilAbort(signal?: AbortSignal): Promise<VulnerabilityListResul
 
 describe("VulnerabilitiesTable", () => {
   beforeEach(() => {
+    window.history.replaceState({}, "", "/vulnerabilities");
+    useSearchParamsMock.mockImplementation(() => new URLSearchParams(window.location.search));
     fetchVulnerabilitiesMock.mockResolvedValue({
       status: "success",
       data: makeVulnerabilityList(),
@@ -63,7 +68,7 @@ describe("VulnerabilitiesTable", () => {
     const cveLink = await screen.findByRole("link", { name: "CVE-2026-12345" });
     expect(cveLink).toHaveAttribute(
       "href",
-      "/vulnerabilities/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+      "/vulnerabilities/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee?returnTo=%2Fvulnerabilities",
     );
     expect(screen.getByText(markupTitle)).toBeVisible();
     expect(document.querySelector("svg")).toBeNull();
@@ -284,6 +289,38 @@ describe("VulnerabilitiesTable", () => {
         expect.any(AbortSignal),
       ),
     );
+  });
+
+  test("detail links preserve applied list state in a safe return URL", async () => {
+    const user = userEvent.setup();
+    fetchVulnerabilitiesMock.mockResolvedValue({ status: "success", data: makeVulnerabilityList({ total: 52 }) });
+    render(<VulnerabilitiesTable />);
+    await screen.findByText("CVE-2026-12345");
+    await user.type(screen.getByLabelText("Search CVEs"), "CVE-2026");
+    await user.selectOptions(screen.getByLabelText("Severity"), "high");
+    await user.selectOptions(screen.getByLabelText("Geographic scope"), "uae");
+    await user.selectOptions(screen.getByLabelText("UAE relevance"), "confirmed");
+    await user.selectOptions(screen.getByLabelText("Rows"), "25");
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    const href = screen.getByRole("link", { name: "CVE-2026-12345" }).getAttribute("href") ?? "";
+    expect(decodeURIComponent(href)).toContain("returnTo=/vulnerabilities?q=CVE-2026&severity=high&scope=uae&relevance=confirmed&limit=25&offset=25");
+  });
+
+  test("restores filters, row count, and pagination from the return URL", async () => {
+    window.history.replaceState({}, "", "/vulnerabilities?q=CVE-2026&severity=high&scope=uae&limit=25&offset=25");
+    render(<VulnerabilitiesTable />);
+    await waitFor(() => expect(fetchVulnerabilitiesMock).toHaveBeenCalledWith(expect.objectContaining({ q: "CVE-2026", severity: "high", geographic_scope: "uae", limit: 25, offset: 25 }), expect.any(AbortSignal)));
+    expect(screen.getByLabelText("Search CVEs")).toHaveValue("CVE-2026");
+    expect(screen.getByLabelText("Rows")).toHaveValue("25");
+    const detailLink = await screen.findByRole("link", { name: "CVE-2026-12345" });
+    expect(decodeURIComponent(detailLink.getAttribute("href") ?? "")).toContain("returnTo=/vulnerabilities?q=CVE-2026&severity=high&scope=uae&limit=25&offset=25");
+  });
+
+  test("uses Overview as the return context when embedded on Overview", async () => {
+    render(<VulnerabilitiesTable originPath="/" />);
+    const link = await screen.findByRole("link", { name: "CVE-2026-12345" });
+    expect(link).toHaveAttribute("href", "/vulnerabilities/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee?returnTo=%2F");
   });
 
   test.each([

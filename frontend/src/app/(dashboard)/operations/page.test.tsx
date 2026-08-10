@@ -28,8 +28,8 @@ describe("OperationsPage", () => {
     expect(screen.getByText("Configured handlers").nextSibling).toHaveTextContent("2");
     expect(screen.getByText("Running runs").nextSibling).toHaveTextContent("1");
     expect(screen.getByText("Checkpoint pending runs").nextSibling).toHaveTextContent("1");
-    expect(screen.getAllByText(/running · scheduled/)).toHaveLength(2);
-    expect(screen.getByText(/CISA KEV · running · scheduled/)).toBeVisible();
+    expect(screen.getAllByText(/Running · Scheduled/)).toHaveLength(2);
+    expect(screen.getByText(/CISA KEV · Running · Scheduled/)).toBeVisible();
     expect(screen.getByText(/Last refreshed:/)).toBeVisible();
   });
 
@@ -52,6 +52,22 @@ describe("OperationsPage", () => {
     expect(await screen.findByText("Unavailable")).toBeVisible();
     expect(screen.getByText("No cycle activity has been recorded.")).toBeVisible();
     expect(screen.getByText("No run activity has been recorded.")).toBeVisible();
+  });
+
+  test("aggregates equivalent presentation labels without changing raw status counts", async () => {
+    const rawCounts = { success: 4, failed: 5, succeeded: 15, partial: 17 };
+    summaryMock.mockResolvedValue({ ...SUMMARY, data: { ...SUMMARY.data, run_counts_by_status: rawCounts } });
+
+    render(<OperationsPage />);
+
+    const statusSection = (await screen.findByRole("heading", { name: "Status counts" })).closest("section");
+    expect(statusSection).not.toBeNull();
+    if (!statusSection) throw new Error("Expected the status-count section.");
+    const rows = Array.from(statusSection.querySelectorAll("li"));
+    expect(rows.map((row) => row.querySelector("span")?.textContent)).toEqual(["Failed", "Partial", "Succeeded"]);
+    expect(rows.map((row) => Number(row.querySelector("strong")?.textContent))).toEqual([5, 17, 19]);
+    expect(rows.reduce((total, row) => total + Number(row.querySelector("strong")?.textContent), 0)).toBe(41);
+    expect(rawCounts).toEqual({ success: 4, failed: 5, succeeded: 15, partial: 17 });
   });
 
   test("renders normal and cycle-less runs in the same operations list", async () => {

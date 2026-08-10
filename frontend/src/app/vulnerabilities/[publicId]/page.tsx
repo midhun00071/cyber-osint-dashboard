@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 
 import { SafeExternalLink } from "@/components/SafeExternalLink";
 import { ItemProvenancePanel } from "@/components/analyst/ItemProvenancePanel";
@@ -17,6 +17,7 @@ import type {
   VulnerabilitySeverity,
 } from "@/types/vulnerability";
 import type { BadgeTone } from "@/types/dashboard";
+import { getDetailReturn } from "@/utils/detailNavigation";
 import { formatUaeRelevanceWithConfidence } from "@/utils/uaeConfidence";
 
 type DetailState =
@@ -153,6 +154,11 @@ function getPublicIdParam(value: string | string[] | undefined): string | null {
 function VulnerabilityDetailContent() {
   const params = useParams<{ publicId?: string | string[] }>();
   const publicId = useMemo(() => getPublicIdParam(params.publicId), [params]);
+  const routeSearch = useSearchParams().toString();
+  const returnNavigation = useMemo(
+    () => getDetailReturn(routeSearch, "/vulnerabilities"),
+    [routeSearch],
+  );
   const [state, setState] = useState<DetailState>({ status: "loading" });
 
   useEffect(() => {
@@ -207,8 +213,8 @@ function VulnerabilityDetailContent() {
             The requested record is unavailable, inactive, or outside the safe
             vulnerability feed.
           </p>
-          <Link className="safeSourceLink" href="/">
-            Back to dashboard
+          <Link className="safeSourceLink" href={returnNavigation.href}>
+            {returnNavigation.label}
           </Link>
         </div>
       </main>
@@ -235,8 +241,8 @@ function VulnerabilityDetailContent() {
             Stored vulnerability details could not be loaded right now. Try
             again after the backend or database is available.
           </p>
-          <Link className="safeSourceLink" href="/">
-            Back to dashboard
+          <Link className="safeSourceLink" href={returnNavigation.href}>
+            {returnNavigation.label}
           </Link>
         </div>
       </main>
@@ -250,8 +256,8 @@ function VulnerabilityDetailContent() {
     <main className="articleDetailPage">
       <article className="articleDetailShell">
         <div className="articleDetailNav">
-          <Link className="safeSourceLink" href="/">
-            Back to dashboard
+          <Link className="safeSourceLink" href={returnNavigation.href}>
+            {returnNavigation.label}
           </Link>
           <SafeExternalLink className="safeSourceLink" url={item.source_url}>
             Open source
@@ -350,5 +356,5 @@ function VulnerabilityDetailContent() {
 }
 
 export default function VulnerabilityDetailPage() {
-  return <ProtectedRoute><VulnerabilityDetailContent /></ProtectedRoute>;
+  return <ProtectedRoute><Suspense fallback={<main className="articleDetailPage"><div className="tableLoadingState" aria-busy="true" role="status">Loading vulnerability details</div></main>}><VulnerabilityDetailContent /></Suspense></ProtectedRoute>;
 }

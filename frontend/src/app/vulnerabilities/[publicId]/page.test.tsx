@@ -7,9 +7,9 @@ import { fetchVulnerabilityDetail } from "@/services/vulnerabilityApi";
 import { makeVulnerability } from "@/test/fixtures";
 import type { VulnerabilityDetailResult } from "@/types/vulnerability";
 
-const { useParamsMock } = vi.hoisted(() => ({ useParamsMock: vi.fn() }));
+const { useParamsMock, useSearchParamsMock } = vi.hoisted(() => ({ useParamsMock: vi.fn(), useSearchParamsMock: vi.fn() }));
 
-vi.mock("next/navigation", () => ({ useParams: useParamsMock }));
+vi.mock("next/navigation", () => ({ useParams: useParamsMock, useSearchParams: useSearchParamsMock }));
 vi.mock("@/components/auth/ProtectedRoute", () => ({ ProtectedRoute: ({ children }: { children: ReactNode }) => children }));
 vi.mock("@/services/vulnerabilityApi", () => ({
   fetchVulnerabilityDetail: vi.fn(),
@@ -32,7 +32,9 @@ function pendingUntilAbort(
 
 describe("VulnerabilityDetailPage", () => {
   beforeEach(() => {
+    window.history.replaceState({}, "", `/vulnerabilities/${publicId}`);
     useParamsMock.mockReturnValue({ publicId });
+    useSearchParamsMock.mockImplementation(() => new URLSearchParams(window.location.search));
     fetchVulnerabilityDetailMock.mockImplementation((_id, signal) =>
       pendingUntilAbort(signal),
     );
@@ -68,9 +70,9 @@ describe("VulnerabilityDetailPage", () => {
     expect(screen.getByText("Synthetic CVE Source")).toBeVisible();
     expect(screen.getByText("Global")).toBeVisible();
     expect(screen.getAllByText("Probable · Medium confidence (85%)")).toHaveLength(2);
-    expect(screen.getByRole("link", { name: "Back to dashboard" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Back to Vulnerabilities" })).toHaveAttribute(
       "href",
-      "/",
+      "/vulnerabilities",
     );
     expect(screen.getByRole("link", { name: "Open source" })).toHaveAttribute(
       "href",
@@ -149,5 +151,20 @@ describe("VulnerabilityDetailPage", () => {
     expect(signal?.aborted).toBe(false);
     unmount();
     expect(signal?.aborted).toBe(true);
+  });
+
+  test("uses a safe originating UAE list return when supplied", async () => {
+    fetchVulnerabilityDetailMock.mockResolvedValue({ status: "success", data: makeVulnerability() });
+    window.history.replaceState({}, "", `/vulnerabilities/${publicId}?returnTo=${encodeURIComponent("/uae-intelligence?relevance=direct")}`);
+    render(<VulnerabilityDetailPage />);
+    expect(await screen.findByRole("link", { name: "Back to UAE Intelligence" })).toHaveAttribute("href", "/uae-intelligence?relevance=direct");
+  });
+
+  test("returns to the exact vulnerability list state supplied by the route", async () => {
+    fetchVulnerabilityDetailMock.mockResolvedValue({ status: "success", data: makeVulnerability() });
+    const returnTo = "/vulnerabilities?q=CVE-2026&severity=high&scope=uae&limit=25&offset=25";
+    window.history.replaceState({}, "", `/vulnerabilities/${publicId}?returnTo=${encodeURIComponent(returnTo)}`);
+    render(<VulnerabilityDetailPage />);
+    expect(await screen.findByRole("link", { name: "Back to Vulnerabilities" })).toHaveAttribute("href", returnTo);
   });
 });
