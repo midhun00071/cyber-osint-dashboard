@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
 import app.services.authentication_service as authentication_module
 from app.models import AuthSession
@@ -67,8 +68,10 @@ class _LoginSession:
         self.user = user
         self.credential = credential
         self.role = role or SimpleNamespace(role_key=RoleKey.VIEWER.value)
+        self.statements = []
 
-    def execute(self, _statement):
+    def execute(self, statement):
+        self.statements.append(statement)
         return _ScalarResult((self.user, self.credential, self.role))
 
 
@@ -276,7 +279,8 @@ def test_successful_locked_login_rehashes_the_unchanged_credential(monkeypatch) 
         updated_at=NOW,
     )
     credential = SimpleNamespace(password_hash=legacy_hash, updated_at=NOW)
-    service = AuthenticationService(_LoginSession(user, credential), settings())
+    session = _LoginSession(user, credential)
+    service = AuthenticationService(session, settings())
     service._locked_throttle = lambda _key, _now: _unblocked_throttle()
     service._audit.append = lambda **_kwargs: None
     service._sessions.create = lambda **_kwargs: _issued_session()
@@ -304,6 +308,15 @@ def test_successful_locked_login_rehashes_the_unchanged_credential(monkeypatch) 
     assert principal.user_id == 1
     assert verification_calls == [("UnchangedPassword!234", legacy_hash)]
     assert credential.password_hash == "approved-current-hash"
+    assert len(session.statements) == 1
+    locked_sql = str(
+        session.statements[0].compile(dialect=postgresql.dialect())
+    ).upper()
+    assert locked_sql.endswith(
+        "FOR UPDATE OF AUTH_USERS, AUTH_LOCAL_CREDENTIALS, AUTH_USER_ROLES"
+    )
+    locked_targets = locked_sql.rsplit("FOR UPDATE OF ", 1)[1]
+    assert "AUTH_IDENTITIES" not in locked_targets
 
 
 @pytest.mark.parametrize("stale_field", ["status", "role", "session_version", "password_hash"])

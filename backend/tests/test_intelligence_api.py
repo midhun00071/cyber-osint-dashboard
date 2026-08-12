@@ -528,14 +528,18 @@ def test_list_endpoint_returns_stored_vulnerability_record_without_raw_payloads(
 
 def test_list_pagination_limit_and_offset_work(client) -> None:
     older = make_vulnerability_item(
+        item_id=1,
         cve_id="CVE-2026-00001",
         source_modified_at=datetime(2026, 7, 7, 9, 0, tzinfo=UTC),
         last_seen_at=datetime(2026, 7, 7, 9, 0, tzinfo=UTC),
+        created_at=datetime(2026, 7, 7, 9, 0, tzinfo=UTC),
     )
     newer = make_vulnerability_item(
+        item_id=2,
         cve_id="CVE-2026-00002",
         source_modified_at=datetime(2026, 7, 7, 11, 0, tzinfo=UTC),
         last_seen_at=datetime(2026, 7, 7, 10, 30, tzinfo=UTC),
+        created_at=datetime(2026, 7, 7, 11, 0, tzinfo=UTC),
     )
 
     response = client(FakeSession([older, newer])).get(

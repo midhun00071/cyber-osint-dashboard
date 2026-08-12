@@ -48,7 +48,6 @@ def test_c07_contract_documents_frontend_and_inactive_execution_boundary() -> No
 def test_authorized_current_documents_link_to_the_c07_contract() -> None:
     expected_link = "c07-authenticated-operations-experience.md"
     for path in (
-        ROOT / "README.md",
         ROOT / "backend" / "README.md",
         ROOT / "frontend" / "README.md",
         ROOT / "docs" / "api-contract.md",

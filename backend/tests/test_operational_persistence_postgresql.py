@@ -315,6 +315,44 @@ def run_evidence(session, run_id):
     )
 
 
+def create_append_only_progress_role(engine, progress_table: str) -> str:
+    role_name = f"b104_append_only_{uuid4().hex}"
+    with engine.begin() as connection:
+        can_create_role = connection.scalar(
+            sa.text(
+                "SELECT rolsuper OR rolcreaterole "
+                "FROM pg_roles WHERE rolname = current_user"
+            )
+        )
+        if can_create_role is not True:
+            pytest.skip(
+                "Disposable PostgreSQL test identity cannot create the restricted test role"
+            )
+        connection.exec_driver_sql(
+            f'CREATE ROLE "{role_name}" NOLOGIN INHERIT NOSUPERUSER '
+            "NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS"
+        )
+        connection.exec_driver_sql(f'GRANT USAGE ON SCHEMA public TO "{role_name}"')
+        connection.exec_driver_sql(
+            f"GRANT SELECT, UPDATE ON TABLE public.ingestion_runs, "
+            f'public.intelligence_sources TO "{role_name}"'
+        )
+        connection.exec_driver_sql(
+            f"GRANT SELECT, INSERT ON TABLE public.ingestion_run_events, "
+            f'public.{progress_table} TO "{role_name}"'
+        )
+        connection.exec_driver_sql(
+            f'GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO "{role_name}"'
+        )
+    return role_name
+
+
+def drop_append_only_progress_role(engine, role_name: str) -> None:
+    with engine.begin() as connection:
+        connection.exec_driver_sql(f'DROP OWNED BY "{role_name}"')
+        connection.exec_driver_sql(f'DROP ROLE "{role_name}"')
+
+
 def test_cycle_and_initial_audit_commit_atomically(pg_engine) -> None:
     committed_cycle(pg_engine)
     with Session(pg_engine) as session:
@@ -1058,6 +1096,146 @@ def test_checkpoint_advances_from_committed_pending_run(pg_engine) -> None:
         checkpoint = OperationalPersistenceService(session).advance_checkpoint(run_id=run_id, expected_run_state_version=2, scope_kind="source", partition_key=None, checkpoint_name="catalog", checkpoint_value="v1", expected_previous_version=0, committed_at=NOW + timedelta(seconds=1))
         assert (checkpoint.version, checkpoint.previous_checkpoint_id) == (1, None)
         assert session.get(IngestionRun, run_id).status == "success"
+
+
+@pytest.mark.parametrize("storage", ("checkpoint", "watermark"))
+def test_progress_advances_and_retries_with_append_only_runtime_privileges(
+    pg_engine, storage
+) -> None:
+    if storage == "checkpoint":
+        slug = "cisa-kev"
+        model = SourceCheckpoint
+        first_run = pending_run(pg_engine, slug)
+        with Session(pg_engine) as session, session.begin():
+            OperationalPersistenceService(session).advance_checkpoint(
+                run_id=first_run,
+                expected_run_state_version=2,
+                scope_kind="source",
+                partition_key=None,
+                checkpoint_name="catalog",
+                checkpoint_value="v1",
+                expected_previous_version=0,
+                committed_at=NOW + timedelta(seconds=1),
+            )
+        run_id = pending_run(pg_engine, slug)
+        arguments = dict(
+            run_id=run_id,
+            expected_run_state_version=2,
+            scope_kind="source",
+            partition_key=None,
+            checkpoint_name="catalog",
+            checkpoint_value="v2",
+            expected_previous_version=1,
+            committed_at=NOW + timedelta(seconds=2),
+        )
+        method_name = "advance_checkpoint"
+    else:
+        slug = "nvd"
+        model = SourceWatermark
+        first_run = pending_run(pg_engine, slug)
+        with Session(pg_engine) as session, session.begin():
+            OperationalPersistenceService(session).advance_watermark(
+                run_id=first_run,
+                expected_run_state_version=2,
+                scope_kind="source",
+                partition_key=None,
+                watermark_name="modified",
+                watermark_value=NOW,
+                expected_previous_version=0,
+                committed_at=NOW + timedelta(seconds=1),
+            )
+        run_id = pending_run(pg_engine, slug)
+        arguments = dict(
+            run_id=run_id,
+            expected_run_state_version=2,
+            scope_kind="source",
+            partition_key=None,
+            watermark_name="modified",
+            watermark_value=NOW + timedelta(hours=1),
+            expected_previous_version=1,
+            committed_at=NOW + timedelta(hours=1, seconds=1),
+        )
+        method_name = "advance_watermark"
+
+    role_name = create_append_only_progress_role(pg_engine, model.__tablename__)
+    try:
+        with Session(pg_engine) as session, session.begin():
+            privileges = {
+                privilege: session.scalar(
+                    sa.text("SELECT has_table_privilege(:role, :table, :privilege)"),
+                    {
+                        "role": role_name,
+                        "table": f"public.{model.__tablename__}",
+                        "privilege": privilege,
+                    },
+                )
+                for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE")
+            }
+            assert privileges == {
+                "SELECT": True,
+                "INSERT": True,
+                "UPDATE": False,
+                "DELETE": False,
+            }
+            session.execute(sa.text(f'SET LOCAL ROLE "{role_name}"'))
+            service = OperationalPersistenceService(session)
+            row = getattr(service, method_name)(**arguments)
+            assert (row.version, row.advanced_by_run_id) == (2, run_id)
+            assert session.get(IngestionRun, run_id).status == "success"
+            row_id = row.id
+
+        with Session(pg_engine) as session, session.begin():
+            session.execute(sa.text(f'SET LOCAL ROLE "{role_name}"'))
+            repeated = getattr(
+                OperationalPersistenceService(session), method_name
+            )(**arguments)
+            assert repeated.id == row_id
+            assert counts(session, model) == 2
+    finally:
+        drop_append_only_progress_role(pg_engine, role_name)
+
+
+def test_concurrent_progress_writers_cannot_create_duplicate_next_version(
+    pg_engine,
+) -> None:
+    run_id = pending_run(pg_engine, "cisa-kev")
+    start = Barrier(2)
+    hold_winner = Barrier(2)
+    arguments = dict(
+        run_id=run_id,
+        expected_run_state_version=2,
+        scope_kind="source",
+        partition_key=None,
+        checkpoint_name="catalog",
+        checkpoint_value="v1",
+        expected_previous_version=0,
+        committed_at=NOW + timedelta(seconds=1),
+    )
+
+    def worker() -> str:
+        with Session(pg_engine) as session, session.begin():
+            start.wait(timeout=10)
+            try:
+                OperationalPersistenceService(session).advance_checkpoint(**arguments)
+                outcome = "advanced"
+            except OperationalLockUnavailableError:
+                outcome = "blocked"
+            hold_winner.wait(timeout=10)
+            return outcome
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(lambda _: worker(), range(2)))
+
+    assert sorted(outcomes) == ["advanced", "blocked"]
+    with Session(pg_engine) as session:
+        checkpoints = session.scalars(
+            select(SourceCheckpoint).order_by(SourceCheckpoint.version)
+        ).all()
+        assert [(row.version, row.previous_checkpoint_id) for row in checkpoints] == [
+            (1, None)
+        ]
+        run = session.get(IngestionRun, run_id)
+        assert (run.status, run.state_version) == ("success", 3)
 
 
 def test_same_transaction_checkpoint_advancement_fails_closed(pg_engine) -> None:

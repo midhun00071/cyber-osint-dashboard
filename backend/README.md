@@ -4,46 +4,64 @@ C06 authentication uses Argon2id local credentials and opaque database-backed br
 
 ## Purpose
 
-The backend provides the API, database access, ingestion services, processing logic, and scheduled data-fetching foundation for the Cyber OSINT Dashboard.
+The backend provides the authenticated FastAPI API, PostgreSQL persistence,
+approved ingestion services, processing logic, operational audit state, and
+Prefect orchestration bindings for the Cyber OSINT Dashboard. Ordinary local
+startup is owned by the repository-root [`run.cmd`](../run.cmd); see the
+[`operator guide`](../docs/operator-guide.md) for the supported startup path.
 
-## Planned Responsibilities
+## Responsibilities
 
 - Run the FastAPI backend server.
 - Connect securely to PostgreSQL.
 - Expose dashboard and threat intelligence API endpoints.
 - Store normalized threat and vulnerability records.
-- Fetch approved open-source cybersecurity data.
+- Fetch approved public cybersecurity data only through fixed, bounded source
+  policies and explicitly authorized execution paths.
 - Process, normalize, deduplicate, and classify records.
 - Provide safe logging and error handling.
 - Support backend tests.
 
-## Planned Backend Structure
+## Backend Structure
 
 - app/main.py - FastAPI application entry point
 - app/api/ - API route definitions
 - app/core/ - configuration and logging
 - app/db/ - database session and base setup
 - app/models/ - SQLAlchemy database models
-- app/schemas/ - Pydantic request/response schemas
+- app/api/v1/schemas/ and route-local schemas - Pydantic request/response
+  contracts
 - app/services/ - business logic services
-- app/ingestion/ - external source collectors and jobs
+- app/ingestion/ - fixed-policy collectors, adapters, services, and source
+  registry
+- app/orchestration/ - Prefect contracts, flows, production bindings, and
+  paused-by-default activation-state-preserving deployment registration
 - app/processing/ - normalization, severity mapping, tagging, and deduplication
 - tests/ - backend automated tests
 - alembic/ - database migration files
 
 ## Environment Variables
 
-Use backend/.env.example as the template.
+`backend/.env.example` is the template for direct host-side backend commands.
+The root runner creates missing local files without overwriting existing ones.
+The authoritative classification and secret-handling rules are in
+[`environment-and-secrets.md`](../docs/environment-and-secrets.md).
 
 Never commit real backend/.env files.
 
 ## Dependencies
 
-Initial dependencies are listed in requirements.txt.
+Pinned backend dependencies are listed in `requirements.txt`.
 
 ## Current Status
 
-Phase 1 setup only. Application logic will be added in a later phase.
+The backend implements the current release API, identity/RBAC/audit boundary,
+database models and forward-only migrations, source-policy and ingestion
+services, operational controls, reporting, health, and Prefect orchestration.
+Exactly six approved scheduled handlers are bound, and deployment registration
+is paused-by-default while preserving existing activation state. Current
+operator status, account setup, and activation procedures belong in the single
+canonical [operator guide](../docs/operator-guide.md).
 
 ## Utility API Endpoints
 
@@ -247,6 +265,7 @@ The backend now exposes authenticated, permission-gated source metadata,
 operations summary, cycle/run/event history, durable manual/retry acceptance,
 and atomic pause/resume/disable/enable controls. Mutations use exact-Origin,
 CSRF, strict JSON, caller-owned transactions, closed audit details, and existing
-PostgreSQL idempotency/concurrency controls. Production handler bindings remain
-empty, so acceptance cannot fabricate execution. See
+PostgreSQL idempotency/concurrency controls. Exactly six approved production
+handlers are bound; the current release deployment is ACTIVE, while manual
+acceptance controls still cannot fabricate execution. See
 [C07 authenticated operations experience](../docs/c07-authenticated-operations-experience.md).

@@ -34,9 +34,10 @@ database session and does not mutate its input.
 ## Raw payload and error policy
 
 The complete public wrapper is deterministically serialized with sorted JSON
-keys. The UTF-8 representation must not exceed 512 KiB. The same canonical bytes
-produce a SHA-256 content hash for later update detection. Accepted payloads are
-returned as a deep JSON copy suitable for later bounded JSONB persistence.
+keys. The canonical UTF-8 JSON representation must not exceed 2 MiB. Oversized
+records fail safely and are not silently truncated. The same canonical bytes
+produce a SHA-256 content hash for later update detection. Accepted payloads
+are returned as a deep JSON copy suitable for later bounded JSONB persistence.
 
 All upstream content is untrusted. Normalization errors use controlled messages
 and never include raw payload fragments, headers, credentials, environment
@@ -181,8 +182,10 @@ limit. It validates HTTP status before parsing, rejects a valid oversized
 `Content-Length` before consuming the body, and otherwise reads decoded bytes
 incrementally. Reading stops immediately when the cumulative body would exceed
 20 MiB; partial oversized content is discarded and JSON parsing occurs only
-after a bounded read completes. Each accepted normalized CVE payload remains
-capped at 512 KiB.
+after a bounded read completes. Independently of that response/network bound,
+each accepted normalized CVE payload remains capped at 2 MiB of canonical UTF-8
+JSON. Oversized records fail safely without truncation, so resource-exhaustion
+controls remain enforced.
 
 Candidate memory is separately bounded. The default multiplier retains only the
 best 10 Critical, 5 High, 3 Medium, and 2 Low full normalized candidates per

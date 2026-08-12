@@ -6,6 +6,12 @@
 **Target branch:** `dev`
 **Release target:** mentor-accessible staging deployment by 11 August 2026
 
+> Historical scope: this report records the C11 assessment at the checkpoint
+> and date above. It is not the final Git, activation, staging, or handover
+> evidence for `HANDOVER-CLEANUP-01`. For current local operation, use the
+> [operator guide](operator-guide.md); preserve this report's test totals and
+> runtime claims as historical evidence.
+
 ## Executive summary
 
 The Alpha Data / Cyber OSINT Dashboard is a full-stack defensive intelligence platform for collecting, normalising, correlating, searching, visualising, and reporting approved public cybersecurity information. The release candidate provides authenticated analyst and operator workflows, bounded and allow-listed APIs, PostgreSQL persistence and migrations, source governance, Prefect-oriented ingestion controls, reporting, audit trails, system health, monitoring, and local backup/recovery tooling.

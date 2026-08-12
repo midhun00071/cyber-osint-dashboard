@@ -88,7 +88,9 @@ class AuthenticationService:
                         AuthIdentity.id == identity.identity_id,
                         AuthIdentity.provider_key == "local",
                     )
-                    .with_for_update()
+                    .with_for_update(
+                        of=(AuthUser, AuthLocalCredential, AuthUserRole)
+                    )
                 ).one_or_none()
             authoritative_state_valid = (
                 authoritative_row is not None

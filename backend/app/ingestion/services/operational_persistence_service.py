@@ -1124,6 +1124,9 @@ class OperationalPersistenceService:
         return _required_utc_timestamp(rows[0][0])
 
     def _current_checkpoint(self, source_id, scope, partition, name):
+        # advance_checkpoint holds the transaction-scoped progress-identity
+        # advisory lock before reading this append-only history. A row lock
+        # would incorrectly require UPDATE privilege on immutable evidence.
         query = select(SourceCheckpoint).where(
             SourceCheckpoint.source_id == source_id,
             SourceCheckpoint.scope_kind == scope,
@@ -1135,10 +1138,13 @@ class OperationalPersistenceService:
             else SourceCheckpoint.partition_key == partition
         )
         return self._session.scalars(
-            query.order_by(SourceCheckpoint.version.desc()).limit(1).with_for_update()
+            query.order_by(SourceCheckpoint.version.desc()).limit(1)
         ).first()
 
     def _current_watermark(self, source_id, scope, partition, name):
+        # advance_watermark holds the transaction-scoped progress-identity
+        # advisory lock before reading this append-only history. A row lock
+        # would incorrectly require UPDATE privilege on immutable evidence.
         query = select(SourceWatermark).where(
             SourceWatermark.source_id == source_id,
             SourceWatermark.scope_kind == scope,
@@ -1150,14 +1156,14 @@ class OperationalPersistenceService:
             else SourceWatermark.partition_key == partition
         )
         return self._session.scalars(
-            query.order_by(SourceWatermark.version.desc()).limit(1).with_for_update()
+            query.order_by(SourceWatermark.version.desc()).limit(1)
         ).first()
 
     def _existing_checkpoint_retry(self, run, expected, scope, partition, name, value, previous):
         if run.status not in {"success", "no_change"}:
             return None
         rows = self._session.scalars(
-            select(SourceCheckpoint).where(SourceCheckpoint.advanced_by_run_id == run.id).with_for_update()
+            select(SourceCheckpoint).where(SourceCheckpoint.advanced_by_run_id == run.id)
         ).all()
         if len(rows) == 1:
             row = rows[0]
@@ -1182,7 +1188,7 @@ class OperationalPersistenceService:
         if run.status not in {"success", "no_change"}:
             return None
         rows = self._session.scalars(
-            select(SourceWatermark).where(SourceWatermark.advanced_by_run_id == run.id).with_for_update()
+            select(SourceWatermark).where(SourceWatermark.advanced_by_run_id == run.id)
         ).all()
         if len(rows) == 1:
             row = rows[0]

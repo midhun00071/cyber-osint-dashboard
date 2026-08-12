@@ -2,69 +2,66 @@
 
 ## Purpose
 
-This document tracks deployment preparation notes for the Cyber OSINT Dashboard / Alpha Data project.
+This concise status note distinguishes the implemented runtime architecture
+from local development and the remaining external staging work. Start with the
+primary self-contained [`README.md`](../README.md); use the
+[operator guide](operator-guide.md) for detailed specialist operation and
+[production Docker deployment](production-docker-deployment.md) for the
+protected deployment procedure.
 
-## Planned Deployment Approach
+## Implemented Runtime Architecture
 
-The MVP will be prepared for Docker-based deployment with:
+The repository implements FastAPI, Next.js, PostgreSQL, self-hosted Prefect,
+Docker images, development Compose, and a separate production-oriented Compose
+baseline. The production package also includes Caddy edge policy, private
+monitoring, secret-file references, and encrypted backup/isolated-restore
+tooling. This is implemented architecture, not proof that an external staging
+environment is currently available.
 
-- FastAPI backend service
-- Next.js frontend service
-- PostgreSQL database service
-- Docker Compose for local deployment-style testing
+Exactly six approved scheduled source handlers are code-bound to the Prefect
+deployment. Its fixed schedule is `17 */2 * * *` in `Asia/Dubai`, using the
+`alpha-data-process` process work pool and backend working directory
+`/opt/alpha-data/backend`. Ordinary bootstrap creates a missing deployment
+**PAUSED** and preserves the activation state of an existing deployment while
+updating it. It does not run ingestion or contact a live source.
 
-## Local Development Targets
+The current local release deployment was explicitly approved and activated on
+11 August 2026. Deployment
+`alpha-data-parent-ingestion-cycle/alpha-data-ingestion-cycle` (ID
+`8e584852-6ffc-4806-9cc9-22b758767bf3`) is verified with `paused=False`, status
+`READY`, its single schedule active, working directory
+`/opt/alpha-data/backend`, concurrency `1`, and collision strategy `CANCEL_NEW`.
+No manual Prefect flow run was used to activate it.
 
-Expected local URLs:
+## Local Development
 
-- Frontend: http://localhost:3000
-- Backend: http://localhost:8000
-- PostgreSQL: localhost:5432
-- Prefect UI/API: http://127.0.0.1:4200
+This concise status note does not repeat every local setup, URL, activation,
+restart, or shutdown step. Use the primary [README](../README.md) for the
+complete mentor entry path and the [operator guide](operator-guide.md) for
+specialist operational detail. At the deployment boundary, local application
+and Prefect administration ports remain loopback-only, the dedicated Prefect
+metadata database has no host port, and named volumes provide persistence.
 
-Local Prefect metadata uses a separate internal-only PostgreSQL service with no
-host port and persistent `prefect_postgres_data`. The non-root Prefect server
-serves its real UI from the writable `/var/lib/prefect/ui` path in the preserved
-`prefect_data` volume. The old local SQLite file is preserved separately and is
-not represented as migrated.
+Current release validation also confirmed local runtime health and successful
+authentication after the PostgreSQL authentication row-lock scope correction;
+auth identity immutability and least privilege remain preserved.
 
-## Environment Requirements
+## Environment Boundary
 
-Deployment environments must provide:
+`.env.example` is the local structural template, while
+`.env.production.example` is the separate staging/production reference. Secret
+classification, generation, ownership, and handling belong exclusively in
+[environment and secrets](environment-and-secrets.md).
 
-- Database credentials through environment variables.
-- Backend configuration through environment variables.
-- Frontend public API base URL.
-- Approved data-source API keys only when required.
+## External Staging Status
 
-## Production Considerations
+No mentor-accessible external staging deployment is claimed by this document.
+Public staging/DNS/certificate evidence, external alert delivery, an approved
+off-host backup destination, protected production credential provisioning and
+rotation, staging UAT, and measured staging RPO/RTO remain operator/approval
+dependencies. Production Prefect metadata remains on the separately documented
+production baseline until a reviewed production migration task changes it.
 
-Before production-style deployment:
-
-- Disable or protect admin ingestion endpoints.
-- Restrict CORS to trusted frontend domains.
-- Use HTTPS.
-- Use stronger database credentials.
-- Avoid exposing database ports publicly.
-- Configure logging and monitoring.
-- Run tests before deployment.
-- Review dependencies for known vulnerabilities.
-
-## Docker Notes
-
-The development Compose workflow remains available for local work. P7-01 adds a
-separate production-oriented Compose entry point with non-root application
-images, private PostgreSQL networking, manual-only migrations, health checks,
-bounded logging, and restart controls. See
-[Production Docker deployment](production-docker-deployment.md) for the
-approved commands and limitations.
-
-## Current Status
-
-The C09 package includes Caddy TLS termination, Prefect, private monitoring,
-Docker secret-file references, and encrypted backup/isolated-restore tooling.
-Only Caddy is host-published. Public staging/DNS/certificate evidence, external
-alert delivery, an approved off-host destination, production credential
-rotation, and measured RPO/RTO evidence remain B9-03/operator responsibilities.
-The post-C11 PF-01/PF-02 correction is local-development evidence only;
-production Prefect metadata remains on the documented SQLite baseline.
+The current local recurring Prefect deployment is ACTIVE, but it runs only while
+the local Docker/Prefect infrastructure is running. A successful local startup,
+login, activation, build, or health check is not external staging evidence.

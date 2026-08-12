@@ -17,6 +17,7 @@ from app.orchestration.contracts import (
     CycleEvidence,
     CycleResult,
     CycleStatus,
+    EligibilityMode,
     FailureCategory,
     FailureClassification,
     PersistenceAdapter,
@@ -573,14 +574,18 @@ def run_parent_cycle(
     stagger: Callable[[int], None] = time.sleep,
     source_runner: Callable[..., SourceExecutionResult] = run_source_once,
 ) -> CycleResult:
-    """Run every enabled policy in deterministic order and finalize truthfully."""
+    """Run every scheduled policy in deterministic order and finalize truthfully."""
 
     slot = validate_scheduled_slot(scheduled_for)
     if not isinstance(persistence, PersistenceAdapter):
         raise ContractValidationError(
             "The persistence adapter does not satisfy its contract."
         )
-    policies = list_source_policies()
+    policies = tuple(
+        policy
+        for policy in list_source_policies()
+        if policy.eligibility_mode is EligibilityMode.SCHEDULED
+    )
     allowed = {policy.source_slug for policy in policies}
     if not set(handlers).issubset(allowed) or any(
         not isinstance(handler, SourceHandler) for handler in handlers.values()

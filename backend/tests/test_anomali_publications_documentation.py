@@ -17,7 +17,6 @@ ARCHITECTURE_PATH = PROJECT_ROOT / "docs" / "architecture.md"
 DATA_SOURCES_PATH = PROJECT_ROOT / "docs" / "data-sources.md"
 SOURCE_ASSESSMENT_PATH = PROJECT_ROOT / "docs" / "source-assessment-matrix.md"
 ANOMALI_DOCUMENTS = (
-    README_PATH,
     BACKEND_README_PATH,
     ARCHITECTURE_PATH,
     DATA_SOURCES_PATH,
@@ -29,8 +28,8 @@ def normalized_document(path: Path) -> str:
     return " ".join(path.read_text(encoding="utf-8").split())
 
 
-def test_primary_readmes_document_both_manual_anomali_commands() -> None:
-    for path in (README_PATH, BACKEND_README_PATH):
+def test_canonical_source_references_document_both_manual_anomali_commands() -> None:
+    for path in (BACKEND_README_PATH, DATA_SOURCES_PATH):
         document = normalized_document(path)
 
         assert "-m app.ingestion.anomali_publications_live_cli" in document
@@ -40,8 +39,8 @@ def test_primary_readmes_document_both_manual_anomali_commands() -> None:
         assert "1 through 20" in document
 
 
-def test_primary_readmes_document_closed_manual_only_live_boundary() -> None:
-    for path in (README_PATH, BACKEND_README_PATH):
+def test_canonical_source_references_document_closed_manual_only_live_boundary() -> None:
+    for path in (BACKEND_README_PATH, DATA_SOURCES_PATH):
         document = normalized_document(path)
 
         assert "manually triggered only" in document or "manual-only" in document
@@ -55,8 +54,8 @@ def test_primary_readmes_document_closed_manual_only_live_boundary() -> None:
         assert "response sizes" in document
 
 
-def test_primary_readmes_document_live_metadata_and_persistence_boundaries() -> None:
-    for path in (README_PATH, BACKEND_README_PATH):
+def test_canonical_source_references_document_live_metadata_and_persistence_boundaries() -> None:
+    for path in (BACKEND_README_PATH, DATA_SOURCES_PATH):
         document = normalized_document(path)
 
         assert "metadata only" in document or "metadata-only" in document
@@ -71,7 +70,7 @@ def test_primary_readmes_document_live_metadata_and_persistence_boundaries() -> 
         assert "rejected before adapter invocation" in document
         assert "before a database session is opened" in document
         assert "atomic and safely audited" in document
-        assert "raw HTTP" in document
+        assert "raw HTTP" in document or "Raw HTTP" in document
         assert "database errors" in document
 
 
@@ -108,8 +107,8 @@ def test_documents_cover_live_ioc_like_metadata_rejection() -> None:
         assert "before adapter invocation" in anomali_section
 
 
-def test_primary_readmes_document_manual_trigger_exclusions_and_fallback() -> None:
-    for path in (README_PATH, BACKEND_README_PATH):
+def test_canonical_source_references_document_manual_trigger_exclusions_and_fallback() -> None:
+    for path in (BACKEND_README_PATH, DATA_SOURCES_PATH):
         document = normalized_document(path)
 
         assert "scheduler" in document
@@ -188,10 +187,17 @@ def test_anomali_registry_matches_fixed_live_and_fallback_definition() -> None:
 
 
 def test_ibm_remains_documented_as_local_only_not_live_ingestion() -> None:
-    readme = normalized_document(README_PATH)
+    readme = normalized_document(DATA_SOURCES_PATH)
     assessment = normalized_document(SOURCE_ASSESSMENT_PATH)
 
-    assert "Manual, bounded local-JSON imports for separate IBM X-Force" in readme
+    assert "manual-only importer" in readme
     assert "The application performs no IBM request" in readme
     assert "P9-07 performs no network requests" in assessment
     assert "P9-07 IBM X-Force local publication-metadata families" in assessment
+
+
+def test_root_readme_routes_source_detail_without_duplicate_commands() -> None:
+    readme = normalized_document(README_PATH)
+    assert "[Data sources](docs/data-sources.md)" in readme
+    assert "app.ingestion.anomali_publications_live_cli" not in readme
+    assert "app.ingestion.ibm_x_force_publications_cli" not in readme

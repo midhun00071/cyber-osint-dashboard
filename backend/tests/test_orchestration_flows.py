@@ -397,7 +397,7 @@ def test_non_request_eligibility_outcomes_remain_distinct() -> None:
         assert eligibility.request_allowed is False
 
 
-def test_parent_cycle_orders_every_policy_and_isolates_failure() -> None:
+def test_parent_cycle_orders_scheduled_policies_and_isolates_failure() -> None:
     persistence = FakePersistence()
     seen = []
     stagger = []
@@ -420,7 +420,11 @@ def test_parent_cycle_orders_every_policy_and_isolates_failure() -> None:
         source_runner=source_runner,
     )
 
-    policies = list_source_policies()
+    policies = tuple(
+        policy
+        for policy in list_source_policies()
+        if policy.eligibility_mode is EligibilityMode.SCHEDULED
+    )
     assert seen == [policy.source_slug for policy in policies]
     assert stagger == [policy.stagger_seconds for policy in policies]
     assert result.sources_expected == result.sources_started == len(policies)
@@ -430,6 +434,95 @@ def test_parent_cycle_orders_every_policy_and_isolates_failure() -> None:
     assert evidence.incomplete_source_slugs == (policies[1].source_slug,)
     assert all(item.status is ResultStatus.SUCCESS for item in result.source_results)
     assert persistence.finalized == result
+
+
+def test_healthy_parent_cycle_runs_only_scheduled_policies() -> None:
+    persistence = FakePersistence()
+    policies_before = list_source_policies()
+    scheduled = tuple(
+        policy
+        for policy in policies_before
+        if policy.eligibility_mode is EligibilityMode.SCHEDULED
+    )
+    manual_only = tuple(
+        policy
+        for policy in policies_before
+        if policy.eligibility_mode is EligibilityMode.MANUAL_ONLY
+    )
+    seen = []
+
+    def source_runner(**kwargs):
+        policy = kwargs["policy"]
+        seen.append(policy.source_slug)
+        run = persistence.acquire_source_run(kwargs["cycle_id"], policy.source_slug)
+        status = (
+            ResultStatus.SUCCESS
+            if len(seen) % 2
+            else ResultStatus.NO_CHANGE
+        )
+        result = SourceExecutionResult(
+            source_slug=policy.source_slug,
+            status=status,
+            counters=(
+                ReconciledCounters(fetched=1, created=1)
+                if status is ResultStatus.SUCCESS
+                else ReconciledCounters()
+            ),
+            safe_message="The scheduled source completed truthfully.",
+        )
+        commit_fake_result(persistence, policy, run, result)
+        return result
+
+    result = run_parent_cycle(
+        scheduled_for=SLOT,
+        persistence=persistence,
+        handlers={},
+        stagger=lambda _: None,
+        source_runner=source_runner,
+    )
+
+    assert len(policies_before) == 11
+    assert len(scheduled) == 6
+    assert len(manual_only) == 5
+    assert seen == [policy.source_slug for policy in scheduled]
+    assert not set(seen).intersection(policy.source_slug for policy in manual_only)
+    assert persistence.expected_sources == 6
+    assert result.status is CycleStatus.SUCCESS
+    assert result.sources_expected == 6
+    assert result.sources_started == 6
+    assert result.sources_completed == 6
+    assert result.sources_successful == 6
+    assert result.sources_non_successful == 0
+    assert list_source_policies() == policies_before
+    assert all(
+        policy.eligibility_mode is EligibilityMode.MANUAL_ONLY
+        for policy in manual_only
+    )
+
+
+def test_parent_cycle_rejects_manual_only_handler_binding_before_mutation() -> None:
+    persistence = FakePersistence()
+    manual_policy = next(
+        policy
+        for policy in list_source_policies()
+        if policy.eligibility_mode is EligibilityMode.MANUAL_ONLY
+    )
+
+    with pytest.raises(ContractValidationError, match="bindings"):
+        run_parent_cycle(
+            scheduled_for=SLOT,
+            persistence=persistence,
+            handlers={
+                manual_policy.source_slug: next(
+                    iter(DEFAULT_SOURCE_HANDLERS.values())
+                )
+            },
+            stagger=lambda _: None,
+            source_runner=lambda **_: pytest.fail("manual-only handler was executed"),
+        )
+
+    assert persistence.expected_sources == 0
+    assert persistence.acquire_count == 0
 
 
 def test_parent_never_reports_success_for_non_request_or_cancelled_results() -> None:

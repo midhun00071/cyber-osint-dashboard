@@ -1,1209 +1,1408 @@
 # Alpha Data / Cyber OSINT Dashboard
 
-C06 adds backend local identity, opaque database-backed browser sessions, closed
-RBAC, and immutable security auditing. Only SHA-256 session-token and CSRF-token
-hashes are stored; passwords use Argon2id. Backend authorization is
-authoritative: content routes require `content.read`, and user-management and
-audit-search routes are Administrator-only. Hiding a frontend button is not
-authorization.
+Alpha Data is a full-stack defensive cybersecurity OSINT platform. It collects
+approved public intelligence, validates and normalizes it, stores it in
+PostgreSQL, schedules approved recurring work with Prefect, exposes bounded
+FastAPI query services, and presents the results in an authenticated Next.js
+dashboard.
 
-C07 integrates frontend login, authenticated bootstrap, protected navigation,
-and permission-aware controls; unauthenticated data requests still receive
-`401`, and backend authorization remains authoritative. Repository validation
-does not provision a real staging account or execute the manual bootstrap CLI.
-SSO is absent and remains approval-gated. See
-`docs/c06-identity-auth-rbac-audit.md` and
-`docs/c07-authenticated-operations-experience.md`.
+This repository is an internship release prepared for mentors, analysts, and
+technical reviewers. It provides a validated local application and a
+production-oriented deployment baseline. It is not proof of a complete,
+public-internet-ready service or of a mentor-accessible external staging host.
 
-## Project overview
+This README is the primary, self-contained entry point for a zero-knowledge
+mentor handover. The linked operator guide remains the detailed specialist
+runbook for routine and exceptional operations.
 
-Alpha Data is a full-stack defensive cybersecurity OSINT dashboard for
-collecting, normalizing, storing, searching, visualizing, and reviewing approved
-public cybersecurity intelligence. It combines a FastAPI API, PostgreSQL,
-operator-invoked ingestion workflows, and a Next.js analyst interface for
-vulnerability and publication awareness, including UAE/global context.
+## Start Here — Fresh Laptop Setup
 
-This repository is an internship project prepared for mentor and senior-reviewer
-handover. It provides a tested local development workflow and a hardened
-production-oriented Docker Compose baseline. It is not a claim of a complete,
-public-internet-ready production platform.
+This is the complete supported local path for a reader with no prior Alpha Data
+knowledge. Follow the steps in order. The primary verified environment is
+Windows with Windows PowerShell.
 
-## Defensive and ethical-use boundary
+### 1. Install the required tools
 
-Use this project only for defensive, ethical, authorized, educational, or
-lab-safe cybersecurity work. It must not be used for exploit execution,
-unauthorized scanning or probing, phishing, credential theft, persistence,
-evasion, stealth, bypass activity, malware retrieval, or steps to compromise
-real systems.
+The normal containerized startup requires:
 
-External OSINT content is untrusted data. The implemented collectors use fixed,
-developer-controlled sources and bounded inputs; the backend returns allow-listed
-fields, and the frontend renders external text through defensive controls. A
-source-registry entry does not grant collection authorization, licensing, API
-access, storage rights, or redistribution rights. Future source work requires a
-separate review of access, terms, rate limits, and project approval.
+- **Git**, with access to the approved repository;
+- **Windows PowerShell**, which `run.cmd` invokes directly;
+- **Docker Desktop** or an equivalent Docker Engine with **Docker Compose v2**;
+  and
+- enough local permission to build images and bind loopback ports `3000`,
+  `8000`, `4200`, and `5432`.
 
-## Current implementation status
+Start Docker Desktop and wait until the Docker daemon reports that it is ready.
+Verify the tools in PowerShell:
 
-The current MVP includes the database schema and migrations, manual defensive
-ingestion and enrichment services, read-only APIs, backend-connected dashboard
-views, security hardening, automated tests, development runners, a self-hosted
-Prefect 3.8.1 server and process worker, and production-oriented Docker
-documentation. Scheduled ingestion remains inactive: there is no startup
-ingestion or public ingestion API, exactly six reviewed scheduled handlers are
-code-bound, and the single deployment definition is paused by default. The
-bindings are `nvd`, `first-epss`, `cisa-kev`,
-`cert-eu-security-advisories`,
-`google-threat-intelligence-public-research`, and
-`mandiant-public-threat-research`. Binding does not equal activation: Prefect
-remains paused, no deployment has been activated, and no live source schedule
-is claimed. C07 provides authorized, audited operator controls, but they do not
-bypass source policy or make an unavailable handler executable.
-
-Key implemented capabilities include:
-
-- PostgreSQL persistence with normalized intelligence, provenance, identifiers,
-  enrichment data, and sanitized ingestion audit records.
-- Manual, bounded ingestion or enrichment for the approved source families
-  summarized below.
-- Read-only dashboard, article, and intelligence APIs with validated search,
-  filtering, pagination, and safe response fields.
-- Backend-connected dashboard summaries, vulnerability and article lists,
-  detail pages, trends, loading/empty/error states, and safe external links.
-- Exact-origin CORS, API security headers, server-generated request IDs,
-  sanitized error responses, and allow-listed application logging.
-- Backend pytest coverage, frontend Vitest/React Testing Library coverage,
-  TypeScript checking, production builds, manual QA procedures, and deployment
-  validation evidence.
-- Separate development and production-oriented Compose definitions with manual
-  Alembic migrations in the production-oriented workflow.
-- A pinned, non-root self-hosted Prefect server and process worker with
-  persistent orchestration state, application orchestration code, application-
-  role database access for the worker, and the fixed `alpha-data-process` work
-  pool.
-- Immutable policies for every enabled implemented source, caller-transaction-
-  owned operational persistence, database-backed source no-overlap, safe
-  checkpoint resume, and a fixed two-hour parent schedule contract.
-
-## Technology stack
-
-- Frontend: Next.js, React, and TypeScript.
-- Backend: Python 3.13, FastAPI, Pydantic, and Uvicorn.
-- Persistence: PostgreSQL, SQLAlchemy, and Alembic.
-- Source clients: httpx and feedparser.
-- Containers: Docker and Docker Compose.
-- Workflow orchestration platform: self-hosted Prefect 3.8.1.
-- Testing: pytest; Vitest, jsdom, React Testing Library, and TypeScript checks.
-
-APScheduler remains removed. Prefect is pinned exactly to 3.8.1. The C01
-deployment contract uses `17 */2 * * *` in `Asia/Dubai` with parent concurrency
-one, but registration is explicit and paused by default. C01 did not activate a
-schedule or execute a source workflow.
-
-## Repository structure
-
-| Path | Purpose |
-| --- | --- |
-| [`backend/`](backend/) | FastAPI application, database models, migrations, ingestion and processing services, and pytest tests. |
-| [`frontend/`](frontend/) | Next.js App Router dashboard, service layer, types, styles, and Vitest component/page tests. |
-| [`database/`](database/) | PostgreSQL initialization material and database notes. |
-| [`docs/`](docs/) | Architecture, source, security, testing, environment, and deployment documentation. |
-| [`scripts/`](scripts/) | Safe local developer setup helper. |
-| [`prefect/`](prefect/) | Pinned non-root Prefect server/worker image containing the backend runtime and orchestration package. |
-| [`run.cmd`](run.cmd) / [`run.ps1`](run.ps1) | Windows entry point and PowerShell implementation for setup, validation, and local execution. |
-| [`docker-compose.yml`](docker-compose.yml) | Local development Compose stack. |
-| [`compose.prod.yml`](compose.prod.yml) | Standalone production-oriented Compose baseline. |
-
-## Ingestion control and source scope
-
-No collection or enrichment occurs automatically. The six reviewed scheduled
-handlers are code-bound but inactive while Prefect remains paused; the commands
-below remain explicit operator workflows. No command below runs on FastAPI
-startup, from an active scheduler, through a public write endpoint, or from the
-frontend.
-
-Implemented source workflows:
-
-- Manual, bounded NVD CVE ingestion
-- Manual, bounded FIRST EPSS enrichment for existing CVEs
-- Manual, bounded CISA KEV enrichment for existing CVEs
-- Manual, bounded CERT-EU Security Advisories RSS ingestion
-- Manual, bounded live collection and reviewed local-JSON fallback for Censys
-  ARC research and Rapid Response publication metadata
-- Manual, bounded Google Cloud Threat Intelligence RSS ingestion for public
-  Google Threat Intelligence Group and Mandiant publication metadata
-- Manual, bounded live collection and reviewed local-JSON fallback for Anomali
-  Cyber Watch publication metadata
-- Manual, bounded local-JSON imports for separate IBM X-Force public research
-  and public OSINT advisory metadata families
-- Developer-controlled source registry metadata for implemented sources and
-  disabled planned public-source families
-- Common publication pipeline for validating and persisting approved
-  pre-fetched public publication candidates
-- Manual, dry-run-by-default UAE relevance classification and deterministic
-  rule-strength confidence backfill for existing records
-- Idempotent vulnerability persistence and source provenance
-- Sanitized ingestion runs, per-record outcomes, and error auditing
-- Read-only backend intelligence API endpoints for stored CVE records
-- Read-only dashboard summary endpoint for stored KPI and freshness metrics
-- Frontend dashboard KPI cards connected to the backend summary endpoint
-- Frontend dashboard vulnerability table connected to the read-only intelligence
-  API, with backend-powered search, severity filtering, and pagination
-- Frontend CVE/vulnerability detail page connected to the read-only
-  intelligence detail API
-- Frontend latest articles feed connected to the read-only article API, with
-  backend-powered search, category filtering, scope filtering, and pagination
-- Frontend article detail page connected to the read-only article detail API
-- Frontend recent trends panel connected to existing read-only APIs, with
-  bounded stored-data severity, category, and timeline visualizations
-- Release dashboard panels use authenticated backend APIs or explicit
-  unavailable/empty states; no production preview dataset is displayed.
-
-The local development environment, backend foundation, database schema, and
-backend-connected frontend are implemented. NVD ingestion, FIRST EPSS enrichment,
-CISA KEV enrichment, CERT-EU RSS ingestion, Censys publication metadata
-ingestion, Google TI/Mandiant publication ingestion, both Anomali publication
-workflows, and IBM X-Force catalogue imports remain manual-only: they are not
-scheduled and are not connected to FastAPI startup, background ingestion, API
-routes, or the frontend dashboard.
-
-The historical B2-01 platform remains the infrastructure foundation. C01 now
-adds reusable orchestration contracts, generic flow logic, persistence adapters,
-and a reproducible deployment definition without converting any manual source
-collector. At the C01 checkpoint, the production binding registry is
-intentionally empty, activation fails closed while scheduled-eligible handlers
-are missing, and Compose does not register or execute the deployment. C02 later
-provided the reviewed handlers. SIX-BIND-01 now reuses that builder for exactly
-the six approved production bindings without registering, activating, or
-executing the deployment.
-
-### Source registry foundation
-
-P9-02 adds an immutable backend source registry for safe source metadata,
-canonical source slugs, implementation status, and developer-controlled host
-allow-lists. The registry marks NVD, FIRST EPSS, CISA KEV, CERT-EU Security
-Advisories, the two manual Censys publication families, the two Google
-Threat Intelligence/Mandiant public RSS publication families, and the Anomali
-Cyber Watch live-and-fallback definition as enabled implemented sources. P9-07
-also enables only the `ibm-x-force-public-research` and
-`ibm-x-force-public-osint-advisories` manual catalogue definitions. Other
-Anomali and IBM X-Force families remain unapproved.
-
-Registry entries do not grant authorization, licensing, API access, or
-collection approval. No public source-management API, scheduler, startup
-ingestion, or frontend ingestion workflow is installed. Source ingestion
-remains manual-only.
-
-### Common publication pipeline
-
-P9-03 adds a shared backend pipeline for already-fetched and already-parsed
-public publication candidates. The pipeline validates source registry status,
-publication-compatible source families, HTTPS URLs, exact allowed hostnames,
-safe shallow metadata, timezone-aware timestamps, deterministic title and URL
-fingerprints, and caller-owned database persistence. Adapters enter through
-`PublicationCandidate` validation only; they cannot supply arbitrary normalized
-source definitions or runtime host allow-lists.
-
-The stored article item type is derived from the registered source content
-family. Required identity fields such as source external ID and title are
-rejected when oversized rather than silently truncated. Safe source metadata is
-defensively copied, shallow, bounded, and screened for sensitive header, token,
-password, signed-URL alias, and credential-style keys. Malformed ASCII control
-characters and Unicode surrogates are rejected before hashing or persistence;
-normal human-readable Unicode remains supported.
-
-Publication identity handling supports the trusted `security_advisory` and
-`threat_report` article types without linking identities across those types.
-Publication timestamps are runtime validated and normalized to UTC before
-hashing and storage. Publication URLs reject credential-bearing or signed-query
-aliases, including common separator and case variants, while continuing to
-strip ordinary tracking parameters. Raw URL control characters are rejected
-before parsing rather than silently cleaned.
-
-CERT-EU RSS ingestion now uses this shared persistence path through its
-existing manual service facade. P9-03 does not add new collectors, new vendor
-adapters, scheduling, API-triggered ingestion, database migrations, frontend
-changes, article-body fetching, or live network behavior.
-
-P9-04 adds a source-specific local-file adapter for operator-prepared metadata
-about official Censys ARC research and Rapid Response pages. Those upstream
-public pages remain unstructured publication content; only the operator-supplied
-import catalogue is strict structured JSON. Every accepted record enters through
-the same common publication pipeline. The later bounded live collector uses only
-two fixed public discovery locations and reuses this adapter and pipeline. It
-does not add general Censys crawling or scraping, a Censys API integration,
-account or API key configuration, exposure/host/certificate/scan data, search,
-or rescan capability.
-
-P9-05 adds a manual shared-feed adapter for the official Google Cloud Threat
-Intelligence RSS feed at
-`https://feeds.feedburner.com/threatintelligence/pvexyqv7v0v`. Entries are
-persisted only when the authoritative feed author is exactly `Google Threat
-Intelligence Group` or `Mandiant`; those authors map to separate source slugs
-and source-separated identifiers. The collector validates only the exact
-FeedBurner collection host, while stored publication URLs must use exact host
-`cloud.google.com` and path `/blog/topics/threat-intelligence/...`. The command
-stores metadata only and does not fetch article bodies, scrape pages, ingest
-developer documentation, use Google Threat Intelligence or VirusTotal APIs, use
-credentials, submit or retrieve files/samples, extract IOCs, schedule work, run
-at startup, or expose a public ingestion endpoint.
-
-P9-06 provides the reviewed local-JSON catalogue for operator-prepared metadata
-about the official Anomali Cyber Watch series. The local adapter validates the
-strict schema, bounds, source identity, timestamps, and plain-text fields, while
-catalogue review ensures that prohibited article content and indicators are not
-supplied. A later secure collector adds manual-only live metadata collection
-from the single fixed discovery URL `https://www.anomali.com/blog`. It accepts no
-arbitrary URL, restricts requests to exact HTTPS host `www.anomali.com` and
-article path family `/blog/anomali-cyber-watch-`, does not parse article-body
-prose, and rejects IOC-like selected metadata before adapter invocation. General
-Anomali content, ThreatStream, commercial feeds/APIs, STIX/TAXII, and STAXX are
-not implemented.
-
-P9-07 adds two separate manual local-JSON catalogues for IBM X-Force metadata.
-Research records require exact `www.ibm.com/think/x-force/<lower-kebab-slug>`
-URLs and become `threat_report` items. Public OSINT advisory records require
-exact `exchange.xforce.ibmcloud.com/osint/guid%3A<32-hex>` URLs and become
-`security_advisory` items. The application performs no IBM request, scraping,
-guest browsing, IBMid automation, API access, report/PDF download, IOC or
-reputation ingestion, STIX/TAXII processing, or paid-tier integration.
-
-P9-10 now includes bounded STIX 2.1 validation/persistence and a fixed-policy
-TAXII 2.1 collection client. The separate immutable TAXII policy fixes one
-canonical HTTPS API root, exact collection ID, derived objects endpoint,
-timeouts, total monotonic deadline, and response/page/object/token limits. The
-client permits only exact `httpx.BasicAuth`, revalidates the authenticated
-method, URL, query, fixed header allow-list, and bounded timeout extensions
-immediately before transport, and rejects redirects or invalid media types. It
-requests identity transfer encoding, rejects compressed or malformed content
-encodings, and counts raw streamed bytes. Per-collection thread filters suppress
-HTTPX/HTTPCore transport records so pagination tokens, response headers, and
-cookies do not enter third-party HTTP logs. Opaque pagination tokens travel only
-to the same endpoint, and combined pages are rechecked against aggregate JSON
-tree limits before whole-document STIX validation and the caller-owned import
-transaction. The production STIX and TAXII registries
-remain empty, so no live source or approved live execution is configured.
-Testing uses only synthetic files and `httpx.MockTransport`; no live TAXII
-request was made.
-There is no TAXII CLI, API route, frontend control, scheduler, startup hook, or
-P9-11 threat-entity implementation. See
-[STIX/TAXII Import](docs/stix-taxii-import.md) for the complete boundary.
-
-## Security Principles
-
-- Do not commit real .env files.
-- Do not hardcode API keys, passwords, tokens, or private configuration.
-- Keep external data collection limited to approved public sources.
-- Do not fetch dangerous files or malware samples.
-- Validate backend inputs.
-- Render external text safely in the frontend.
-- Log errors without exposing secrets.
-
-### Frontend external-content rendering
-
-P5-03 treats all feed and API content as untrusted at the frontend boundary.
-Titles, summaries, source names, and other external text remain ordinary React
-text nodes; raw feed HTML is not parsed or injected. External intelligence links
-are centrally validated and become clickable only when they are absolute HTTP or
-HTTPS URLs. URLs with credentials, unsafe schemes, malformed hosts or ports, or
-control, format, whitespace, or other non-printable characters fail closed and
-their labels render as non-clickable text. Valid links retain the existing new-tab
-behavior with `rel="noopener noreferrer"`.
-
-This frontend control is defense in depth. It does not make unsafe backend
-ingestion or storage acceptable, and the P5-02 Content Security Policy remains a
-separate response-layer safeguard.
-
-### Backend logging and error correlation
-
-P5-04 configures the standard-library `app` logger namespace through one
-central handler. `LOG_LEVEL` accepts `DEBUG`, `INFO`, `WARNING`, `ERROR`, or
-`CRITICAL`; the default is `INFO`, including production. Unsupported values are
-rejected without echoing the configured value, production rejects `DEBUG=true`,
-and Uvicorn's raw access logger is replaced by the application's safer request
-completion events.
-
-Every HTTP request receives a new server-generated canonical UUID in the
-`X-Request-ID` response header. Incoming `X-Request-ID` values are ignored. One
-request event contains only the event name, request ID, allow-listed method,
-matched route template (or `unmatched`), status code, and duration in
-milliseconds. It excludes raw paths, query values, bodies, response content,
-headers, cookies, tokens, database URLs, external payloads, and client-provided
-correlation values.
-
-Unexpected request-time exceptions return the stable body
-`{"detail":"An unexpected server error occurred."}` with the same request ID,
-CORS behavior where applicable, and the existing P5-02 security headers. Logs
-record only the safe category `unexpected_exception`, never exception text or a
-traceback. Existing route-specific `400`, `404`, and handled `500` bodies and the
-P5-01 generic `422` body remain unchanged. This is local application logging;
-no remote telemetry or log-shipping service is introduced.
-
-### Backend CORS and HTTP security headers
-
-P5-02 restricts browser access through the existing backend settings model.
-`BACKEND_CORS_ALLOWED_ORIGINS` is a comma-separated list of exact origins. The
-safe local-development value is:
-
-```text
-http://localhost:3000,http://127.0.0.1:3000
+```powershell
+git --version
+docker --version
+docker compose version
+docker info --format "{{.ServerVersion}}"
 ```
 
-Scheme, host, and non-default port are matched exactly. Default HTTP port `80`
-and HTTPS port `443` are normalized away, and IP addresses use their canonical
-representation. Wildcards, empty entries, URL paths, queries, fragments, user
-information, unsupported schemes, malformed ports, and control, format,
-whitespace, or other non-printable characters are rejected before URL parsing.
-When `APP_ENV=production`, an explicit HTTPS-only allow-list is required and
-localhost, `.localhost` subdomains, and IPv4/IPv6 loopback addresses are
-rejected. A valid production example is
-`https://dashboard.example.com`. Set `NEXT_PUBLIC_API_BASE_URL` to the backend
-URL visible to that frontend, and never commit a real `.env` file or secrets.
+The normal `.\run.cmd` Docker workflow does **not** require Python or Node.js on
+the host. Host Python **3.13**, Node.js/npm (the container build uses Node 24),
+and the Python launcher are required only for host hot reload, the full test
+runner, or direct component development. Install those before using
+`.\run.cmd install`, `.\run.cmd dev`, or `.\run.cmd test`.
 
-The credentialed browser CORS policy permits only `GET`, `POST`, `PATCH`, and
-`OPTIONS`. Configured request headers are `Content-Type` and `X-CSRF-Token`;
-Starlette also advertises its standard safelisted headers. `Authorization`,
-wildcard origins, wildcard methods, and wildcard request headers are not
-permitted. Permitted origins receive their exact matching origin and
-`Access-Control-Allow-Credentials: true`.
+### 2. Clone the authoritative repository and select `main`
 
-Unsafe authenticated requests require exact Origin validation and matching
-CSRF cookie/header validation. The opaque session cookie is HttpOnly; the
-separate CSRF cookie is non-HttpOnly. Both use `SameSite=Strict`, and protected
-environments require `Secure`. Requests without an `Origin` remain available
-only where the route contract permits them, including public utility GETs.
+The final mentor handover targets `main` at the authoritative repository below.
+GitHub authorization may be required if repository access is restricted. Never
+put a credential in the clone URL.
 
-API and non-documentation responses include these exact headers:
-
-```text
-X-Content-Type-Options: nosniff
-X-Frame-Options: DENY
-Referrer-Policy: no-referrer
-Permissions-Policy: camera=(), microphone=(), geolocation=()
-Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'
+```powershell
+git clone "https://github.com/midhun00071/cyber-osint-dashboard.git" "cyber-osint-dashboard"
+Set-Location ".\cyber-osint-dashboard"
+git switch main
+git pull --ff-only origin main
+git branch --show-current
+git status --short
+git log --oneline -5
 ```
 
-The enabled `/docs` and `/redoc` HTML pages retain the first four headers but
-omit the API CSP so FastAPI's existing interactive documentation remains
-renderable; API routes keep the strict policy. HSTS is deferred because the
-repository does not yet define trusted HTTPS termination or a trusted reverse
-proxy. The backend does not trust arbitrary forwarded headers to make that
-decision, and local HTTP development remains unaffected.
+`git branch --show-current` must print `main`. A fresh clone should have no
+output from `git status --short`. Stop and ask the project owner if the expected
+branch or checkpoint differs; do not reset, clean, or delete files to force a
+match. The explicit switch verifies the final branch even when cloning already
+selects the repository's default branch.
 
-## Local development
+### 3. Create the local environment files safely
 
-### Prerequisites
-
-Use the documented Windows workflow with Git, PowerShell, Python 3.13, Node.js
-and npm, and Docker Desktop with the Docker Compose v2 plugin. Ports `3000`,
-`8000`, and the configured local PostgreSQL port must be available for the
-corresponding workflow. Never use real production data or secrets for local
-development.
-
-From the repository root, inspect prerequisites and create only missing ignored
-local environment files:
+Run the non-destructive setup step from the repository root:
 
 ```powershell
 .\run.cmd setup
 ```
 
-The setup helper copies the committed examples to `.env`, `backend/.env`, and
-`frontend/.env.local` only when the destination is absent; it does not overwrite
-an existing local file. Review the placeholders locally without printing or
-committing completed values. Install backend and frontend dependencies with:
+It creates only missing files and never overwrites existing local configuration:
+
+| Committed template | Local file created | Used by |
+| --- | --- | --- |
+| `.env.example` | `.env` | Local Docker Compose and its services |
+| `backend/.env.example` | `backend/.env` | Direct host backend development |
+| `frontend/.env.example` | `frontend/.env.local` | Direct host frontend development |
+
+When root `.env` does not exist, `scripts/setup-dev.ps1` copies its structure
+and replaces the three application-database password markers with three
+different cryptographically random local values. It does not display them. The
+three credentials belong to the runtime application role, the PostgreSQL
+bootstrap role, and the migration role.
+
+For the ordinary fresh local path, no database secret must be invented or
+pasted manually. Review variable **names and comments** in `.env`, but never
+print or share its values. Keep these safety settings unchanged:
+
+- `APP_ENV` identifies a local/development environment;
+- `DEBUG` remains false;
+- `ENABLE_ADMIN_INGESTION` remains false;
+- `BACKEND_CORS_ALLOWED_ORIGINS` and `BACKEND_TRUSTED_HOSTS` remain exact
+  loopback values; and
+- `NEXT_PUBLIC_API_BASE_URL` remains the browser-reachable local backend URL.
+
+`NVD_API_KEY` may remain blank. It is used only for an explicitly approved NVD
+workflow and is not required to start Alpha Data. The optional local Prefect
+metadata database passwords should be set to unique values **before the first
+Prefect start** if the operator chooses to manage them explicitly. Changing
+only `.env` after the Prefect metadata volume exists does not rotate database
+roles and can break the preserved volume.
+
+Confirm the expected files without displaying their contents:
+
+```powershell
+Test-Path .\.env
+Test-Path .\backend\.env
+Test-Path .\frontend\.env.local
+git status --short
+```
+
+The three `Test-Path` commands should return `True`. The real files are ignored
+by Git and must never appear in `git status` or a review ZIP.
+
+### 4. Start and initialize the complete application
+
+Run the supported one-command workflow:
+
+```powershell
+.\run.cmd
+```
+
+The runner performs the following bounded sequence:
+
+1. verifies Docker, Compose v2, and the Docker daemon;
+2. creates only missing local environment files;
+3. rejects missing database fields, committed password markers, non-local
+   environment identity, debug mode, or enabled admin ingestion;
+4. validates Compose without printing resolved secrets;
+5. builds the backend, frontend, and pinned Prefect images;
+6. starts the application PostgreSQL database, dedicated Prefect metadata
+   database, Prefect server, and Prefect process worker;
+7. reconciles the configured PostgreSQL roles;
+8. verifies that Alembic has one known linear migration chain, then safely
+   upgrades the application database to its current head;
+9. reapplies least-privilege runtime grants;
+10. reconciles the approved source catalog and performs the fresh-database
+    offline intelligence bootstrap described below;
+11. registers or updates the single Prefect deployment without changing an
+    existing activation choice—a new deployment starts paused;
+12. starts FastAPI and Next.js; and
+13. checks backend health, frontend availability, Prefect server/worker/pool,
+    and deployment integrity.
+
+The command does **not** launch a manual flow and does not contact an external
+intelligence source merely because the application started.
+
+### 5. Verify successful startup
+
+The runner should end with `[PASS]` messages and a readiness summary. Verify the
+services and public local endpoints:
+
+```powershell
+docker compose ps
+Invoke-WebRequest -Uri "http://localhost:8000/api/health" -UseBasicParsing
+Invoke-WebRequest -Uri "http://localhost:3000/" -UseBasicParsing
+```
+
+Expected local URLs are:
+
+| URL | Expected use |
+| --- | --- |
+| `http://localhost:3000/` | Alpha Data sign-in and dashboard |
+| `http://localhost:8000/api/health` | Sanitized backend health; expect HTTP 200 |
+| `http://localhost:4200/` | Loopback-only Prefect operations UI |
+
+`docker compose ps` should show the application database, backend, frontend,
+Prefect metadata database, Prefect server, and Prefect worker running; services
+with health checks should be healthy.
+
+### 6. Create the first application administrator
+
+The intelligence bootstrap creates **no user**, there is no default password,
+and public self-registration does not exist. On a truly fresh application
+database, create exactly one first administrator with the reviewed CLI in the
+already configured backend container:
+
+```powershell
+docker compose exec backend python -m app.security.bootstrap_admin_cli `
+    --username "approved-local-username" `
+    --display-name "Approved Display Name"
+```
+
+Replace both identity placeholders. The username must begin with a lowercase
+letter, contain 3–64 lowercase letters, digits, underscores, periods, or
+hyphens, and be unique. The command securely prompts for the password and its
+confirmation; it accepts no password argument or password environment variable.
+Use a unique password of 12–128 characters and do not record it in source,
+terminal commands, tickets, screenshots, or documentation.
+
+The CLI runs only while the application user table is empty. It creates the
+local Administrator and its security-audit event in one transaction. If any
+user already exists, it refuses instead of replacing or elevating an account.
+An Administrator can create later users and assign supported roles through
+**User Access** in the dashboard.
+
+### 7. Sign in and make the first review
+
+1. Open `http://localhost:3000/`.
+2. Enter the approved username and password on **Secure sign in**.
+3. Confirm that **Overview** loads and that the left navigation matches your
+   role.
+4. Open **Vulnerabilities** and **Threat Feed** to confirm stored intelligence
+   is available.
+5. Open **System Health** and **Sources** to review truthful runtime and source
+   state.
+6. If you are the Administrator, open **User Access** to create distinct mentor,
+   analyst, or operator accounts; do not share the bootstrap account.
+
+Frontend route protection is a usability boundary. Backend authentication and
+permission checks remain authoritative even when a button or navigation item is
+hidden.
+
+### 8. Verify Prefect without starting ingestion
+
+Prefect is Alpha Data's scheduler and workflow coordinator. These checks do not
+start a source flow:
+
+```powershell
+docker compose ps prefect-server prefect-worker
+docker compose exec -T prefect-worker python -m app.orchestration.deployments --verify-registration
+docker compose exec -T prefect-worker prefect deployment inspect alpha-data-parent-ingestion-cycle/alpha-data-ingestion-cycle
+docker compose exec -T prefect-worker prefect deployment schedule ls alpha-data-parent-ingestion-cycle/alpha-data-ingestion-cycle
+docker compose exec -T prefect-worker prefect work-pool inspect alpha-data-process
+docker compose exec -T prefect-worker prefect work-queue ls --pool alpha-data-process
+docker compose exec -T prefect-worker prefect work-pool preview alpha-data-process --hours 6
+```
+
+A newly created deployment is deliberately **PAUSED**. Leave it paused for a
+mentor UI review or whenever recurring external requests are not explicitly
+authorized. The previously preserved local release deployment was approved and
+verified ACTIVE/READY on 11 August 2026; a fresh Prefect metadata database has
+its own deployment ID and does not inherit that approval automatically.
+
+Only an authorized operator recreating the approved fixed recurring deployment
+may resume its schedule, after all verification above succeeds and the six
+source approvals remain current:
+
+```powershell
+docker compose exec -T prefect-worker prefect deployment schedule resume alpha-data-parent-ingestion-cycle/alpha-data-ingestion-cycle --all
+docker compose exec -T prefect-worker prefect deployment inspect alpha-data-parent-ingestion-cycle/alpha-data-ingestion-cycle
+docker compose exec -T prefect-worker prefect deployment schedule ls alpha-data-parent-ingestion-cycle/alpha-data-ingestion-cycle
+```
+
+After an authorized resume, inspection should show `paused: False`, deployment
+status `READY`, and one active schedule. Do not use `prefect deployment run` to
+test activation; resuming a schedule authorizes future scheduled runs and does
+not require a manual run.
+
+### 9. Stop and restart safely
+
+Stop the local stack while preserving application data and Prefect metadata:
+
+```powershell
+docker compose down
+```
+
+Restart with `.\run.cmd`. Existing users, intelligence, operational history,
+checkpoints, source state, and Prefect activation state are preserved in named
+volumes.
+
+> **Data-destruction warning:** `docker compose down -v` deletes the named
+> application and Prefect volumes. It is not routine cleanup, password reset,
+> migration rollback, or troubleshooting. Do not use it without explicit
+> approval to destroy the local persisted environment.
+
+## Final Release and Handover State
+
+This evidence snapshot is dated **12 August 2026**. Final handover policy makes
+`main` the authoritative mentor, operator, and future-development branch.
+Release preparation and validation were performed on `dev` before controlled
+promotion of the exact reviewed release to `main`.
+
+| Handover item | Reviewed state |
+| --- | --- |
+| Authoritative repository | `https://github.com/midhun00071/cyber-osint-dashboard.git` |
+| Authoritative handover branch | `main` |
+| Mentor/developer working branch | `main` |
+| Historical release-preparation branch | `dev`; preparation and validation context only, not a mentor checkout instruction |
+| Final release commit hash | Recorded during controlled release promotion; this document does not invent or predeclare it |
+| Mentor-accessible external staging | Not claimed; local and production-oriented configuration evidence is not an external deployment |
+
+The reviewed Prefect deployment state is:
+
+| Prefect item | Reviewed state |
+| --- | --- |
+| Deployment | `alpha-data-parent-ingestion-cycle/alpha-data-ingestion-cycle` |
+| Deployment ID | `8e584852-6ffc-4806-9cc9-22b758767bf3` |
+| Work pool | `alpha-data-process` |
+| Working directory | `/opt/alpha-data/backend` |
+| Schedule | `17 */2 * * *` in `Asia/Dubai` |
+| Concurrency/collision policy | `1` / `CANCEL_NEW` |
+| Existing reviewed deployment | `paused=False`, `READY`, one active schedule |
+| Newly created deployment | **PAUSED** until separately authorized |
+
+The final recurring-cycle runtime proof is internally consistent: expected
+sources = **6**, started = **6**, completed = **6**, successful = **6**,
+non-successful = **0**, manual-only recurring rows = **0**, and parent status =
+`success`. This proves the reviewed bounded cycle, not future availability of an
+external source or an external staging host.
+
+The fresh offline bootstrap proof is **112** real public-intelligence records,
+not synthetic or demo data:
+100 NVD vulnerabilities, 4 CERT-EU advisories, 4 Google Threat Intelligence
+publications, and 4 Mandiant publications. It produces 0 ingestion cycles, 0
+ingestion runs, 0 checkpoints, 0 watermarks, and 0 users; it makes no live
+source request, skips a populated database, and a second startup imports 0
+duplicates.
+
+## Environment Configuration and Secret Handling
+
+Alpha Data has no module literally named `secrets`. Configuration and secret
+boundaries are implemented by the actual components below:
+
+- `scripts/setup-dev.ps1` creates missing local files and generates three local
+  application-database credentials;
+- `run.ps1` validates the local environment before Compose starts;
+- `docker-compose.yml` interpolates root `.env` and passes only the settings
+  required by each local service;
+- `backend/app/core/config.py` defines the Pydantic `Settings` model, loads and
+  validates backend/runtime environment values, and wraps sensitive fields in
+  `SecretStr`;
+- `backend/app/db/session.py` builds the bounded SQLAlchemy engine without
+  logging parameters;
+- `frontend/src/config/publicEnvironment.ts` permits only approved public
+  browser configuration and rejects secret-like `NEXT_PUBLIC_*` names; and
+- `compose.prod.yml` plus `.env.production.example` define the separate
+  protected deployment and secret-file-reference boundary.
+
+### Configuration files and precedence
+
+The committed files are templates and source code. They are safe to review and
+commit:
+
+- `.env.example` — root local Compose template;
+- `backend/.env.example` — direct host backend template;
+- `frontend/.env.example` — direct host frontend template; and
+- `.env.production.example` — staging/production structure, copied to a
+  protected location outside the repository rather than used as a completed
+  file in Git.
+
+Real `.env`, `backend/.env`, `frontend/.env.local`, completed production
+environment files, and secret files are operator-managed and ignored or kept
+outside Git. In short:
+
+```text
+SOURCE CODE / EXAMPLE TEMPLATES       -> committed to Git
+REAL ENVIRONMENT VALUES / CREDENTIALS -> local or protected; never committed
+```
+
+For local containers, Docker Compose automatically reads root `.env` and
+interpolates `docker-compose.yml`. The backend, migration job, application
+database, and Prefect worker receive different database identities according to
+their responsibility. The frontend receives only a public API base URL and
+environment identity at build time. The Prefect server uses its separate
+metadata database and never receives the application database credential; the
+worker uses the application runtime identity but not bootstrap or migration
+credentials.
+
+Local Compose currently uses the validated backend defaults for authentication
+lifetimes/throttling rather than forwarding the root template's optional
+`AUTH_*` overrides. The production Compose file explicitly supplies those
+bounded settings and forces secure cookies. Do not assume that editing an
+unused local template field changes a running container; confirm the receiving
+service in the applicable Compose definition.
+
+For a direct host backend process, Pydantic settings read process environment
+variables before `backend/.env`; invalid explicitly supplied values never fall
+back silently. `get_settings()` caches the validated settings. The frontend
+build validates `NEXT_PUBLIC_API_BASE_URL` and the build-generated public
+environment identity before browser assets are produced.
+
+### What belongs in environment configuration
+
+| Category | Examples | Secret? |
+| --- | --- | --- |
+| Environment identity and logging | `APP_ENV`, `APP_VERSION`, `LOG_LEVEL`, `DEBUG` | No, but security-sensitive |
+| Database location and role names | `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`, role-name fields | Normally no |
+| Database credentials | runtime, bootstrap, migration, Prefect metadata passwords | **Yes** |
+| Database pool controls | pool size, overflow, timeout, recycle, connect timeout | No |
+| Browser/API routing | `NEXT_PUBLIC_API_BASE_URL`, exact CORS origins, exact trusted hosts | Public or security-sensitive, not secret |
+| Session policy | secure-cookie flag, idle/absolute lifetime, session count, login-throttle bounds | No, but security-sensitive |
+| External source credentials | optional `NVD_API_KEY` and any future approved source credential | **Yes** |
+| Prefect platform | local UI port; fixed pool, schedule, and worker settings live in reviewed code | Port is public configuration |
+
+Browser sessions require no signing secret. The server generates opaque session
+and CSRF values, sends them as cookies, and stores only their SHA-256 hashes in
+PostgreSQL. A secret must never be placed in `NEXT_PUBLIC_*`, because those
+values are delivered to every browser.
+
+### Failure behavior and protected environments
+
+Local startup fails closed when required database settings are missing, the
+known template markers remain, unsafe booleans are enabled, identifiers are
+malformed, database pools exceed bounds, CORS/Host lists are invalid, or the
+database cannot be reached. Errors identify the setting category without
+printing the value.
+
+Staging and production add stricter rules in `backend/app/core/config.py`:
+
+- debug and admin ingestion must be disabled;
+- secure authentication cookies are required;
+- the deployed commit SHA is required;
+- CORS origins must be explicit non-loopback HTTPS origins;
+- trusted hosts must be explicit non-loopback hosts;
+- credential-bearing `DATABASE_URL` and direct database password values are
+  rejected; and
+- the database password must come from a readable protected secret file.
+
+`.env.production.example` contains non-secret structure and blank references.
+An operator copies it outside the repository, restricts access, supplies
+separate secret files for bootstrap, runtime, migration, and backup identities,
+and validates Compose with `config --quiet`. Never print resolved Compose
+configuration when real values are loaded.
+
+### Rules that always apply
+
+- Never commit, upload, paste, screenshot, or log a real password, API key,
+  token, cookie, authorization header, credential-bearing URL, private key, or
+  completed environment file.
+- Never pass secrets as Docker build arguments or put them in frontend source.
+- Never inspect troubleshooting state by dumping full environments, container
+  inspection output, or resolved Compose configuration.
+- Rotate a database credential in both PostgreSQL and its protected delivery
+  file; changing a file alone does not rotate the stored role.
+- If exposure is suspected, report only the affected file and secret category,
+  revoke/rotate the value, and preserve sanitized evidence without copying the
+  value again.
+
+## How the System Works
+
+### Runtime services
+
+| Service | Purpose | Important boundary |
+| --- | --- | --- |
+| `db` | PostgreSQL system of record for intelligence, users, sessions, source state, and operational evidence | Local port is loopback-only; runtime and migration roles are separated |
+| `backend` | FastAPI authentication, authorization, bounded queries, reports, health, source operations, and audit APIs | Only allow-listed schemas leave the API; no raw database/source payloads |
+| `frontend` | Next.js authenticated analyst and operator interface | No database or source access; browser calls FastAPI |
+| `prefect-db` | Dedicated local PostgreSQL store for Prefect metadata | Internal-only network; no host port |
+| `prefect-server` | Self-hosted Prefect API and UI | Local administration is loopback-only |
+| `prefect-worker` | Polls the fixed process pool and runs registered Alpha Data flows | Uses the application database role and fixed orchestration package |
+| `migrate` | One-shot Alembic migration job used by the runner | Uses the migration identity; not a normal long-running service |
+
+### Intelligence data path
+
+```text
+approved public source or reviewed local catalogue
+  -> fixed source collector/client
+  -> source-specific adapter or normalizer
+  -> ingestion/publication service
+  -> SQLAlchemy transaction and PostgreSQL
+  -> query service
+  -> allow-listed FastAPI schema
+  -> validated frontend API client
+  -> authenticated dashboard page
+```
+
+Collectors receive a fixed source identity and bounded request parameters, not
+an arbitrary URL. Normalizers turn different NVD, EPSS, KEV, RSS, publication,
+or STIX-shaped structures into the application's internal contracts. Services
+apply identity, deduplication, transaction, provenance, and audit rules.
+PostgreSQL stores the committed result. Query services then paginate and filter
+stored data; FastAPI schemas expose only approved fields; frontend services
+validate responses before React renders text and safe external links.
+
+The browser never connects to PostgreSQL or an intelligence source. Loading a
+dashboard page performs a stored-data query, not live collection.
+
+### Scheduled ingestion path
+
+```text
+Prefect cron slot
+  -> alpha-data-parent-ingestion-cycle
+  -> scheduled source policies in deterministic order
+  -> one source-specific flow/handler per source
+  -> bounded collection and normalization
+  -> committed source data and run evidence
+  -> checkpoint/watermark advancement after safe persistence
+  -> reconciled parent-cycle status
+```
+
+The parent cycle considers every scheduled policy and isolates each source.
+One source failure does not stop unrelated sources. Source results and parent
+status are reconstructed from committed evidence rather than assumed from
+control flow.
+
+## Repository and Module Map
+
+The following map groups code by responsibility rather than listing every file.
+
+### Backend application
+
+- `backend/app/main.py` constructs FastAPI, validates settings at import/startup,
+  installs exact Host, body-size, CORS, request-ID, safe-error, and security-header
+  middleware, and registers route groups. Its lifespan logs startup/shutdown but
+  does not run ingestion.
+- `backend/app/api/v1/routes/` contains modular health, version, authentication,
+  dashboard, articles, intelligence, analyst, source/operations, report, system,
+  audit, and Administrator user routes.
+- `backend/app/api/v1/schemas/` contains Pydantic request/response allow-lists.
+  Query validation rejects unknown/repeated parameters and applies pagination,
+  date, count, and body bounds.
+- `backend/app/services/` owns authentication, user administration, dashboard,
+  article/intelligence/analyst queries, source operations, audit search, reports,
+  system health, metrics, and retention planning. Routes remain thin and do not
+  build SQL from user strings.
+- `backend/app/core/` owns environment validation, structured sanitized logging,
+  request correlation, and security headers.
+- `backend/app/db/` owns the SQLAlchemy declarative base, lazy engine, bounded
+  pool, and request-scoped sessions.
+
+### Authentication, authorization, sessions, and audit
+
+- `backend/app/security/identity.py` canonicalizes local usernames and resolves
+  the fixed local identity provider.
+- `backend/app/security/passwords.py` enforces the bounded password policy and
+  Argon2id hashing/verification.
+- `backend/app/security/sessions.py` creates opaque session/CSRF values, stores
+  hashes, applies idle and absolute expiry, limits active sessions, rotates or
+  revokes sessions, and sets Strict cookies.
+- `backend/app/security/contracts.py` defines the closed roles and permissions;
+  `authorization.py` maps a role to permissions; `dependencies.py` enforces
+  authentication, permission, Origin, CSRF, and JSON requirements in FastAPI.
+- `backend/app/services/authentication_service.py` owns login, throttling,
+  refresh, logout, and password-change transactions.
+- `backend/app/services/user_admin_service.py` owns bounded user lifecycle,
+  roles, expiry, and session-revocation rules.
+- `backend/app/services/security_audit_service.py` appends allow-listed security
+  actions and safe details. ORM/database controls prevent routine update,
+  deletion, or truncation of audit evidence.
+
+Roles are:
+
+| Role | Intended capability |
+| --- | --- |
+| Viewer | Read approved content and source information |
+| Analyst | Viewer access plus stored IOC analysis and report read/export |
+| Ingestion operator | Viewer access plus ingestion read/run/retry/pause controls |
+| Administrator | All permissions, including user lifecycle, source management, session revocation, and audit search |
+
+The backend is authoritative. Source-control and user-management requests are
+also protected by exact Origin and double-submit CSRF checks. Login failures use
+a generic response and bounded throttling rather than revealing whether a user
+exists.
+
+### Ingestion and processing
+
+- `backend/app/ingestion/source_registry.py` is the immutable approved-source
+  registry: canonical slug, vendor, content family, access method, exact host,
+  fixed HTTPS base URL, implementation/enabled state, and progress contract.
+- `backend/app/ingestion/collectors/` contains fixed-policy HTTP/RSS clients for
+  NVD, EPSS, CISA KEV, official RSS, Google threat research, Censys publication
+  metadata, Anomali publication metadata, and disabled DESC metadata.
+- `backend/app/ingestion/normalizers/` turns NVD, EPSS, KEV, and RSS input into
+  bounded normalized values.
+- `backend/app/ingestion/adapters/` maps publication-family inputs into the
+  common `PublicationCandidate` contract.
+- `backend/app/ingestion/services/` owns source-specific persistence and
+  operational evidence. `publication_pipeline.py` applies common publication
+  identity and safe-metadata rules but uses its caller's transaction.
+- `backend/app/ingestion/stix_taxii/` contains a strict offline/fixed-policy
+  STIX/TAXII foundation. Its production registry is empty unless a separately
+  approved integration is configured.
+- `backend/app/processing/` provides offline UAE relevance classification and
+  IOC extraction from already normalized text. It performs no network lookup,
+  scanning, active validation, malware retrieval, or exploit activity.
+- source CLIs under `backend/app/ingestion/` are explicit manual workflows;
+  they are not backend startup hooks or public arbitrary-source APIs.
+
+### Orchestration
+
+- `backend/app/orchestration/contracts.py` defines closed statuses, eligibility,
+  retries, quota observation, progress proposals, handler protocols, and the
+  immutable policies generated from enabled sources.
+- `backend/app/orchestration/source_handlers/` binds the six recurring sources
+  to their reviewed collectors, normalizers, and persistence services.
+- `backend/app/orchestration/persistence.py` owns short application-role
+  transactions and advisory-lock-backed cycle/run/progress changes.
+- `backend/app/orchestration/flows.py` implements the parent flow and per-source
+  flow, bounded retry/backoff, deterministic staggering, timeout, failure
+  isolation, truthful result recording, and progress recovery.
+- `backend/app/orchestration/deployments.py` defines and verifies the single
+  deployment, work pool, cron, timezone, working directory, concurrency, and
+  paused/active registration behavior.
+
+### Bootstrap
+
+- `backend/app/runtime_bootstrap.py` validates the Alembic graph and live
+  revision, reconciles approved source identities, and owns one transaction for
+  application reference state.
+- `backend/app/bootstrap_data/snapshot.json` is the fixed bounded offline public
+  snapshot.
+- `backend/app/bootstrap_data/service.py` validates size, depth, schema, source
+  ownership, counts, and duplicate identities before passing records through
+  the normal NVD and publication persistence paths.
+
+### Database
+
+- `backend/app/models/` defines intelligence, provenance, vulnerability,
+  indicator, threat-knowledge, ingestion-operation, authentication, session,
+  role, and audit tables.
+- `backend/alembic/versions/` is the preserved forward migration history;
+  `backend/alembic.ini` and `backend/alembic/env.py` configure Alembic.
+- `database/init/` and the reconciliation/grant scripts provision distinct
+  bootstrap, migration, runtime, read-only, backup, and retention boundaries.
+- `backend/app/db/session.py` supplies SQLAlchemy sessions. Runtime SQL hides
+  parameters and translates initial connection detail into a sanitized error.
+
+### Frontend
+
+- `frontend/src/app/` uses the Next.js App Router for login, the protected
+  dashboard layout, release pages, and article/vulnerability detail routes.
+- `frontend/src/components/auth/` bootstraps `/auth/me`, redirects anonymous
+  users, renders access-denied/recoverable states, and checks permissions for
+  usability.
+- `frontend/src/services/` builds bounded credential-included API requests and
+  validates response shapes. It does not store session tokens in browser
+  storage.
+- `frontend/src/components/dashboard/` and `components/analyst/` present KPI,
+  trends, feeds, vulnerabilities, IOC, provenance, and operational state.
+- `frontend/src/components/SafeExternalLink.tsx` and URL utilities reject unsafe
+  external links. React renders external text as text; untrusted raw HTML is not
+  inserted.
+- `frontend/src/config/publicEnvironment.ts` is the public configuration
+  allow-list and protected-environment URL validator.
+
+### Operations and tests
+
+- `docker-compose.yml` is the local loopback-only stack; `compose.prod.yml` is
+  the separate production-oriented baseline.
+- `run.cmd`, `run.ps1`, and `scripts/setup-dev.ps1` are the supported Windows
+  setup/start/test/development entry points.
+- `prefect/Dockerfile` pins Prefect 3.8.1 on Python 3.13 and runs as a fixed
+  non-root user.
+- `backend/tests/` contains pytest coverage for models, migrations, services,
+  APIs, ingestion, orchestration, security, Compose, scripts, and documentation.
+- frontend `*.test.ts`/`*.test.tsx` files use Vitest, jsdom, React Testing
+  Library, response validation, and security-focused rendering tests.
+
+## Ingestion: Detailed Lifecycle and Safety Model
+
+### 1. Source registry and policy
+
+The registry accepts only developer-controlled `SourceDefinition` objects. Each
+enabled source has a canonical slug and exact HTTPS host/base URL. Runtime users
+cannot supply a new API root, host, redirect destination, cookie, header, or
+callback URL. Registry inclusion describes implementation state; it does not by
+itself grant licensing, collection, storage, redistribution, or scheduling
+approval.
+
+Exactly six handlers belong to the recurring parent cycle:
+
+- `nvd` — vulnerability records from the NIST NVD API;
+- `first-epss` — EPSS enrichment for CVEs already stored locally;
+- `cisa-kev` — Known Exploited Vulnerability enrichment/reconciliation;
+- `cert-eu-security-advisories` — CERT-EU advisory publication metadata;
+- `google-threat-intelligence-public-research` — public Google TI research
+  publication metadata; and
+- `mandiant-public-threat-research` — public Mandiant research publication
+  metadata.
+
+Exactly five registered sources are manual or approval-gated and remain outside
+the automatic recurring parent cycle:
+
+- `anomali-cyber-watch`;
+- `censys-arc-research`;
+- `censys-rapid-response-advisories`;
+- `ibm-x-force-public-osint-advisories`; and
+- `ibm-x-force-public-research`.
+
+Registered does not mean scheduled. MITRE/CERT-FR/UK NCSC, DESC, UAE source
+proposals, other commercial sources, and production STIX/TAXII collection
+remain disabled, approval-gated, unbound, or otherwise outside the recurring
+schedule.
+
+### 2. Collection/client layer
+
+Source clients use exact approved HTTPS locations and source-specific methods.
+They enforce bounded connect/read/write/pool behavior, response bytes, pages,
+objects, and record counts; validate status and content type; reject environment
+proxy surprises where required; and reject redirects or validate each redirect
+against the fixed policy. NVD pacing changes only when an approved optional key
+is present. Upstream errors are converted to sanitized categories rather than
+logging raw bodies, headers, cookies, URLs containing secrets, or exceptions.
+
+Collectors retrieve vulnerability/feed/publication **data only**. They do not
+scan targets, probe hosts, submit files, download malware or arbitrary binaries,
+execute exploits, or follow user-supplied endpoints.
+
+### 3. Adapter and normalizer layer
+
+NVD, EPSS, KEV, and RSS normalizers validate identifiers, timestamps, scores,
+text, URLs, shapes, and bounded source evidence. Publication adapters emit a
+`PublicationCandidate`; the common pipeline then derives the item type from the
+registered content family, removes fragments and tracking parameters such as
+`utm_*`, validates canonical hosts/paths, and snapshots only shallow safe
+metadata. Sensitive key aliases, signed/credential-like URLs, control
+characters, oversized identities, and conflicting ownership fail closed.
+
+### 4. Persistence, identity, and deduplication
+
+`IntelligenceItem` is the normalized analyst-facing record. A
+`Vulnerability` adds CVSS, severity, affected-product, EPSS, and KEV fields.
+`IntelligenceItemIdentifier` supplies stable global identities such as CVE.
+`IntelligenceSource` records the approved source, while `SourceRecord` preserves
+the source-owned external ID, URL/hash, timestamps, processing status, safe
+content hash, and link to the normalized item.
+
+NVD creates or updates vulnerability items through CVE and source identity.
+EPSS and KEV only enrich matching existing CVEs; they do not create arbitrary
+vulnerabilities. Publication records deduplicate within a source by external ID
+or canonical URL hash. Global URL/title fingerprints can link compatible items,
+while conflicts fail safely or require analyst review. A stable content hash
+produces `unchanged`; changed validated content produces an update; a new stable
+identity produces a create.
+
+Transaction ownership is explicit. Source-specific services or invoking CLIs
+commit/rollback; the common publication pipeline never secretly commits.
+Database failure rolls back the owning transaction. The operational service
+uses advisory locks and idempotency identities to prevent duplicate scheduled
+cycles/runs and unsafe concurrent progress changes.
+
+### 5. Operational state and progress
+
+`IngestionCycle` represents a parent scheduled or manual cycle.
+`IngestionRun` represents one source attempt and stores truthful bounded
+counters and status. `IngestionRunRecord`, `IngestionRunEvent`, and
+`IngestionError` preserve per-record and safe operational evidence.
+`SourceCheckpoint` and `SourceWatermark` store versioned progress; quota and
+rate-limit tables store defer/backoff state.
+
+NVD, FIRST EPSS, CERT-EU, Google TI, and Mandiant use watermark progress; CISA
+KEV uses a checkpoint. Progress never advances merely because a request
+returned. Source data and terminal run evidence must commit first. If data has
+committed but progress finalization fails, the run remains `checkpoint_pending`
+and the next attempt reconstructs progress from committed evidence rather than
+re-fetching blindly or claiming success.
+
+### 6. Failure, retry, and source isolation
+
+Each scheduled source has concurrency one, a maximum of three attempts with
+30- and 60-second backoff, deterministic staggering, quota checks, and a
+900-second execution timeout. Rate-limit responses are recorded truthfully and
+are not retried through the ordinary transient path. Expected states include
+`success`, `no_change`, `deferred_quota`, `disabled`, `credentials_missing`,
+`licence_required`, `rate_limited`, `partial`, `failed`, and `cancelled`.
+
+The parent continues after one source exception, reads committed evidence, and
+finishes as success, partial, failed, or cancelled according to the reconciled
+source outcomes. It never converts incomplete work into fake success.
+
+### 7. Example scheduled lifecycle
+
+```text
+minute 17 of an eligible two-hour slot arrives
+  -> Prefect creates the parent flow run
+  -> the parent acquires one idempotent scheduled cycle
+  -> the six approved scheduled policies are considered in slug order
+  -> each source flow checks operator state, handler, quota, and prior progress
+  -> the fixed client obtains bounded public data
+  -> the source normalizer/adapter validates and canonicalizes it
+  -> the source service persists records idempotently in PostgreSQL
+  -> committed run evidence is recorded
+  -> checkpoint/watermark progress advances safely
+  -> the parent reconciles cycle status from stored evidence
+  -> query APIs expose stored intelligence
+  -> authenticated dashboard pages display it
+```
+
+## Fresh Database Bootstrap
+
+A completely empty database would otherwise show an empty dashboard and make a
+first-time mentor unable to evaluate the product. Alpha Data therefore bundles a
+bounded offline snapshot of real public intelligence:
+
+- **100** NVD vulnerabilities;
+- **4** CERT-EU security advisories;
+- **4** Google Threat Intelligence public research publications; and
+- **4** Mandiant public threat research publications.
+
+The total is exactly **112** records. The snapshot is size-, depth-, schema-,
+source-, count-, duplicate-, URL-, and payload-validated. It passes through the
+normal NVD and publication persistence services, so later live/scheduled
+collection can identify an unchanged record or safely update it.
+
+The bootstrap runs only when all core intelligence tables are genuinely empty.
+If any intelligence/source-record/identifier/vulnerability state already
+exists, it preserves that state and does not mix in the snapshot. It creates no
+default user, no `IngestionCycle`, no `IngestionRun`, no checkpoint, no
+watermark, and no fabricated collection history. The runner output states
+whether 112 records were created or existing intelligence was preserved.
+
+This distinction is essential:
+
+- **Application initialization** migrates the schema, reconciles fixed source
+  reference data, and may load the offline snapshot into a fresh database.
+- **Live/scheduled ingestion** makes approved external requests through source
+  handlers and records real operational cycles/runs. It is controlled by
+  Prefect activation, source policy, quotas, and operator state—not FastAPI
+  startup.
+
+## Prefect for First-Time Operators
+
+Prefect is the orchestration system that schedules and observes ingestion work.
+It is separate from the FastAPI web server.
+
+- A **flow** is Python code describing a unit of work. Alpha Data has one parent
+  ingestion flow and source-specific child flows.
+- A **deployment** is the registered runnable configuration for a flow: its
+  name, schedule, parameters, pool, working directory, and concurrency.
+- A **work pool** is the queueing boundary. `alpha-data-process` is a fixed
+  process pool.
+- A **worker** polls that pool and starts eligible flow runs in the pinned Alpha
+  Data environment.
+- The cron expression `17 */2 * * *` in `Asia/Dubai` means **every two hours at
+  minute 17 in Dubai time**.
+- Deployment concurrency `1` with `CANCEL_NEW` prevents overlapping parent
+  cycles; source policies also limit each source to one concurrent run.
+
+`.\run.cmd` starts the Prefect infrastructure and registers/verifies the
+deployment. Registration preserves an existing pause/active choice and creates
+a missing deployment paused. **Schedule activation** is a separate approval
+decision. **Scheduled ingestion** occurs later at a cron slot while the server
+and worker are online. A **manual source request** or legacy source CLI is a
+separate, explicit action and cannot bypass a missing handler, disabled state,
+credential/licence/quota requirement, or endpoint policy.
+
+`ACTIVE`/`paused=False` means the schedule may create future work. `READY` means
+the registered deployment/pool state is available; it is not proof that every
+source request succeeded or that data is fresh. Use the Prefect UI at
+`http://localhost:4200/`, **Ingestion Operations**, and **Run History** together
+for operational evidence.
+
+The authenticated manual-run and retry endpoints durably accept and audit an
+approved operation request; acceptance does not mean an upstream request ran or
+succeeded. The current recurring executor is the Prefect deployment. Legacy
+manual CLIs remain separate explicit workflows and require their own source
+approval and bounds.
+
+The local PC, Docker daemon, Prefect server, and worker must remain running for
+the schedule to fire. A browser window need not remain open. Continuous 24/7
+collection requires an always-on staging host, which is not demonstrated by
+this local setup.
+
+## Database for First-Time Operators
+
+PostgreSQL is Alpha Data's system of record. It stores normalized intelligence,
+source provenance, identifiers, vulnerabilities, indicators, threat metadata,
+users, credentials hashes, sessions, roles, audit events, source state,
+ingestion cycles/runs/events/errors, checkpoints, watermarks, quota state, and
+report-relevant operational evidence.
+
+SQLAlchemy models express tables and relationships as Python objects. Alembic
+migrations are the ordered, committed history that changes the schema safely.
+`.\run.cmd` verifies one known linear migration head before upgrading. Existing
+migrations are preserved because rewriting history makes deployed databases
+ambiguous and risks corruption.
+
+For any future schema change, create a **new** Alembic migration; never edit a
+committed migration. Define named foreign keys, constraints, uniqueness rules,
+and indexes deliberately, preserve idempotent identities, and test upgrade and
+downgrade behavior where applicable. Mapper validation and Alembic validation
+must finish with exactly one linear head before the change can be accepted.
+
+Database responsibilities are separated:
+
+- the **bootstrap role** initializes and reconciles database roles;
+- the **migration role** owns/manages schema objects and applies Alembic;
+- the **runtime role** used by FastAPI and the Prefect worker has required DML
+  and sequence access but no schema ownership, role administration, truncate,
+  or routine delete privilege;
+- read-only, backup, and retention groups have narrower reviewed access.
+
+Least privilege limits the damage of a compromised service or coding error.
+The source catalog is reference data; the 112-record snapshot is optional
+fresh-database intelligence; scheduled ingestion adds real cycle/run/progress
+evidence. These are different layers and should not be conflated.
+
+Do not repair migration, login, or ingestion problems by deleting volumes or
+editing database rows. A destructive reset destroys users, intelligence,
+history, and Prefect metadata and is not routine troubleshooting.
+
+## Authentication and Authorization
+
+Alpha Data currently uses local single-factor identities. Passwords are
+Argon2id hashes; submitted passwords are never stored. Browser sessions use
+random opaque values with only token/CSRF hashes persisted. The session cookie
+is HttpOnly, both cookies are `SameSite=Strict`, staging/production requires
+`Secure`, and unsafe requests require exact Origin plus CSRF cookie/header
+agreement.
+
+The default idle session lifetime is 60 minutes, the absolute lifetime is eight
+hours, and a user has at most five active sessions. Refresh rotates the previous
+session. Logout, password change, account disablement, role changes, and
+Administrator revocation invalidate applicable sessions. Login throttling is
+bounded and does not reveal whether an identity exists.
+
+After the one-time first-admin procedure, Administrators use **User Access** to
+create unique accounts, assign one closed role, set account expiry/status, and
+revoke sessions. Security-sensitive actions produce append-only audit events
+with public identifiers, correlation IDs, outcomes, and safe details—not
+usernames submitted to login, passwords, cookies, request bodies, SQL, or raw
+exceptions.
+
+## Dashboard User Guide
+
+Visible navigation is permission-aware. A user may see fewer pages than an
+Administrator.
+
+| Page | What it is for |
+| --- | --- |
+| **Overview** | Stored intelligence totals, trends, recent vulnerabilities/publications, freshness, and backend health |
+| **Threat Feed** | Normalized publication metadata and validated stored threat-entity information; opening it performs no live collection |
+| **Vulnerabilities** | Search and inspect stored CVEs with CVSS, EPSS, KEV, provenance, freshness, and UAE relevance |
+| **UAE Intelligence** | Distinguish direct UAE evidence, potential relevance, global context, and no demonstrated UAE relevance |
+| **IOC Search** | Search normalized indicators already stored; it never probes a domain/IP or fetches external content |
+| **Sources** | Review registry policy, effective operator state, readiness, credential boolean, quota/backoff, progress fingerprint, freshness, and allowed actions |
+| **Ingestion Operations** | Review committed cycle/run summaries and request supported audited operations; acceptance is not proof of successful collection |
+| **Run History** | Inspect attempts, counters, source-safe messages, ordered events, and deterministic retry lineage |
+| **Reports** | Generate authorized UAE Intelligence or Source Operations CSV/PDF exports from allow-listed fields, at most 100 rows and 2 MiB |
+| **System Health** | Review truthful service, database, Prefect, source, storage, and deployment state; unknown/stale/degraded is not healthy |
+| **Audit Log** | Administrator-only bounded search of safe security and operator events |
+| **Methodology** | Understand evidence wording, attribution, relevance, freshness, normalization, and limitations |
+| **User Access** | Administrator-only account creation, role/status/expiry changes, and session revocation |
+
+Article and vulnerability detail pages show stored normalized fields and
+provenance. Treat all OSINT text and outbound links as untrusted. Use only links
+accepted by the safe URL renderer and follow organizational browsing policy.
+
+## How It All Fits Together
+
+1. The operator runs `.\run.cmd`; local configuration is created or validated.
+2. Docker starts the two PostgreSQL services and Prefect server/worker.
+3. Database roles are reconciled and Alembic confirms/advances the schema.
+4. Runtime bootstrap reconciles the approved source catalog.
+5. On a genuinely fresh intelligence database, the 112-record offline snapshot
+   loads through normal persistence; existing databases are preserved.
+6. The Prefect deployment is registered while preserving its activation state;
+   a new deployment remains paused.
+7. FastAPI becomes healthy and Next.js becomes available.
+8. A fresh operator uses the one-time CLI to create the first Administrator,
+   then signs in and creates least-privilege users.
+9. When the fixed schedule is explicitly authorized and active, Prefect
+   considers the six recurring sources every two hours at minute 17.
+10. Each source independently collects, validates, normalizes, persists, and
+    records progress/evidence; one source failure is isolated.
+11. FastAPI query services read committed PostgreSQL data and return allow-listed
+    schemas to authenticated browsers.
+12. The Next.js pages present stored intelligence, while Sources, Operations,
+    Run History, Audit Log, and System Health provide operational evidence.
+
+## Routine Operation
+
+Daily local start:
+
+```powershell
+.\run.cmd
+```
+
+Development hot reload, after installing host dependencies:
 
 ```powershell
 .\run.cmd install
+.\run.cmd dev
 ```
 
-### Runner commands
+The `dev` argument in `.\run.cmd dev` selects the hot-reload runner; it is not a
+Git branch instruction. It keeps PostgreSQL and Prefect in Docker and runs
+Uvicorn/Next.js on the host. Press Ctrl+C to stop the host applications, then
+use `docker compose down` when the infrastructure should also stop.
 
-Run these commands from the repository root. They are development and local
-validation commands, not production deployment commands.
-
-| Command | Implemented behavior |
-| --- | --- |
-| `.\run.cmd setup` | Check prerequisites and create missing local environment files without installing dependencies. |
-| `.\run.cmd install` | Run setup, create the Python virtual environment when absent, and install backend and frontend dependencies. |
-| `.\run.cmd test` | Run the complete backend pytest suite, frontend Vitest suite, frontend type-check, and frontend production build. |
-| `.\run.cmd docker` | Validate development Compose, then build and start its default `db`, `backend`, `frontend`, `prefect-server`, and `prefect-worker` services, check local application endpoints, and show service status. The profile-gated `migrate` service does not start. |
-| `.\run.cmd dev` | Start PostgreSQL with development Compose, then run the backend and frontend on the host with reload support. |
-| `.\run.cmd full` | Run setup, install missing dependencies, execute the complete test workflow, then run the development Docker workflow. |
-| `.\run.cmd help` | Display the runner command reference. |
-
-With no argument, `run.cmd` defaults to `full`. For day-to-day development,
-`dev` starts only PostgreSQL in Docker, then runs FastAPI at
-`http://127.0.0.1:8000/` and Next.js at `http://127.0.0.1:3000/` on the host.
-The host backend loads `backend/.env`; when a configured `DATABASE_URL` uses the
-exact Compose hostname `db`, the runner gives only the child backend process an
-equivalent `localhost` URL without printing it. Press Ctrl+C to stop the local
-backend and frontend. The database container remains running for reuse.
-
-### Local Prefect platform
-
-Build and start only the local Prefect services from the repository root:
+Use bounded logs only when necessary:
 
 ```powershell
-docker compose up --build -d prefect-db prefect-server prefect-worker
-docker compose ps
+docker compose logs --tail 100 backend
+docker compose logs --tail 100 frontend
+docker compose logs --tail 100 prefect-server prefect-worker
 ```
 
-The Prefect administration UI and API are published only on loopback at
-`http://127.0.0.1:4200` by default. `PREFECT_PORT` may change the host port, but
-not the `127.0.0.1` bind address. The worker health port is not published. The
-non-root image directs Prefect's real UI bundles to the explicitly writable
-`/var/lib/prefect/ui` directory in `prefect_data`; site-packages remain
-read-only. Local Prefect metadata uses the separate, internal-only
-`prefect-db` PostgreSQL service and `prefect_postgres_data` volume with the
-supported async driver. The service has no host port and uses a dedicated
-non-superuser `prefect_runtime` role. The worker has no metadata-database
-network or credential and reaches state only through
-`http://prefect-server:4200/api`, creating or reusing the fixed process work
-pool `alpha-data-process`. This local platform boundary does not mean that any
-source-specific ingestion handler or active schedule exists. C01's fixed
-deployment must be registered explicitly and remains paused by default. See the
-[C01 orchestration core](docs/c01-prefect-orchestration-core.md) for offline
-validation and paused registration, and the historical
-[B2-01 Prefect platform](docs/b2-01-prefect-platform.md) for infrastructure
-health and persistence validation.
+Do not run live/manual collectors simply to make the dashboard look populated.
+Do not edit source state, checkpoints, users, or migration rows directly in the
+database.
 
-The earlier local SQLite file remains untouched in `prefect_data`; this
-correction does not claim to migrate it. On the first start of the new local
-metadata volume, the worker recreates the work pool idempotently and an operator
-recreates the deployment through `python -m app.orchestration.deployments`
-without `--activate`. The registration remains paused and makes no source
-request.
+## Adding a New Ingestion Source
 
-## Production-oriented deployment
+Treat a new source as a bounded security and data-integrity change, not as an
+extra URL. Freeze its approval, source identity, collection mode, persistence
+contract, operational evidence, tests, and documentation before implementation.
+The steps below describe the existing Alpha Data pattern.
 
-Local development and production-oriented deployment are separate workflows.
-Do not use `.\run.cmd dev`, `.\run.cmd docker`, `docker-compose.yml`, reload
-servers, or development environment values for production. The standalone
-[`compose.prod.yml`](compose.prod.yml) baseline uses production application
-images, private database networking, loopback-default application bindings,
-health checks, bounded local logs, a manual Alembic migration profile, and a
-private self-hosted Prefect server/worker pair. Production publishes no Prefect
-host port. The server uses only the internal `orchestration` network; the worker
-uses only `orchestration` and the internal `database` network and receives only
-the existing application database credential secret.
+### 1. Approve and freeze the source policy
 
-Use the canonical guides rather than duplicating or improvising secret and
-deployment procedures here:
+Record the source owner, official task, public-data purpose, terms/licence,
+`robots.txt` decision where applicable, storage and redistribution rights,
+credential class, quota, retention, and whether the source is scheduled or
+manual/approval-gated. Assign a stable canonical slug and stable vendor/content
+metadata. Fix the exact HTTPS hosts and paths, acceptable redirect behavior,
+authentication method, connect/read/write/pool and total timeouts, response-byte
+limit, pagination/object bounds, rate limits, quota handling, retry/backoff,
+incremental cursor, checkpoint contract, and source-failure isolation.
 
-- [Environment and secret handling](docs/environment-and-secrets.md)
-- [Production Docker deployment](docs/production-docker-deployment.md)
-- [Deployment build validation](docs/deployment-build-validation.md)
-- [B2-01 Prefect platform](docs/b2-01-prefect-platform.md)
-- [C01 Prefect orchestration core](docs/c01-prefect-orchestration-core.md)
+Never accept a runtime-supplied API root, arbitrary host or endpoint, callback
+URL, redirect target, header, or cookie. A collector must never scan or probe a
+target, submit a file, retrieve malware or arbitrary binaries, execute an
+exploit, or perform another harmful activity. Commercial or restricted sources
+remain disabled until the exact licence, payment, entitlement, quota, credential,
+and activation approvals are recorded.
 
-This is a hardened production-oriented baseline, not a complete or validated
-public-internet production platform. The official PostgreSQL image uses the
-operator-selected bootstrap identity for initialization and administration;
-normal runtime does not reuse it. Provisioning creates a separate non-superuser
-migration identity, a separate least-privilege runtime application identity,
-and fixed read-only, logical-backup, and retention-planning groups. Production
-delivers the three login passwords through separate secret files and publishes
-no PostgreSQL host port. The named `postgres_data` volume is persistent storage,
-not a backup. C09 implements encrypted PostgreSQL and Prefect backup/restore
-tooling, strict validation, dry-run retention, and isolated local recovery
-evidence. Off-host storage, production activation, and measured staging RPO/RTO
-remain manual gates; destructive retention requires the explicit reviewed
-confirmation described in the C09 runbook.
+### 2. Register identity without implying scheduling
 
-Routine shutdown and destructive recovery procedures belong in the production
-deployment guide. `docker compose down -v` deletes the persistent PostgreSQL
-volume and its database data; it is not routine cleanup and requires exact
-target verification, a verified backup and recovery plan, and explicit
-authorization.
+Add the immutable source definition to
+`backend/app/ingestion/source_registry.py` and keep its canonical slug and
+metadata aligned with the source catalogue reconciliation in
+`backend/app/runtime_bootstrap.py`. When orchestration is approved, generate or
+validate its closed policy contract through
+`backend/app/orchestration/contracts.py`. **Registered does not mean scheduled**:
+registry membership records a reviewed identity, while the parent-cycle handler
+set separately grants recurring execution.
 
-## Tests and validation
+### 3. Configure credentials and limits safely
 
-From the repository root, the authoritative complete local regression is:
+Add only necessary typed settings through `backend/app/core/config.py` and the
+applicable committed environment templates. Never add a real secret value.
+Secret fields must stay server-side, use protected delivery in staging or
+production, never enter `NEXT_PUBLIC_*`, and fail closed when missing or invalid.
+Logs, errors, reports, fixtures, screenshots, and tests must not expose tokens,
+authorization headers, cookies, credential-bearing URLs, raw vendor payloads,
+environment values, SQL, or stack traces.
+
+### 4. Implement the fixed-policy client
+
+Place HTTP/RSS clients under `backend/app/ingestion/collectors/`. Follow the NVD,
+EPSS, KEV, or publication collectors according to the source family. The client
+must enforce the frozen HTTPS host/path policy, reject or strictly validate
+redirects, distrust ambient proxy behavior where required, validate status and
+content type, and bound timeouts, bytes, pages, objects, retries, pacing, rate,
+and quota. Convert failures into sanitized source-safe categories. An HTTP 200
+alone is never evidence of correct collection or persistence.
+
+### 5. Normalize into canonical data
+
+Put source-specific translation in `backend/app/ingestion/normalizers/` or
+`backend/app/ingestion/adapters/`. Validate canonical identifiers, timestamps,
+URLs, scores, types, text, nesting, and bounded metadata. Strip fragments and
+tracking parameters, reject credential-like URLs and control characters, and
+preserve source attribution. Prefer the common `PublicationCandidate` contract
+for publication metadata; do not store an unrestricted raw vendor response.
+
+### 6. Reuse the canonical database model
+
+A new source does **not** automatically justify a new table. Reuse the existing
+`IntelligenceSource`, `SourceRecord`, `IntelligenceItem`, identifier,
+vulnerability, publication, operational, and progress models whenever their
+semantics fit. If genuinely new semantics require schema work, add new ORM
+definitions and a **new** Alembic migration. Never edit a committed migration.
+Specify named foreign keys/constraints, uniqueness, indexes, lifecycle rules,
+idempotency keys, and transaction ownership; add mapper and migration tests and
+retain exactly one linear Alembic head.
+
+### 7. Persist idempotently through the service layer
+
+Implement the source service or pipeline under
+`backend/app/ingestion/services/`. Use `PublicationPipeline` for compatible
+publication inputs and the existing NVD/vulnerability enrichment pattern for
+vulnerability data. Define create, update, unchanged, and conflict outcomes;
+preserve the source record, canonical identifiers, normalized item, provenance,
+and safe content hash in one explicit transaction. Deduplicate by stable
+source-owned identity and canonical identity, roll back on failure, and report
+truthful counters. A common pipeline must not secretly commit for its caller.
+
+### 8. Define incremental progress safely
+
+Specify how the source reads and resumes its cursor, checkpoint, watermark, or
+other progress proposal. Retried pages and restarts must not duplicate records.
+Never advance progress because a request merely returned or before all related
+records and run evidence are durably committed. A failure must retain the last
+safe progress value. Offline bootstrap/reference reconciliation must not invent
+cycles, runs, checkpoints, watermarks, or successful collection history.
+
+### 9. Bind the handler and Prefect flow
+
+Create the reviewed source handler under
+`backend/app/orchestration/source_handlers/` and connect the fixed chain:
+eligibility, quota/backoff, client, adapter/normalizer, service transaction,
+truthful counters, committed run evidence, and progress proposal. The source
+flow must use bounded retry/backoff and timeout rules. One source exception must
+remain isolated so unrelated source flows can finish and the parent can
+reconcile its status from committed evidence.
+
+### 10. Decide scheduled versus manual explicitly
+
+For a scheduled source, update the approved scheduled policy/handler set, the
+expected source count, orchestration tests, deployment assumptions, and runtime
+proof. Re-prove that every intended scheduled slug runs and that every manual
+slug produces zero recurring rows. For a manual or approval-gated source, keep
+it outside the parent cycle, expose only an authorized bounded entry point, and
+document the exact approval gate. Never auto-enable a commercial source.
+
+### 11. Preserve the deployment model
+
+Alpha Data uses one self-hosted Prefect parent deployment; do not add a second
+scheduler. Source registration normally does not require another deployment.
+Unless an approved task changes them, preserve the fixed work pool, working
+directory, Dubai cron, deployment concurrency `1`, and `CANCEL_NEW`. A new
+deployment starts paused and activation remains an operator approval.
+
+### 12. Validate offline before any live request
+
+Use this order:
+
+1. source-policy and registry tests;
+2. malicious/invalid configuration tests;
+3. bounded HTTP fixtures with redirects, wrong hosts, wrong content types,
+   oversize bodies, pagination caps, timeout, retry, rate, and quota cases;
+4. adapter/normalizer fixture tests;
+5. canonical URL, timestamp, identifier, and metadata-boundary tests;
+6. persistence create/update/unchanged/conflict and rollback tests;
+7. idempotency, duplicate, replay, and concurrency tests;
+8. checkpoint/watermark commit-order and recovery tests;
+9. handler status, retry, timeout, and failure-isolation tests;
+10. scheduled-versus-manual membership tests;
+11. source-catalog/bootstrap reconciliation tests;
+12. SQLAlchemy mapper validation;
+13. Alembic heads/history and migration tests when schema changed;
+14. focused API/frontend tests if the source becomes visible; and
+15. the appropriate backend regression, frontend Vitest, type-check, production
+    build, and `git diff --check` gates.
+
+Mocked fixtures must be bounded, deterministic, non-secret, and representative;
+they must not weaken validation just to make the happy path pass.
+
+### 13. Gate and record live validation
+
+A live check requires prior approval for the exact command, host/path, source,
+credential class, limits, environment, and expected storage. Perform it only in
+the approved bounded staging context. Evidence must include source slug, action,
+request/page/object limits, created/updated/unchanged/error counts, checkpoint
+before and after, run/cycle identifiers and statuses, committed database proof,
+Prefect proof when scheduled, and proof that manual-only sources stayed outside
+the recurring cycle. Sanitize all evidence. Do not present HTTP 200 as success,
+and do not infer external staging from a local run.
+
+### 14. Update the operator and product documentation
+
+Update this README's exact recurring/manual inventories and count, plus
+`docs/data-sources.md`, architecture/security/testing material, environment
+templates, operator procedures, UI/methodology text, and the task evidence that
+the approved change actually affects. Clearly label licence, credential, quota,
+coverage, freshness, and storage limitations.
+
+### 15. Source completion checklist
+
+- [ ] Official task, frozen acceptance contract, defensive public purpose, and source owner are recorded.
+- [ ] Terms, licence, robots, storage, redistribution, retention, and approval are recorded.
+- [ ] Stable canonical slug, vendor, and content family are fixed.
+- [ ] Exact HTTPS hosts, paths, and redirect policy are allow-listed.
+- [ ] Arbitrary hosts, endpoints, callbacks, headers, and cookies are rejected.
+- [ ] Authentication uses typed secure configuration with no committed secret.
+- [ ] Timeouts, response bytes, pages, objects, rate, quota, and retries are bounded.
+- [ ] Collector failures and logs are sanitized.
+- [ ] Harmful retrieval, probing, scanning, submission, and execution are impossible.
+- [ ] Adapter/normalizer validates canonical identifiers, timestamps, URLs, and bounds.
+- [ ] Provenance and safe source metadata are preserved.
+- [ ] Existing canonical models are reused unless new semantics are demonstrated.
+- [ ] Any schema change uses a new migration with one linear head.
+- [ ] Persistence has explicit transaction ownership and rollback.
+- [ ] Create/update/unchanged/conflict behavior and truthful counters are tested.
+- [ ] Idempotency, deduplication, replay, and concurrency are tested.
+- [ ] Progress advances only after durable commit and resumes safely.
+- [ ] No fabricated cycle, run, checkpoint, watermark, or success is created.
+- [ ] Handler retry, backoff, timeout, and source-failure isolation are tested.
+- [ ] Scheduled or manual/approval-gated status is an explicit reviewed decision.
+- [ ] Scheduled count and manual-only exclusion tests are updated when applicable.
+- [ ] Prefect's single-scheduler, pool, cron, concurrency, and pause rules are preserved.
+- [ ] Offline, regression, mapper, migration, frontend, and diff checks are recorded.
+- [ ] Exact live approval and sanitized end-to-end evidence exist before activation.
+- [ ] README, source catalogue, operator, security, test, and limitation docs are current.
+
+## Testing and Validation
+
+Install host dependencies once before the full local test runner:
 
 ```powershell
+.\run.cmd install
 .\run.cmd test
 ```
 
-It runs backend pytest, frontend Vitest, frontend type-checking, and the frontend
-production build. Tests use synthetic or mocked inputs and must not contact live
-OSINT sources unless a separately documented manual smoke command is explicitly
-invoked.
+The test command runs, in order:
 
-### Frontend component tests
+1. all backend pytest tests;
+2. frontend Vitest in non-watch mode;
+3. Next/TypeScript type generation and `tsc --noEmit`; and
+4. the frontend production build.
 
-The frontend uses Vitest, jsdom, and React Testing Library. Tests run offline
-with synthetic fixtures and mocked frontend service responses; they do not need
-a running backend, database, Docker service, live OSINT source, or secret.
-
-From `frontend`, run the suite once for automated validation:
+Useful direct checks are:
 
 ```powershell
+Set-Location .\backend
+.\.venv\Scripts\python.exe -m pytest
+.\.venv\Scripts\python.exe -m alembic -c alembic.ini heads
+.\.venv\Scripts\python.exe -m alembic -c alembic.ini history
+Set-Location ..\frontend
 npm run test:run
+npm run type-check
+npm run build
+Set-Location ..
+git diff --check
 ```
 
-Use watch mode during local test development:
+The primary final regression evidence is dated **12 August 2026**:
 
-```powershell
-npm test
-```
-
-The project-level `.\run.cmd test` workflow includes the one-shot frontend
-suite. The standalone `npm run validate:safe-rendering` command remains
-available for the broader P5-03 URL and text-payload validation. This repository
-does not currently define a CI workflow.
-
-### Backend API tests
-
-The backend API tests run offline with deterministic dependency overrides. They
-cover the public metadata, dashboard summary, article list/detail, intelligence
-list/detail, validation, pagination, error, CORS, request-ID, and security-header
-contracts. From the repository root, run the focused suite with:
-
-```powershell
-$OriginalTemp = $env:TEMP
-$OriginalTmp = $env:TMP
-$OriginalPytestAddopts = $env:PYTEST_ADDOPTS
-$ValidationTemp = Join-Path $env:USERPROFILE "pytest-temp-api"
-New-Item -ItemType Directory -Path $ValidationTemp -Force | Out-Null
-$env:TEMP = $ValidationTemp
-$env:TMP = $ValidationTemp
-Remove-Item Env:PYTEST_ADDOPTS -ErrorAction SilentlyContinue
-
-Push-Location .\backend
-.\.venv\Scripts\python.exe -m pytest `
-    tests/test_health.py tests/test_version.py `
-    tests/test_dashboard_summary_api.py tests/test_articles_api.py `
-    tests/test_intelligence_api.py tests/test_security_middleware.py `
-    tests/test_logging_and_errors.py -q -p no:cacheprovider
-Pop-Location
-
-$env:TEMP = $OriginalTemp
-$env:TMP = $OriginalTmp
-if ($null -eq $OriginalPytestAddopts) {
-    Remove-Item Env:PYTEST_ADDOPTS -ErrorAction SilentlyContinue
-} else {
-    $env:PYTEST_ADDOPTS = $OriginalPytestAddopts
-}
-```
-
-The alternate temp directory avoids Windows profile temp-folder permission
-problems and remains outside the repository. Full project validation remains
-`.\run.cmd test`. The current dependency set can emit the known
-`StarletteDeprecationWarning` about the FastAPI/Starlette test client and
-`httpx`; this does not indicate a test failure.
-
-### Manual NVD smoke test
-
-From the `backend` directory, a developer can make one small, network-active
-request to the public NVD API:
-
-```powershell
-.\.venv\Scripts\python.exe -m app.ingestion.collectors.nvd_smoke_test `
-    --window-minutes 5 `
-    --results-per-page 3
-```
-
-This command runs only when invoked manually. It uses `NVD_API_KEY` from local
-settings when available, prints summary counts and safe CVE identifiers only,
-and does not store data or start scheduled ingestion.
-
-To manually fetch and store a bounded set of public NVD CVEs, run this separate
-network- and database-active command from `backend`:
-
-```powershell
-.\.venv\Scripts\python.exe -m app.ingestion.nvd_cli `
-    --window-minutes 60 `
-    --results-per-page 25 `
-    --max-records 25
-```
-
-It runs only when explicitly invoked, stores bounded normalized public data and
-sanitized audit records, and is not connected to application startup or a
-scheduler.
-
-### Manual curated multi-year NVD dataset
-
-The separate curated command builds a representative sample rather than a
-complete NVD mirror. Its defaults target 20 CVEs per UTC publication year from
-2020 through the current UTC year: 10 Critical, 5 High, 3 Medium, and 2 Low.
-Within each severity it prioritizes NVD records carrying CISA KEV metadata, then
-orders by CVSS score, NVD last-modified time, and CVE ID.
-
-Preview the validated plan without network or database access:
-
-```powershell
-.\.venv\Scripts\python.exe -m app.ingestion.nvd_curated_cli --plan
-```
-
-Run the network- and database-active workflow only through explicit operator
-invocation:
-
-```powershell
-.\.venv\Scripts\python.exe -m app.ingestion.nvd_curated_cli `
-    --start-year 2020 `
-    --end-year 2026 `
-    --chunk-days 90 `
-    --results-per-page 50 `
-    --max-pages-per-query 2 `
-    --max-requests 400 `
-    --retention-multiplier 1
-```
-
-Replace `2026` with the current UTC year. Candidate requests use only the fixed
-NVD endpoint and typed publication, CVSS v3/v4 severity, pagination, and KEV
-filters. The client rejects an oversized valid `Content-Length` before body
-consumption and otherwise stops its decoded streaming read immediately above
-20 MiB. By default, each year retains at most 10 Critical, 5 High, 3 Medium, and
-2 Low full candidates; discarded or evicted valid candidates make that year
-incomplete. Page/request caps and quota shortfalls are likewise explicit, and
-the summary identifies every capped or incomplete year.
-
-Audit counts include malformed, duplicate, retention-discarded, and valid
-unselected observations as skipped, and the completion timestamp is captured
-after processing. Existing CVEs use the normal update/unchanged path, unrelated
-CVEs are never deleted, and the incremental NVD checkpoint is not advanced.
-Run FIRST EPSS and CISA KEV commands separately as operator workflows. The
-catalog-driven bounded CISA run does not prove a not-listed KEV result for every
-local CVE; only the separate complete-catalog local reconciliation can do so.
-
-> This product uses data from the NVD API but is not endorsed or certified by the NVD.
-
-See [the NVD ingestion guide](docs/nvd-ingestion.md) for limits and known
-limitations.
-
-### Manual FIRST EPSS enrichment
-
-From the `backend` directory, a developer can enrich existing stored CVEs with
-latest public FIRST EPSS probability and percentile values:
-
-```powershell
-.\.venv\Scripts\python.exe -m app.ingestion.epss_cli `
-    --max-cves 25 `
-    --batch-size 25
-```
-
-This command runs only when explicitly invoked. It matches EPSS records only to
-existing global CVE identifiers, stores latest-value score metadata with
-non-primary FIRST EPSS provenance, records sanitized audit outcomes, and never
-creates new CVE intelligence items from EPSS data.
-
-### Manual CISA KEV local reconciliation
-
-The existing `app.ingestion.cisa_kev_cli` command is catalog-driven and marks
-bounded matched catalog entries as listed. The separate command below fetches
-and validates every declared catalog entry before assigning listed or
-not-listed status to bounded local vulnerability rows:
-
-```powershell
-.\.venv\Scripts\python.exe -m app.ingestion.cisa_kev_reconcile_cli `
-    --max-cves 500 `
-    --batch-size 100
-```
-
-Use `--plan` to show the fixed source and bounds without network or database
-access. `--max-cves` accepts 1 through 500 local rows and `--batch-size` accepts
-1 through 100. An empty, partial, malformed, interrupted, or oversized catalog
-cannot produce a not-listed result. The database-active command commits once
-after all selected batches and safe audit records complete. A clean result is
-`succeeded` with exit code 0. A skipped selected row or any selected row still
-in `unknown` state produces a controlled `partial` result with exit code 1;
-valid status changes and safe audit records are still committed. The
-`unknown_remaining` count includes only selected rows that remain in the
-`unknown` state.
-
-Formal `IngestionRun` counters describe local rows and reconcile exactly:
-fetched equals created plus updated plus unchanged plus skipped plus failed,
-with created fixed at zero. Catalog raw-record and unique-CVE counts remain
-separate summary and checkpoint evidence. The start time is captured before
-catalog fetch, the checked time after complete validation immediately before
-local reconciliation, and the completion time after local reconciliation and
-audit processing. Repeated successful runs are idempotent apart from refreshing
-the KEV checked timestamp.
-
-Selection produces exactly one outcome per unique vulnerability row and always
-starts with the lowest local vulnerability IDs. Global CVE identifiers are
-loaded separately for each bounded batch. A row with no usable global CVE or
-more than one distinct usable global CVE is skipped; ambiguous identity never
-selects a CVE based on identifier query order. A skipped row still in the
-`unknown` state makes the run a controlled partial result. Catalog-version
-evidence is restricted to a non-empty, bounded ASCII token containing only
-letters, digits, periods, underscores, and hyphens.
-
-Because the command is capped at 500 rows, a database with more than 500
-vulnerabilities requires a future cursor/resume enhancement to reconcile later
-IDs. This remains manual-only: no scheduler, startup execution, public
-ingestion API, or frontend trigger invokes it.
-
-### Manual CERT-EU RSS ingestion
-
-From the `backend` directory, a developer can fetch and store a bounded set of
-approved public CERT-EU Security Advisories feed entries:
-
-```powershell
-.\.venv\Scripts\python.exe -m app.ingestion.rss_cli `
-    --max-records 25
-```
-
-This command runs only when explicitly invoked. It is locked to the approved
-`https://cert.europa.eu/publications/security-advisories-rss` feed, stores
-normalized advisory metadata as `security_advisory` intelligence items, records
-sanitized audit outcomes through the common publication pipeline, and does not
-fetch article bodies or arbitrary RSS sources.
-
-### Manual Censys publication ingestion
-
-The Censys live collector is network- and database-active but manual-only. From
-the `backend` directory, use one of these Windows PowerShell commands for the
-two supported and source-separated publication families:
-
-```powershell
-.\.venv\Scripts\python.exe -m app.ingestion.censys_publications_live_cli `
-    --source arc `
-    --max-records 5
-
-.\.venv\Scripts\python.exe -m app.ingestion.censys_publications_live_cli `
-    --source rapid-response `
-    --max-records 5
-```
-
-`--source` is required and accepts only `arc` or `rapid-response`.
-`--max-records` defaults to 5 and its valid range is 1 through 20. No arbitrary
-URL is accepted: the discovery locations are fixed in code, and discovered
-publication links must remain in the selected approved Censys path family. The
-collector bounds redirects, response sizes, accepted HTML content types, and
-request pacing. It allows no more than three redirects, reads at most 2 MiB per
-response, and enforces at least ten seconds between request starts.
-
-The collector retrieves publication metadata only. Raw HTML or JSON-LD is not
-stored. Normalized allow-listed metadata enters the existing Censys adapter and
-shared ingestion service, then the common publication pipeline and database.
-Safe partial failures are audited without URLs, raw exception details, response
-content, or headers. Rerunning a command deduplicates through the existing
-publication pipeline; existing manually imported catalogue records do not need
-to be deleted.
-
-The implemented path is:
-
-```text
-manual command
-    -> fixed approved Censys discovery page
-    -> secure bounded collector
-    -> existing Censys adapter
-    -> shared Censys ingestion service
-    -> existing publication pipeline
-    -> database and safe ingestion audit records
-```
-
-Before live ingestion:
-
-1. Activate the backend virtual environment with
-   `.\.venv\Scripts\Activate.ps1`.
-2. Confirm the approved environment configuration provides the database
-   settings; do not place a database URL or credentials in the command.
-3. Confirm Alembic migrations are current with the repository's approved
-   migration checks.
-4. Run only one manual Censys collection at a time. Start with
-   `--max-records 1` or `--max-records 5`.
-5. Expect at least ten seconds between request starts. Even a small run can take
-   several minutes, so do not interrupt it unless necessary.
-6. Review the safe run summary, then inspect stored application records through
-   approved read-only API or database tooling.
-
-A successful ARC run prints only an allow-listed summary in this format:
-
-```text
-Manual Censys live ingestion completed.
-Source: censys-arc-research
-Run ID: <run-uuid>
-Status: succeeded
-Fetched: 5
-Created: 0
-Updated: 0
-Unchanged: 5
-Skipped: 0
-Failed: 0
-Capped: false
-```
-
-The summary never prints publication URLs, titles, source external IDs,
-internal database IDs, raw exceptions, HTTP headers, or response content.
-Invalid arguments fail before collection with exit code 2. Discovery-level
-failure occurs before database-session creation. A run may store valid
-publications when another page fails; mixed success and failure produces a
-`partial` run, while all-page failure produces a `failed` run. Controlled
-collection, partial, failed, and database-error outcomes return exit code 1;
-database failures are rolled back and console errors remain sanitized. A fully
-successful run returns exit code 0. System-level interruptions propagate and
-are not converted into false success.
-
-The reviewed local-file fallback remains available when live collection is not
-appropriate:
-
-```powershell
-.\.venv\Scripts\python.exe -m app.ingestion.censys_publications_cli `
-    --file <reviewed-local-json-file>
-```
-
-The local file must be reviewed and conform to the existing strict Censys
-catalogue schema. It is UTF-8 JSON limited to 1 MiB and 100 publication records,
-with exactly `schema_version`, `source_slug`, and `publications` at the document
-level and the existing exact publication fields. Author and category lists are
-each limited to 20 plain-text values. The input must use an ordinary local path;
-UNC/network and Windows device-namespace paths are rejected before traversal.
-This fallback reads only the supplied regular file and makes no Censys network
-request.
-
-No scheduler, recurring background job, startup ingestion, public ingestion
-endpoint, or automatic frontend invocation is installed. The feature collects
-defensive public research publication metadata only; it must not be used to
-scan, probe, search, or rescan internet assets and does not use a Censys account,
-API key, or scanning API.
-
-### Manual Google TI and Mandiant publication ingestion
-
-From the `backend` directory, a developer can fetch and store a bounded set of
-official public Google Threat Intelligence topic RSS entries:
-
-```powershell
-.\.venv\Scripts\python.exe -m app.ingestion.google_threat_publications_cli `
-    --max-records 25
-```
-
-The command is manual-only and uses the fixed official RSS feed. It has no URL
-argument and uses no credentials. Entries are accepted only when the normalized
-author is exactly `Google Threat Intelligence Group` or `Mandiant`; ownership is
-not inferred from titles, categories, product names, report links, or article
-text. Stored records are `threat_report` metadata with exact
-`cloud.google.com/blog/topics/threat-intelligence/` publication URLs. Article
-bodies, downloadable reports, PDFs, malware samples, observables, and IOCs are
-not fetched or stored.
-Only feed `summary` or `description` values may become stored summaries; feed
-`content`, article bodies, attachments, media links, and report downloads are
-ignored. If an otherwise owned entry fails validation, the failure is audited
-only under that resolved source. If an entry cannot be attributed to an approved
-author, the command records sanitized shared-feed error evidence on both
-logical runs without incrementing either source's fetched or failed record
-counters.
-
-### Manual Anomali Cyber Watch publication ingestion
-
-From the `backend` directory, an operator can run the secure live collector:
-
-```powershell
-.\.venv\Scripts\python.exe `
-    -m app.ingestion.anomali_publications_live_cli `
-    --max-records 5
-```
-
-This command is manually triggered only. `--max-records` defaults to 5 and its
-supported range is 1 through 20. The collector requests only the fixed discovery
-URL `https://www.anomali.com/blog`; it accepts no arbitrary URL. Discovery and
-article requests require HTTPS, exact host `www.anomali.com`, and the literal
-Cyber Watch article path `/blog/anomali-cyber-watch-...`. Redirects are followed
-only after explicit validation. Requests are not automatically retried, start at
-least ten seconds apart, and have bounded timeouts and response sizes.
-
-The live collector extracts bounded publication metadata only and does not parse
-article-body prose. It screens selected title, summary, author, and category
-metadata for IOC-like URLs, IP addresses, domains, hashes, internationalized
-domains, and common defanged forms; unsafe metadata is rejected before adapter
-invocation. Raw HTML, HTTP headers, cookies, attachments, media, PDFs, downloads,
-and malware samples are not persisted by live collection.
-
-Collection completes before a database session is opened. If collection
-succeeds, persistence is atomic and safely audited through the existing
-publication pipeline. Console output uses allow-listed summaries; raw HTTP and
-database errors are not exposed.
-
-The currently operational method is the reviewed local JSON fallback:
-
-```powershell
-.\.venv\Scripts\python.exe `
-    -m app.ingestion.anomali_publications_cli `
-    --file C:\path\to\anomali-cyber-watch.json
-```
-
-The local command accepts only schema version 1 for source slug
-`anomali-cyber-watch`, with at most 100 exact seven-field records in a 1 MiB
-UTF-8 file. It validates the title family, canonical URL identity, timestamps,
-plain-text bounds, authors, and categories. The input must be reviewed,
-operator-prepared publication metadata only. Operators and reviewers must
-exclude article-body text; IOCs and observables; hashes, IP addresses, and
-domains used as indicators; raw HTML; HTTP headers and cookies; and attachments,
-media, PDFs, downloads, or malware samples. The local adapter is not a
-comprehensive automatic IOC detector. The verified five-record catalogue was
-reviewed and contained safe metadata. There is no scheduler, recurring
-background job, startup ingestion, public ingestion API, or frontend trigger.
-
-Manual live Anomali Cyber Watch collection is implemented and validated
-offline. During a controlled live smoke test on 19 July 2026, the fixed official
-blog page returned HTML with no deterministic main-content region and no
-approved Cyber Watch article links. Discovery therefore failed safely before an
-article request was issued and before database-session creation; no ingestion
-run was created and no live records were persisted. The request was not rejected
-with HTTP 403; the observed response status was HTTP 200. The reviewed safe local
-JSON catalogue was then imported successfully for source
-`anomali-cyber-watch`: 5 records were fetched, created, and linked. Reviewed
-local JSON ingestion remains the currently supported operational method.
-
-### Manual IBM X-Force publication import
-
-From the `backend` directory, an operator can import one approved source family
-from a strict local JSON document:
-
-```powershell
-.\.venv\Scripts\python.exe -m app.ingestion.ibm_x_force_publications_cli `
-    --file C:\path\to\ibm-x-force-publications.json
-```
-
-The document source must be exactly `ibm-x-force-public-research` or
-`ibm-x-force-public-osint-advisories`; one file and ingestion run cannot mix
-them. Files are UTF-8 JSON limited to 1 MiB, 100 exact seven-field records, and
-plain-text operator-prepared metadata. The command has no source, URL, login,
-credential, API, browser, scheduler, startup, worker, or public endpoint option.
-
-### Read-only intelligence API
-
-The backend now exposes stored intelligence items through manual read-only API
-endpoints:
-
-- `GET /api/v1/articles`
-- `GET /api/v1/articles/{public_id}`
-- `GET /api/v1/dashboard/summary`
-- `GET /api/v1/intelligence/items`
-- `GET /api/v1/intelligence/items/{item_public_id}`
-
-The two list endpoints use bounded offset pagination: `limit` defaults to `25`
-and accepts `1` through `100`, while `offset` defaults to `0` and accepts `0`
-through `10,000`. Out-of-range values return sanitized HTTP `422`. Every
-currently implemented query parameter is single-value; repeated scalar names
-and unknown names return `422` after percent-decoding. Different supported
-parameters can still be combined. The
-dashboard summary accepts only `window_days`; article/intelligence detail,
-`GET /`, `GET /api/health`, and `GET /api/version` accept no query parameters.
-
-The implemented `q` fields are plain-text searches with a maximum supplied
-length of 120 characters. Surrounding whitespace is trimmed, while
-whitespace-only values, NUL/control or non-printable characters, embedded line
-breaks, Unicode format/control characters, and `<` or `>` return `422`.
-Ordinary Unicode and useful punctuation remain valid. SQL LIKE wildcard and
-escape characters are treated literally, and raw payloads or sensitive fields
-are never searched. Article search covers title and summary; intelligence-item
-search also covers the primary CVE identifier.
-
-Article and intelligence detail IDs must be canonical 36-character hyphenated
-UUIDs such as `12345678-1234-5678-1234-567812345678`. Uppercase hexadecimal is
-accepted and normalized; compact, braced, malformed, or overlong UUIDs return
-`422`, while a correctly formatted nonexistent UUID returns `404`. Current
-P5-01 validation failures use the sanitized body
-`{"detail":"Request validation failed."}` without echoing rejected input or
-exposing parser internals, exception context, stack traces, headers, database
-details, or configuration. A richer standardized error envelope remains future
-error-handling work.
-
-The article list endpoint returns active article-like records with bounded
-`limit` and `offset` pagination, title/summary search through `q`, and safe
-filters for category, source slug, tag slug, publication date range,
-geographic scope, and UAE relevance status. The article detail endpoint returns
-one active article-like record by public UUID using the same safe normalized
-fields and returns `404` for missing, inactive, non-article, merged,
-superseded, archived, or vulnerability records. The generic intelligence list
-endpoint supports bounded `limit` and `offset` pagination plus these safe
-filters: `q`, `severity`, `source_slug`, `item_type`, `cve_id`,
-`geographic_scope`, and `uae_relevance_status`. Responses return normalized
-dashboard-ready fields only, including safe EPSS score, percentile,
-score-date, KEV date, KEV due-date, and ransomware-use fields when enrichment
-exists. The dashboard summary endpoint returns database-backed KPI counts,
-latest article previews, and latest stored fetch status. The dashboard landing
-page uses this endpoint for the four top KPI cards and uses
-`GET /api/v1/intelligence/items` for the vulnerability table. The vulnerability
-table links each CVE by public UUID to a frontend vulnerability detail page, and
-the latest articles feed links each article to a frontend article detail page.
-Both list endpoints default to `recently_ingested` and accept exactly three
-strict `sort` values: `recently_ingested` orders canonical
-`IntelligenceItem.created_at` descending, `newest_published` orders
-the canonical source publication timestamp descending, and
-`oldest_published` orders it ascending. Every mode uses the canonical item ID as
-a deterministic tie-breaker, applies ordering before offset pagination, and
-keeps unknown publication timestamps last. Invalid values return sanitized
-HTTP `422`; callers cannot provide a column or SQL direction. “Recently
-ingested” therefore means newly created in this application and is intentionally
-different from “newest published,” which may describe older material collected
-today. The dashboard latest-articles feed and vulnerability table both send
-backend-driven geographic-scope and UAE relevance-status filters through those
-read-only APIs. Search, filters, and offset pagination combine at the backend;
-changing a filter or sort resets the frontend view to the first page without
-discarding unrelated active filters.
-The dashboard also composes bounded latest CVE and article API results for a
-recent stored-data trends panel; this is not a complete historical analytics
-module. Release panels use backend results or truthful unavailable/empty states,
-not deterministic production preview data. Raw source payloads,
-request headers, secrets, and ingestion audit internals are intentionally not
-returned, and these endpoints never trigger ingestion or external network calls.
-
-### Manual UAE relevance classification
-
-From the `backend` directory, a developer can preview deterministic offline UAE
-classification for existing records:
-
-```powershell
-.\.venv\Scripts\python.exe -m app.processing.uae_classification_cli `
-    --max-items 20
-```
-
-The command is dry-run by default. To persist eligible automatic/unassigned
-classification changes, use:
-
-```powershell
-.\.venv\Scripts\python.exe -m app.processing.uae_classification_cli `
-    --max-items 20 `
-    --apply
-```
-
-The classifier uses safe normalized metadata only, preserves manual and
-source-declared classification ownership, performs no network calls, and is not
-connected to application startup, a scheduler, or any public write endpoint.
-Automatic confidence is a fixed deterministic mapping from the winning UAE
-classification rule to the existing nullable `uae_relevance_confidence` field:
-approved UAE source and direct `United Arab Emirates` phrase use `0.950`,
-standalone `UAE` uses `0.900`, direct emirate names use `0.850`, and records
-with no direct UAE evidence keep confidence `null`. The value represents the
-strength of deterministic evidence used for UAE relevance classification. It
-does not represent exploit probability, threat attribution, attacker intent,
-targeting certainty, or business impact.
-The frontend displays this canonical numeric value as a clear presentation
-label: High for `0.900`-`1.000`, Medium for `0.750`-`0.899`, Low for
-`0.000`-`0.749`, and no confidence label for `null`. The current automatic
-rules emit High or Medium labels; Low remains available for manually reviewed,
-source-declared, seeded, or future valid confidence values. These labels are
-not threat severity, exploit probability, statistical calibration, attribution
-certainty, or proof that low-confidence items are not relevant. P4-03 frontend
-filters use the relevance status values only and do not add confidence filters.
-
-## Canonical documentation
-
-Use the root README as the entry point and the following documents as the
-authoritative detailed references:
-
-| Area | Canonical document |
+| Validation gate | Literal result |
 | --- | --- |
-| Phase A evidence and Phase B start checkpoint | [Phase A baseline](docs/phase-a-baseline.md) |
-| System design and data flow | [Architecture](docs/architecture.md) |
-| Implemented and candidate sources | [Data sources](docs/data-sources.md) |
-| Vendor-family decisions | [Source assessment matrix](docs/source-assessment-matrix.md) |
-| Source authorization and safety rules | [Source integration policy](docs/source-integration-policy.md) |
-| Application security controls | [Security notes](docs/security-notes.md) |
-| Automated testing strategy | [Testing plan](docs/testing-plan.md) |
-| Human-executed QA cases | [Manual test cases](docs/manual-test-cases.md) |
-| Environment variables and secrets | [Environment and secret handling](docs/environment-and-secrets.md) |
-| Production-oriented operation | [Production Docker deployment](docs/production-docker-deployment.md) |
-| Self-hosted workflow orchestration platform | [B2-01 Prefect platform](docs/b2-01-prefect-platform.md) |
-| Prefect flow, deployment, reliability, and progress contracts | [C01 Prefect orchestration core](docs/c01-prefect-orchestration-core.md) |
-| Verified local deployment-build evidence | [Deployment build validation](docs/deployment-build-validation.md) |
-| Development deployment notes | [Deployment notes](docs/deployment-notes.md) |
-| UAE classification semantics | [UAE classification](docs/uae-classification.md) |
+| Full backend pytest | **5,225 passed, 258 skipped, 56 failed, 12 warnings**; nonzero, therefore not a PASS |
+| SQLAlchemy mapper validation | **PASS** |
+| Alembic graph | **PASS**; exactly one linear head |
+| Frontend Vitest | **PASS**; 38 files and 237 tests |
+| Frontend type-check | **PASS** |
+| Frontend production build | **PASS** |
+| `git diff --check` | **PASS**, with Windows LF/CRLF advisories |
+| `.\run.cmd test` | Nonzero because the same backend environment/historical limitations stop the aggregate runner |
 
-## Known limitations
+The 56 backend failures have two distinct classifications and must not be
+reported as 56 hash failures:
 
-- Scheduled ingestion is inactive. C01 defines one paused-by-default two-hour
-  deployment and C07 provides audited operator controls. SIX-BIND-01 code-binds
-  exactly six reviewed scheduled handlers, but Prefect remains paused and no
-  live schedule is claimed. C05 and every other non-approved source remain
-  unbound. A separate controlled activation-precondition task follows; a
-  parent-cycle run still requires separate approval, and recurring Prefect unpause
-  remains a later, separately approved step. SIX-BIND-01 executed no parent
-  ingestion cycle.
-- Release dashboard panels are backend-connected or show truthful
-  unavailable/empty states; the trends view is intentionally bounded rather
-  than a complete historical analytics module.
-- C09 includes the Caddy TLS edge and HSTS policy, but public DNS, public
-  certificate issuance, and mentor-accessible staging remain manual evidence.
-- C09 includes encrypted PostgreSQL and Prefect backup/restore tooling and
-  isolated local rehearsal evidence. Approved off-host storage and measured
-  staging RPO/RTO remain manual gates. The persistent volume is not a backup.
-- Logs and private Prometheus/Alertmanager configuration are bounded locally.
-  External alert ownership, delivery, and centralized off-host logging remain
-  unactivated/manual integrations.
-- CI/CD deployment, Kubernetes or another orchestration platform for container
-  deployment, autoscaling, zero-downtime deployment, and automated secret
-  rotation are not implemented. Prefect provides workflow orchestration only.
-- Local development now uses a dedicated internal PostgreSQL database for
-  Prefect metadata. The production-oriented Compose baseline still uses one
-  Prefect server with SQLite and has no high availability, Redis,
-  Prefect-specific PostgreSQL, authentication, production backup/restore proof,
-  or staging deployment. Network isolation is the current administration
-  boundary.
-- Current production Compose separates the privileged PostgreSQL bootstrap
-  identity from non-superuser migration and runtime application identities;
-  read-only, logical-backup, and retention-planning groups remain bounded to
-  their implemented duties. Staging provisioning, approved off-host backup
-  transfer, destructive retention activation, and staging recovery measurement
-  remain manual operational work.
-- Production load, capacity, failover, and public-internet deployment have not
-  been validated.
-- The backend production image currently installs the shared requirements file,
-  which includes development and test dependencies.
-- Manual QA cases remain `Not Run` until a tester executes them and records
-  evidence; automated regression does not change their status.
+1. **54 failures** are in `tests/test_c08_pre02_reconciliation.py` because the
+   test environment has no `pwsh` executable. PowerShell 7 is unavailable;
+   Windows PowerShell 5.1 does not satisfy that test contract.
+2. The remaining **2 raw-byte/hash failures** are:
+   `tests/test_c08_pre02_reconciliation.py::test_reviewed_sql_hashes_match_final_files`
+   (LF/CRLF raw-byte hash) and
+   `tests/test_ioc_relationship_migration.py::test_previous_migration_files_are_byte_for_byte_unchanged`
+   (historical migration raw-byte hash).
 
-## Reviewer and mentor handover path
+These are accepted environment/historical limitations at this checkpoint, not
+a newly demonstrated release regression. They are also not a green backend
+suite: report the nonzero result literally. `.\run.cmd test` therefore did not
+pass, even though the separately executed mapper, migration, frontend, and diff
+gates above passed.
 
-1. Read this README for scope, implemented behavior, local commands, and known
-   limitations.
-2. Review [Architecture](docs/architecture.md), [Data sources](docs/data-sources.md),
-   and the [Source integration policy](docs/source-integration-policy.md) before
-   evaluating data-collection claims.
-3. Review [Security notes](docs/security-notes.md) and
-   [Environment and secret handling](docs/environment-and-secrets.md) before
-   evaluating configuration or deployment.
-4. Use [Testing plan](docs/testing-plan.md),
-   [Manual test cases](docs/manual-test-cases.md), and
-   [Deployment build validation](docs/deployment-build-validation.md) to
-   distinguish automated, manual, and deployment evidence.
-5. Use [Production Docker deployment](docs/production-docker-deployment.md) only
-   with protected external configuration and the documented operational
-   controls. Do not infer full production readiness from a successful local
-   Compose build.
+Automated tests do not prove live-source availability, licensing, public TLS,
+staging uptime, external load capacity, alert delivery, backup recovery, or
+manual accessibility/analyst acceptance.
 
-Before staging any handover update, independently review the complete changed
-files together with the focused and full-regression evidence.
-## C05 official public sources (implemented, disabled)
+## Troubleshooting
 
-C05 combines B6-01/B6-02/B6-03. Paid-source implementation work is retired:
-there is no pending Censys Platform/Search API, VirusTotal premium/business,
-Recorded Future, commercial free-tier workaround, paid credential, subscription
-mock, or fabricated commercial result. The existing public Censys ARC and Rapid
-Response publication-metadata workflows remain preserved and are not Platform
-API integrations.
+### Docker or Compose is unavailable
 
-MITRE ATT&CK Enterprise TAXII/STIX 2.1, CERT-FR alerts, CERT-FR advisories, and
-UK NCSC Threat Reports are fixture-tested and implemented but disabled. They
-require no credentials, are absent from production handler bindings and
-schedules, and made no live request during C05. No database migration was added.
-The RSS sources collect metadata only; no article, PDF, attachment, enclosure,
-image, or external-reference retrieval exists. See
-[`docs/c05-official-public-sources.md`](docs/c05-official-public-sources.md) for
-the exact endpoints, bounds, progress contracts, security controls, and accepted
-limitations. Activation requires separate approval and bounded staging evidence.
+Start Docker Desktop, wait for the daemon, and rerun `.\run.cmd`. If
+`docker compose version` fails, install/enable Compose v2. Do not change the
+project to an unreviewed container runtime command.
 
-## C07 authenticated operations experience
+### Missing or invalid environment values
 
-C07 adds the browser authentication bootstrap, protected and role-aware
-navigation, source/operations/run-history views, Administrator user view, and
-permission-gated source controls backed by durable acceptance evidence. It does
-not activate a handler or schedule, make a live source request, or add a model
-or migration. See [C07 authenticated operations experience](docs/c07-authenticated-operations-experience.md)
-for the exact routes, permission and transition matrices, idempotency, polling,
-audit, redaction, and accepted limitations.
+Run `.\run.cmd setup`. It will not overwrite an existing `.env`. If startup
+names a missing/unsafe field, edit only that field locally using `.env.example`
+as the structural reference. Never paste the value into chat or print the file.
+If existing credentials and a named database volume disagree, do not delete the
+volume; coordinate role reconciliation or credential rotation.
 
-## C09 production operations and recovery
+### A port is occupied
 
-C09 adds functional Reports, System Health, Audit Log, and Methodology pages;
-bounded audited CSV/PDF exports; protected full-stack health; private
-Prometheus metrics and Alertmanager rules; an exact-host Caddy HTTPS edge; and
-streaming encrypted PostgreSQL/Prefect backup and isolated-restore tooling.
-Only Caddy publishes production ports. Source handlers remained empty and the
-C05 sources remained disabled at the historical C09 checkpoint. See [C09 production operations and recovery](docs/c09-production-operations-recovery.md)
-and the [C09 recovery runbook](docs/c09-recovery-runbook.md). B9-03 public
-staging, external alert delivery, approved off-host storage, and measured
-RPO/RTO evidence remain manual gates.
+Find the local owner of ports `3000`, `8000`, `4200`, or `5432`:
+
+```powershell
+Get-NetTCPConnection -State Listen | Where-Object LocalPort -In 3000,8000,4200,5432
+```
+
+Stop the conflicting approved process or configure a reviewed alternative host
+port in root `.env`. Do not widen loopback bindings to `0.0.0.0` as a shortcut.
+
+### Database or migration validation fails
+
+Read the sanitized runner message and at most the last 100 database/migration
+log lines. The runner blocks unknown revisions, multiple heads, unversioned
+application tables, conflicting source identities, and unsafe grants. Preserve
+the database, record the current commit/revision, and escalate. Do not edit an
+old migration, stamp a revision, drop tables, or delete the volume.
+
+### Backend or frontend is unhealthy
+
+Check `docker compose ps`, then the backend health URL and bounded service logs.
+Confirm exact local CORS/Host/API-base configuration. Do not expose stack traces,
+environment dumps, cookies, or resolved configuration in an issue.
+
+### First administrator or login fails
+
+Run the bootstrap command only after `.\run.cmd` succeeds. It refuses when a
+user already exists. For an existing environment, use **User Access** with an
+authorized Administrator to check status, expiry, role, or revoke sessions; do
+not rerun bootstrap, modify password hashes, or reset the database. After five
+failed logins in the default 15-minute window, the default block is 15 minutes;
+the public response remains generic.
+
+### Prefect is unavailable, paused, or not scheduling
+
+Run the read-only verification commands from the fresh setup. Confirm the
+server/worker are healthy, the `alpha-data-process` pool and default queue are
+ready, the exact deployment exists, and the schedule is active only when
+authorized. A paused fresh deployment is expected, not a startup failure.
+Closing the browser does not stop Prefect; stopping Docker or the worker does.
+
+### Tests stop at the PowerShell/checkout boundary
+
+At the 12 August 2026 checkpoint, 54 reconciliation tests fail because `pwsh`
+(PowerShell 7) is unavailable; Windows PowerShell 5.1 is not a substitute for
+that executable contract. Two additional tests fail on reviewed raw bytes: one
+LF/CRLF SQL hash and one historical migration hash. Record exact node IDs and
+environment evidence, and do not classify a different failure as known without
+proof. Run separately labeled complementary validation; never weaken or skip an
+assertion merely to obtain a green total.
+
+## Defensive, Ethical, and Security Boundary
+
+Use Alpha Data only for defensive, ethical, authorized, educational, or
+lab-safe work. It must not be used for exploit execution, unauthorized scanning
+or probing, credential theft, phishing, malware retrieval/delivery,
+persistence, stealth/evasion, control bypass, or attacks against real systems.
+
+External OSINT is untrusted data. Fixed developer-controlled sources, bounded
+clients, schemas, normalizers, transaction controls, response allow-lists, and
+safe rendering reduce risk. Registry inclusion does not grant collection
+authorization, licensing permission, API access, storage rights, or
+redistribution rights. Any new source requires current terms/robots/rate review,
+explicit approval, fixed endpoint policy, offline fixtures/tests, secure
+configuration, independent review, and bounded staging validation.
+
+## Production and Staging Boundary
+
+Local startup is not production deployment. The production-oriented package
+adds Caddy edge policy, private networks, non-root containers, capability drops,
+secret-file references, bounded logs, monitoring configuration, encrypted
+backup, and isolated restore/rehearsal tooling. Deployment still requires an
+approved external host, protected credentials, DNS/TLS, firewall/routing,
+deployed migration evidence, mentor accounts, UAT, monitoring/alert ownership,
+off-host backup storage, and recovery evidence.
+
+Do not improvise a public deployment from the local commands in this README.
+Use the protected production procedure and task-specific approval.
+
+## Known Limitations
+
+- The local schedule stops when the PC, Docker, Prefect server, or worker stops.
+- No mentor-accessible external staging environment, public DNS/certificate
+  evidence, or always-on uptime is claimed.
+- External alert delivery, centralized off-host logs, approved off-host backup
+  transfer, staging recovery measurements, and staging UAT remain external
+  operator dependencies.
+- Production load, capacity, failover, high availability, autoscaling,
+  zero-downtime deployment, and public-internet operation are not validated.
+- Prefect is a single local server/worker baseline, not a high-availability
+  control plane; the local UI has no separate login and is protected by
+  loopback binding.
+- Authentication is local single-factor; rate limiting is process-local.
+- Manual/commercial and approval-gated sources may require explicit approval,
+  credentials, licence, payment, entitlement, or quota. Until those gates are
+  satisfied they do not provide comprehensive coverage or freshness. Bounded
+  runs may truthfully be partial, capped, deferred, or failed.
+- Publication ingestion stores selected metadata, not complete article bodies,
+  PDFs, attachments, malware, scan results, or arbitrary binaries.
+- The final backend run has 54 accepted environment failures because PowerShell
+  7 (`pwsh`) is unavailable; Windows PowerShell 5.1 does not satisfy those
+  reconciliation tests.
+- Two additional accepted historical raw-byte/hash failures remain: the
+  reviewed SQL LF/CRLF hash and the byte-for-byte historical IOC relationship
+  migration hash. They are separate from the 54 `pwsh` failures.
+- Strict cron-slot validation is intentional. A manually launched parent flow
+  outside minute 17 of an eligible Dubai two-hour slot can correctly fail slot
+  validation, so an off-cron parent run is not the normal validation method.
+- Manual QA and formal assistive-technology testing require separately recorded
+  human evidence.
+
+## Deeper Reference Documents
+
+This README is sufficient for first setup and product understanding. Use these
+documents for exact specialist contracts and historical evidence:
+
+| Topic | Reference |
+| --- | --- |
+| Full operator procedures and handover checklist | [Operator guide](docs/operator-guide.md) |
+| Variable-by-variable configuration and secret rules | [Environment and secrets](docs/environment-and-secrets.md) |
+| Source endpoints, bounds, status, and limitations | [Data sources](docs/data-sources.md) |
+| Detailed components, flows, and trust boundaries | [Architecture](docs/architecture.md) |
+| Security controls and accepted limitations | [Security notes](docs/security-notes.md) |
+| Automated validation strategy | [Testing plan](docs/testing-plan.md) |
+| Human-executed validation cases | [Manual test cases](docs/manual-test-cases.md) |
+| Protected deployment procedure | [Production Docker deployment](docs/production-docker-deployment.md) |
+| Recovery safety gates | [C09 recovery runbook](docs/c09-recovery-runbook.md) |
+| Backend CLI/development details | [Backend README](backend/README.md) |
+| Frontend development details | [Frontend README](frontend/README.md) |
+| Current external deployment status | [Deployment notes](docs/deployment-notes.md) |
+| Historical release test evidence | [Final mentor report](docs/final-mentor-report.md) |
+| Historical architecture handover snapshot | [Final architecture package](docs/final-architecture-package.md) |
+
+Historical documents are checkpoint-scoped. Earlier PAUSED or unbound-handler
+statements describe their recorded checkpoint and are not current operating
+instructions. Current operation must be reconciled with the code, this README,
+and the approved change record.

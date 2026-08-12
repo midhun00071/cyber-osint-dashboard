@@ -1,0 +1,3 @@
+database/apply-runtime-grants.sh text eol=lf
+database/init/10-provision-database-roles-entrypoint.sh text eol=lf
+database/reconcile-local-database-roles.sh text eol=lf

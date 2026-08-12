@@ -6,16 +6,26 @@ from hashlib import sha256
 import json
 from types import SimpleNamespace
 
+import pytest
+
 from app.models import IngestionRunRecord
 from app.orchestration.contracts import (
+    ClassifiedFailure,
+    ProgressProposal,
     ProgressSnapshot,
     ProgressStorage,
     ProgressKind,
     QuotaObservation,
+    ReconciledCounters,
     ResultStatus,
     SOURCE_POLICIES,
+    SafeMetrics,
     SourceAttemptIdentity,
     SourceExecutionContext,
+)
+from app.orchestration.source_handlers.common import (
+    make_result,
+    persist_execution_evidence,
 )
 from app.orchestration.source_handlers.cisa_kev import CisaKevSourceHandler
 from app.orchestration.source_handlers.cisa_kev import (
@@ -97,6 +107,21 @@ class FakeSession:
         return None
 
 
+class EvidenceSession(FakeSession):
+    records = []
+    local_cves = frozenset()
+
+    def add(self, record):
+        if isinstance(record, IngestionRunRecord):
+            self.records.append(record)
+
+    def execute(self, statement):
+        expression = statement.column_descriptions[0]["expr"]
+        if getattr(expression, "name", None) == "safe_detail":
+            return Rows([record.safe_detail for record in self.records])
+        return super().execute(statement)
+
+
 class FakeClient:
     def __init__(self, fetched_catalog=None):
         self.closed = False
@@ -157,6 +182,38 @@ def install_services(monkeypatch, *, ingestion_outcome="updated", next_cursor=41
     return captured
 
 
+def install_execution_evidence(
+    *,
+    current_progress: ProgressSnapshot | None,
+    counters: ReconciledCounters,
+    proposal: ProgressProposal,
+) -> tuple[CisaKevSourceHandler, SourceExecutionContext]:
+    EvidenceSession.records = []
+    execution_context = context(current_progress)
+    result = make_result(
+        source_slug="cisa-kev",
+        counters=counters,
+        metrics=SafeMetrics(),
+        progress_proposal=proposal,
+    )
+    persist_execution_evidence(
+        EvidenceSession(),
+        context=execution_context,
+        result=result,
+    )
+
+    def unexpected_client():
+        raise AssertionError("progress reconstruction must not create a client")
+
+    return (
+        CisaKevSourceHandler(
+            session_factory=EvidenceSession,
+            client_factory=unexpected_client,
+        ),
+        execution_context,
+    )
+
+
 def test_catalogue_update_commits_hash_and_next_cursor(monkeypatch) -> None:
     FakeSession.local_cves = frozenset({"CVE-2026-1001"})
     captured = install_services(monkeypatch, next_cursor=41)
@@ -200,6 +257,42 @@ def test_same_catalogue_hash_continues_local_cursor(monkeypatch) -> None:
     assert captured["start_after_id"] == 82
     assert second.progress_proposal.expected_previous_version == 3
     assert second.progress_proposal.value.endswith(";cursor=82")
+
+
+def test_successful_full_wrap_emits_changed_zero_boundary_with_same_hash(
+    monkeypatch,
+) -> None:
+    FakeSession.local_cves = frozenset({"CVE-2026-1001"})
+    install_services(monkeypatch, next_cursor=0)
+    fetched_catalog = catalog()
+    catalog_hash = sha256(
+        json.dumps(
+            fetched_catalog,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    current = ProgressSnapshot(
+        storage=ProgressStorage.CHECKPOINT,
+        kind=ProgressKind.CONTENT_HASH,
+        name="content_hash",
+        value=f"sha256={catalog_hash};cursor=41",
+        version=7,
+    )
+
+    result = CisaKevSourceHandler(
+        session_factory=FakeSession,
+        client_factory=lambda: FakeClient(fetched_catalog),
+    ).execute(context(current))
+
+    assert result.status is ResultStatus.SUCCESS
+    assert result.counters.updated == 1
+    assert result.progress_proposal is not None
+    assert result.progress_proposal.value == f"sha256={catalog_hash};cursor=0"
+    assert result.progress_proposal.value != current.value
+    assert result.progress_proposal.expected_previous_version == 7
 
 
 def test_real_invalid_local_target_is_controlled_failure_without_progress(monkeypatch) -> None:
@@ -313,20 +406,175 @@ def test_catalogue_hash_includes_non_local_entries(monkeypatch) -> None:
     assert result.progress_proposal.value == f"sha256={expected_hash};cursor=31"
 
 
+def test_legacy_same_token_success_reconstructs_to_zero_without_network() -> None:
+    catalog_hash = "2670ba5b72229d304c1679a8865d91331de124d3b1da03a587b381b09dafd3c6"
+    legacy_value = f"sha256={catalog_hash};cursor=165"
+    current = ProgressSnapshot(
+        storage=ProgressStorage.CHECKPOINT,
+        kind=ProgressKind.CONTENT_HASH,
+        name="content_hash",
+        value=legacy_value,
+        version=1,
+    )
+    counters = ReconciledCounters(
+        fetched=458,
+        created=8,
+        updated=144,
+        unchanged=306,
+    )
+    proposal = ProgressProposal(
+        storage=ProgressStorage.CHECKPOINT,
+        kind=ProgressKind.CONTENT_HASH,
+        name="content_hash",
+        value=legacy_value,
+        expected_previous_version=1,
+    )
+    handler, execution_context = install_execution_evidence(
+        current_progress=current,
+        counters=counters,
+        proposal=proposal,
+    )
+
+    reconstructed = handler.reconstruct_progress(execution_context, counters)
+
+    assert reconstructed.value == f"sha256={catalog_hash};cursor=0"
+    assert reconstructed.value != current.value
+    assert reconstructed.expected_previous_version == 1
+    assert reconstructed.storage is proposal.storage
+    assert reconstructed.kind is proposal.kind
+    assert reconstructed.name == proposal.name
+
+
+def test_same_token_no_change_reconstruction_does_not_fabricate_progress() -> None:
+    current = ProgressSnapshot(
+        storage=ProgressStorage.CHECKPOINT,
+        kind=ProgressKind.CONTENT_HASH,
+        name="content_hash",
+        value="sha256=" + "a" * 64 + ";cursor=165",
+        version=4,
+    )
+    counters = ReconciledCounters(fetched=3, unchanged=3)
+    proposal = ProgressProposal(
+        storage=current.storage,
+        kind=current.kind,
+        name=current.name,
+        value=current.value,
+        expected_previous_version=current.version,
+    )
+    handler, execution_context = install_execution_evidence(
+        current_progress=current,
+        counters=counters,
+        proposal=proposal,
+    )
+
+    reconstructed = handler.reconstruct_progress(execution_context, counters)
+
+    assert reconstructed == proposal
+
+
+@pytest.mark.parametrize(
+    (
+        "value",
+        "current_version",
+        "proposal_version",
+        "proposal_storage",
+        "proposal_name",
+    ),
+    [
+        ("malformed", 1, 1, ProgressStorage.CHECKPOINT, "content_hash"),
+        (
+            "sha256=" + "b" * 64 + ";cursor=0",
+            1,
+            1,
+            ProgressStorage.CHECKPOINT,
+            "content_hash",
+        ),
+        (
+            "sha256=" + "b" * 64 + ";cursor=9",
+            2,
+            1,
+            ProgressStorage.CHECKPOINT,
+            "content_hash",
+        ),
+        (
+            "sha256=" + "b" * 64 + ";cursor=9",
+            1,
+            1,
+            ProgressStorage.WATERMARK,
+            "content_hash",
+        ),
+        (
+            "sha256=" + "b" * 64 + ";cursor=9",
+            1,
+            1,
+            ProgressStorage.CHECKPOINT,
+            "other",
+        ),
+    ],
+)
+def test_ambiguous_legacy_evidence_fails_closed(
+    value: str,
+    current_version: int,
+    proposal_version: int,
+    proposal_storage: ProgressStorage,
+    proposal_name: str,
+) -> None:
+    current = ProgressSnapshot(
+        storage=ProgressStorage.CHECKPOINT,
+        kind=ProgressKind.CONTENT_HASH,
+        name="content_hash",
+        value=value,
+        version=current_version,
+    )
+    counters = ReconciledCounters(fetched=1, updated=1)
+    proposal = ProgressProposal(
+        storage=proposal_storage,
+        kind=ProgressKind.CONTENT_HASH,
+        name=proposal_name,
+        value=value,
+        expected_previous_version=proposal_version,
+    )
+    handler, execution_context = install_execution_evidence(
+        current_progress=current,
+        counters=counters,
+        proposal=proposal,
+    )
+
+    with pytest.raises(ClassifiedFailure, match="unavailable or conflicting"):
+        handler.reconstruct_progress(execution_context, counters)
+
+
+def test_conflicting_legacy_counters_fail_closed() -> None:
+    value = "sha256=" + "c" * 64 + ";cursor=9"
+    current = ProgressSnapshot(
+        storage=ProgressStorage.CHECKPOINT,
+        kind=ProgressKind.CONTENT_HASH,
+        name="content_hash",
+        value=value,
+        version=1,
+    )
+    committed = ReconciledCounters(fetched=1, updated=1)
+    proposal = ProgressProposal(
+        storage=current.storage,
+        kind=current.kind,
+        name=current.name,
+        value=current.value,
+        expected_previous_version=current.version,
+    )
+    handler, execution_context = install_execution_evidence(
+        current_progress=current,
+        counters=committed,
+        proposal=proposal,
+    )
+
+    with pytest.raises(ClassifiedFailure, match="unavailable or conflicting"):
+        handler.reconstruct_progress(
+            execution_context,
+            ReconciledCounters(fetched=1, created=1),
+        )
+
+
 def test_replay_and_reconstruction_are_network_free(monkeypatch) -> None:
-    class EvidenceSession(FakeSession):
-        records = []
-        local_cves = frozenset()
-
-        def add(self, record):
-            if isinstance(record, IngestionRunRecord):
-                self.records.append(record)
-
-        def execute(self, statement):
-            expression = statement.column_descriptions[0]["expr"]
-            if getattr(expression, "name", None) == "safe_detail":
-                return Rows([record.safe_detail for record in self.records])
-            return super().execute(statement)
 
     EvidenceSession.records = []
     install_services(monkeypatch, next_cursor=43)

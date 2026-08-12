@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from sqlalchemy import Column, DateTime, Integer, MetaData, String, Table, create_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.models import IngestionRunRecord
 from app.orchestration.contracts import (
     QuotaObservation,
     ResultStatus,
@@ -62,6 +63,26 @@ class FakeSession:
         return None
 
 
+class EvidenceSession(FakeSession):
+    records = []
+
+    def add(self, record):
+        if isinstance(record, IngestionRunRecord):
+            self.records.append(record)
+
+    def execute(self, statement):
+        expression = statement.column_descriptions[0]["expr"]
+        if getattr(expression, "name", None) == "safe_detail":
+            return Rows(
+                [
+                    record.safe_detail
+                    for record in self.records
+                    if record.safe_detail.startswith("c02-evidence-v1:")
+                ]
+            )
+        return super().execute(statement)
+
+
 class FakeClient:
     def __init__(self, records_by_batch):
         self.records_by_batch = list(records_by_batch)
@@ -96,13 +117,15 @@ def context():
 
 def install_service(monkeypatch, outcomes=("created",)):
     queued = list(outcomes)
+    enriched = []
 
     class Service:
         def __init__(self, session):
             del session
 
         def enrich(self, record, *, observed_at):
-            del record, observed_at
+            del observed_at
+            enriched.append(record.cve_id)
             return SimpleNamespace(
                 outcome=queued.pop(0),
                 source_record=None,
@@ -113,6 +136,7 @@ def install_service(monkeypatch, outcomes=("created",)):
         "app.orchestration.source_handlers.epss.EpssEnrichmentService",
         Service,
     )
+    return enriched
 
 
 def test_valid_scores_commit_and_advance_scheduled_watermark(monkeypatch) -> None:
@@ -132,21 +156,25 @@ def test_valid_scores_commit_and_advance_scheduled_watermark(monkeypatch) -> Non
     assert client.closed is True
 
 
-def test_missing_requested_record_is_failed_without_progress(monkeypatch) -> None:
+def test_all_requested_records_omitted_are_neutral_without_fabricated_scores(monkeypatch) -> None:
     FakeSession.candidates = ("CVE-2026-1001",)
-    install_service(monkeypatch, outcomes=())
+    enriched = install_service(monkeypatch, outcomes=())
 
     result = EpssSourceHandler(
         session_factory=FakeSession,
         client_factory=lambda: FakeClient([[]]),
     ).execute(context())
 
-    assert result.status is ResultStatus.FAILED
-    assert result.counters.failed == 1
-    assert result.progress_proposal is None
+    assert result.status is ResultStatus.NO_CHANGE
+    assert result.counters.fetched == 1
+    assert result.counters.unchanged == 1
+    assert result.counters.failed == 0
+    assert result.counters.error_count == 0
+    assert result.progress_proposal.value == SLOT
+    assert enriched == []
 
 
-def test_good_record_and_omission_commit_as_partial_without_progress(monkeypatch) -> None:
+def test_good_record_and_omission_commit_successfully_with_progress(monkeypatch) -> None:
     FakeSession.candidates = ("CVE-2026-1001", "CVE-2026-1002")
     install_service(monkeypatch)
 
@@ -155,10 +183,31 @@ def test_good_record_and_omission_commit_as_partial_without_progress(monkeypatch
         client_factory=lambda: FakeClient([[score("CVE-2026-1001")]]),
     ).execute(context())
 
-    assert result.status is ResultStatus.PARTIAL
+    assert result.status is ResultStatus.SUCCESS
+    assert result.counters.fetched == 2
     assert result.counters.created == 1
+    assert result.counters.unchanged == 1
+    assert result.counters.failed == 0
+    assert result.counters.error_count == 0
+    assert result.progress_proposal.value == SLOT
+
+
+def test_malformed_returned_record_still_fails_without_progress(monkeypatch) -> None:
+    FakeSession.candidates = ("CVE-2026-1001",)
+    enriched = install_service(monkeypatch, outcomes=())
+
+    result = EpssSourceHandler(
+        session_factory=FakeSession,
+        client_factory=lambda: FakeClient(
+            [[score("CVE-2026-1001", epss="not-a-score")]]
+        ),
+    ).execute(context())
+
+    assert result.status is ResultStatus.FAILED
     assert result.counters.failed == 1
+    assert result.counters.unchanged == 0
     assert result.progress_proposal is None
+    assert enriched == []
 
 
 def test_unexpected_returned_cve_is_explicit_failure(monkeypatch) -> None:
@@ -170,8 +219,28 @@ def test_unexpected_returned_cve_is_explicit_failure(monkeypatch) -> None:
         client_factory=lambda: FakeClient([[score("CVE-2026-9999")]]),
     ).execute(context())
 
+    assert result.status is ResultStatus.PARTIAL
+    assert result.counters.failed == 1
+    assert result.counters.unchanged == 1
+    assert result.progress_proposal is None
+
+
+def test_conflicting_duplicate_returned_record_still_fails(monkeypatch) -> None:
+    FakeSession.candidates = ("CVE-2026-1001",)
+    enriched = install_service(monkeypatch, outcomes=())
+
+    result = EpssSourceHandler(
+        session_factory=FakeSession,
+        client_factory=lambda: FakeClient(
+            [[score("CVE-2026-1001"), score("CVE-2026-1001", epss="0.2")]]
+        ),
+    ).execute(context())
+
     assert result.status is ResultStatus.FAILED
-    assert result.counters.failed == 2
+    assert result.counters.failed == 1
+    assert result.counters.unchanged == 0
+    assert result.progress_proposal is None
+    assert enriched == []
 
 
 def test_future_dataset_date_is_rejected(monkeypatch) -> None:
@@ -187,6 +256,64 @@ def test_future_dataset_date_is_rejected(monkeypatch) -> None:
 
     assert result.status is ResultStatus.FAILED
     assert result.counters.failed == 1
+    assert result.counters.unchanged == 0
+    assert result.progress_proposal is None
+
+
+def test_genuine_validation_failure_with_omission_prevents_progress(monkeypatch) -> None:
+    FakeSession.candidates = ("CVE-2026-1001", "CVE-2026-1002")
+    install_service(monkeypatch, outcomes=())
+
+    result = EpssSourceHandler(
+        session_factory=FakeSession,
+        client_factory=lambda: FakeClient(
+            [[score("CVE-2026-1001", epss="not-a-score")]]
+        ),
+    ).execute(context())
+
+    assert result.status is ResultStatus.PARTIAL
+    assert result.counters.failed == 1
+    assert result.counters.unchanged == 1
+    assert result.progress_proposal is None
+
+
+def test_omission_evidence_replays_and_reconstructs_progress_without_network(monkeypatch) -> None:
+    EvidenceSession.records = []
+    EvidenceSession.candidates = ("CVE-2026-1001", "CVE-2026-1002")
+    install_service(monkeypatch)
+    execution_context = context()
+    first = EpssSourceHandler(
+        session_factory=EvidenceSession,
+        client_factory=lambda: FakeClient([[score("CVE-2026-1001")]]),
+    ).execute(execution_context)
+
+    def unexpected_client():
+        raise AssertionError("replay and reconstruction must not create a client")
+
+    replay_handler = EpssSourceHandler(
+        session_factory=EvidenceSession,
+        client_factory=unexpected_client,
+    )
+    replayed = replay_handler.execute(execution_context)
+    reconstructed = replay_handler.reconstruct_progress(
+        execution_context,
+        first.counters,
+    )
+    omission_evidence = [
+        record
+        for record in EvidenceSession.records
+        if "requested CVE omitted" in record.safe_detail
+    ]
+
+    assert replayed.status == first.status
+    assert replayed.counters == first.counters
+    assert replayed.metrics == first.metrics
+    assert replayed.progress_proposal == first.progress_proposal
+    assert reconstructed == first.progress_proposal
+    assert len(omission_evidence) == 1
+    assert omission_evidence[0].action == "unchanged"
+    assert omission_evidence[0].source_record_id is None
+    assert omission_evidence[0].intelligence_item_id is None
 
 
 def test_candidate_query_orders_unseen_then_oldest_then_cve_identity(monkeypatch) -> None:

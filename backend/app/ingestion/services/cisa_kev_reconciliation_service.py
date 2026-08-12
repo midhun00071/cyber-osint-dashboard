@@ -318,6 +318,14 @@ class CisaKevReconciliationService:
                 "A database error interrupted CISA KEV local reconciliation."
             ) from exc
 
+        if (
+            inspected > 0
+            and wrapped
+            and start_after_id > 0
+            and next_cursor == start_after_id
+        ):
+            next_cursor = 0
+
         return CisaKevReconciliationResult(
             inspected=inspected,
             listed=listed,

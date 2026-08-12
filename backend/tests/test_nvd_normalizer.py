@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import UTC, datetime
 from decimal import Decimal
+import json
 
 import pytest
 
@@ -69,6 +70,35 @@ def metric(version: str, score: object, severity: object = "HIGH") -> list[dict]
             }
         }
     ]
+
+
+def canonical_payload_size(wrapper: dict) -> int:
+    return len(
+        json.dumps(
+            wrapper,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode("utf-8")
+    )
+
+
+def make_wrapper_with_canonical_size(
+    target_bytes: int,
+    *,
+    marker: str = "",
+) -> dict:
+    wrapper = make_wrapper(extra=marker)
+    filler_bytes = target_bytes - canonical_payload_size(wrapper)
+    assert filler_bytes >= 0
+    wrapper["cve"]["extra"] = marker + ("x" * filler_bytes)
+    assert canonical_payload_size(wrapper) == target_bytes
+    return wrapper
+
+
+def test_payload_limit_is_exactly_two_mibibytes() -> None:
+    assert MAX_PAYLOAD_BYTES == 2 * 1024 * 1024
 
 
 def test_valid_record_maps_to_normalized_contract() -> None:
@@ -223,15 +253,32 @@ def test_equivalent_payload_ordering_has_stable_hash() -> None:
     assert normalize_nvd_cve(first).content_hash == normalize_nvd_cve(second).content_hash
 
 
-def test_oversized_payload_is_rejected_without_echoing_payload() -> None:
+def test_runtime_sized_payload_above_former_limit_is_accepted() -> None:
+    wrapper = make_wrapper_with_canonical_size(985_136)
+
+    normalized = normalize_nvd_cve(wrapper)
+
+    assert canonical_payload_size(normalized.raw_payload) == 985_136
+    assert 512 * 1024 < canonical_payload_size(normalized.raw_payload)
+
+
+def test_payload_at_two_mibibyte_boundary_is_accepted() -> None:
+    wrapper = make_wrapper_with_canonical_size(MAX_PAYLOAD_BYTES)
+
+    normalized = normalize_nvd_cve(wrapper)
+
+    assert canonical_payload_size(normalized.raw_payload) == MAX_PAYLOAD_BYTES
+
+
+def test_payload_over_two_mibibytes_is_rejected_without_echoing_payload() -> None:
     marker = "private-raw-payload-marker"
-    wrapper = make_wrapper(extra=marker + ("x" * MAX_PAYLOAD_BYTES))
+    wrapper = make_wrapper_with_canonical_size(MAX_PAYLOAD_BYTES + 1, marker=marker)
 
     with pytest.raises(NvdPayloadTooLargeError) as exc_info:
         normalize_nvd_cve(wrapper)
 
     assert marker not in str(exc_info.value)
-    assert "512 KiB" in str(exc_info.value)
+    assert "2 MiB" in str(exc_info.value)
 
 
 def test_affected_product_data_is_bounded_and_allow_listed() -> None:

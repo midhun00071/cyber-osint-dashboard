@@ -472,7 +472,7 @@ function VulnerabilitiesTableContent({ originPath = "/vulnerabilities" }: Readon
           <p>
             {hasActiveFilters
               ? "Try a different search term, severity, publication year, scope, or UAE relevance filter."
-              : "Stored vulnerability records will appear here after manual ingestion writes them to the database."}
+              : "Stored vulnerability records will appear here after ingestion completes."}
           </p>
         </div>
       ) : null}

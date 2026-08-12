@@ -81,6 +81,7 @@ class EpssSourceHandler:
         client = self._client_factory()
         valid_records = []
         pre_persistence_failures = 0
+        omitted_requested_cves = 0
         request_count = 0
         try:
             for requested in client.build_batches(candidates, max_batch_size=MAX_REQUEST_CVES):
@@ -123,7 +124,7 @@ class EpssSourceHandler:
                         by_cve.pop(normalized.cve_id, None)
                         pre_persistence_failures += 1
                 missing = requested_set - set(by_cve) - invalid_cves
-                pre_persistence_failures += len(missing)
+                omitted_requested_cves += len(missing)
                 valid_records.extend(by_cve[cve_id] for cve_id in requested if cve_id in by_cve)
         except ClassifiedFailure:
             raise
@@ -132,7 +133,7 @@ class EpssSourceHandler:
         finally:
             client.close()
 
-        outcomes = ["failed"] * pre_persistence_failures
+        outcomes = ["failed"] * pre_persistence_failures + ["unchanged"] * omitted_requested_cves
         evidence = [
             OutcomeEvidence(
                 outcome="failed",
@@ -140,6 +141,13 @@ class EpssSourceHandler:
             )
             for _ in range(pre_persistence_failures)
         ]
+        evidence.extend(
+            OutcomeEvidence(
+                outcome="unchanged",
+                safe_detail="C02 recorded one requested CVE omitted from a successful EPSS response.",
+            )
+            for _ in range(omitted_requested_cves)
+        )
         proposal = scheduled_watermark_proposal(context)
         try:
             with self._session_factory() as session, session.begin():

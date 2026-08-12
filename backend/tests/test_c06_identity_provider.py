@@ -45,7 +45,11 @@ def test_local_provider_lookup_is_unlocked_by_default_and_locks_on_request() -> 
         session.statements[1].compile(dialect=postgresql.dialect())
     ).upper()
     assert "FOR UPDATE" not in ordinary_sql
-    assert "FOR UPDATE" in locked_sql
+    assert locked_sql.endswith(
+        "FOR UPDATE OF AUTH_LOCAL_CREDENTIALS, AUTH_USERS, AUTH_USER_ROLES"
+    )
+    locked_targets = locked_sql.rsplit("FOR UPDATE OF ", 1)[1]
+    assert "AUTH_IDENTITIES" not in locked_targets
     for table in (
         "auth_identities",
         "auth_local_credentials",

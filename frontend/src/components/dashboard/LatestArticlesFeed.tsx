@@ -436,7 +436,7 @@ function LatestArticlesFeedContent({ originPath = "/threat-feed" }: Readonly<{ o
           <p>
             {hasActiveFilters
               ? "Try a different search term, category, source, scope, or UAE relevance filter."
-              : "Stored article records will appear here after manual ingestion writes them to the database."}
+              : "Stored article records will appear here after ingestion completes."}
           </p>
         </div>
       ) : null}

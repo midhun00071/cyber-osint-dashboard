@@ -4,11 +4,12 @@
 
 C03A provides an immutable test/later-staging TAXII handler builder, but no
 production TAXII source identity, hostname, endpoint, collection, credential,
-binding, or deployment. `PRODUCTION_STIX_SOURCE_POLICIES`,
-`PRODUCTION_TAXII_COLLECTION_POLICIES`, and `DEFAULT_SOURCE_HANDLERS` remain
-empty. Missing production policy is `disabled` before any client or transport
-is created; `licence_required` is limited to an explicit developer-controlled
-fixed identity. No live TAXII request was performed. See
+binding, or deployment. `PRODUCTION_STIX_SOURCE_POLICIES` and
+`PRODUCTION_TAXII_COLLECTION_POLICIES` remain empty, and no STIX/TAXII identity
+is present in `DEFAULT_SOURCE_HANDLERS`. Missing production policy is `disabled`
+before any client or transport is created; `licence_required` is limited to an
+explicit developer-controlled fixed identity. No live TAXII request was
+performed. See
 [C03A threat knowledge and STIX persistence](c03-threat-knowledge-stix-persistence.md).
 
 ## Purpose and audience
@@ -62,20 +63,25 @@ orchestration policies and do not create an approved automatic request path.
 Other future and excluded
 vendors are recorded separately in the assessment documents.
 
-All ingestion and enrichment is manual-only and explicitly operator invoked.
-There is no active scheduler, startup ingestion, recurring background ingestion,
-background worker, frontend ingestion trigger, or public ingestion API. No
-standard refresh interval is implemented. Operators choose when to run an
-approved command; local-file imports require a separately reviewed file each
-time. Live network requests occur only through the fixed endpoints used by the
-corresponding command.
+FastAPI startup never runs ingestion, and there is no frontend ingestion trigger
+or public ingestion API. Prefect supplies the scheduler and process worker. One
+deployment defines cron `17 */2 * * *` in `Asia/Dubai` and exactly six approved
+handlers. A fresh deployment starts **PAUSED**, while the current verified
+release deployment is ACTIVE following explicit approval on 11 August 2026.
+Manual commands remain separate explicit operator paths; local-file imports
+require a separately reviewed file each time. All live requests remain limited
+to each workflow's fixed endpoints and bounded endpoint policy.
+This document owns source policy and status only; deployment verification and
+activation procedures belong in the [operator guide](operator-guide.md).
 
 C02 adds six reviewed, flow-ready handler implementations for CISA KEV, NVD,
 FIRST EPSS, CERT-EU, Google Threat Intelligence public research, and Mandiant
-public threat research. They are not bound to the immutable production
-`DEFAULT_SOURCE_HANDLERS` mapping, registered as a deployment, or activated.
-Operational collection therefore remains manual-only. The exact capability,
-progress, bounds, and inactive binding status are recorded in
+public threat research. The final production mapping code-binds exactly
+`nvd`, `first-epss`, `cisa-kev`, `cert-eu-security-advisories`,
+`google-threat-intelligence-public-research`, and
+`mandiant-public-threat-research`. Binding alone did not activate them; the
+separate final activation was approved and completed on 11 August 2026 without
+launching a manual Prefect flow. The exact capability, progress, and bounds are recorded in
 [C02 existing approved source flows](c02-existing-approved-source-flows.md).
 Anomali, both Censys identities, and both IBM identities remain manual-only,
 unbound, and unavailable as scheduled success paths.
@@ -120,8 +126,8 @@ operational writers until their separately reviewed migration is complete.
 | `mandiant-public-threat-research` | Mandiant Public Threat Research / Mandiant / Google Security | `threat_research`; `rss` | `https://feeds.feedburner.com/threatintelligence/pvexyqv7v0v`; collection host `feeds.feedburner.com`, publication host `cloud.google.com` | `public_feed`; yes |
 
 Commands below are run from `backend` after the documented environment and
-PostgreSQL service are ready. They are examples of explicit invocation, not
-scheduled refresh instructions.
+PostgreSQL service are ready. They are explicit manual alternatives, not
+instructions to activate, test, or replace the recurring Prefect schedule.
 
 ## Vulnerability and enrichment sources
 
@@ -167,10 +173,12 @@ scheduled refresh instructions.
   incomplete.
 - **Controls and limitations:** HTTPS is fixed to `services.nvd.nist.gov`;
   date-window and pagination metadata are validated; normalized source evidence
-  is capped at 512 KiB per CVE. The client rejects an oversized valid
-  `Content-Length` before body consumption, incrementally reads decoded body
-  bytes, stops immediately above 20 MiB, discards the partial body, and parses
-  JSON only after the bounded stream completes. Client timeouts apply.
+  is capped at 2 MiB of canonical UTF-8 JSON per CVE. Oversized records fail
+  safely and are not silently truncated. Independently, the client rejects an
+  oversized valid `Content-Length` before body consumption, incrementally reads
+  decoded body bytes, stops immediately above 20 MiB, discards the partial body,
+  and parses JSON only after the bounded stream completes. These separate bounds
+  preserve resource-exhaustion controls. Client timeouts apply.
   Consecutive official API request starts are delayed 6 seconds without an API
   key or 0.6 seconds with the optional `NVD_API_KEY`. The key is secret-managed
   and never documented or logged. The workflow does not execute exploits,
@@ -203,8 +211,8 @@ scheduled refresh instructions.
   2,000-character query limit. The CVE identifier links enrichment to an
   existing item; source external ID and content hash distinguish unchanged from
   updated evidence.
-- **Inactive C02 handler:** the flow-ready handler orders at most 500 global CVE
-  identifiers by unseen/oldest evidence and CVE identity. Its EPSS evidence
+- **Code-bound C02 handler:** the paused scheduled handler orders at most 500
+  global CVE identifiers by unseen/oldest evidence and CVE identity. Its EPSS evidence
   lookup correlates the source, intelligence item, and exact CVE external ID,
   so two CVEs on one vulnerability keep independent refresh dates.
 - **Controls and limitations:** HTTPS host and endpoint are fixed, responses and
@@ -272,12 +280,12 @@ scheduled refresh instructions.
 - **Current manual-command pagination limit:** The manual reconciliation query
   always begins with the lowest local vulnerability IDs. The 500-row command
   therefore still requires a future cursor/resume enhancement for databases
-  with more than 500 vulnerabilities. C02 separately adds deterministic
-  start-after cursor continuation and one wrap-around to the caller-owned
-  reconciliation service for its inactive handler. Neither manual command nor
-  the C02 handler is scheduled or connected to startup, an API route, or the
-  frontend.
-- **Inactive C02 enrichment filtering:** The complete catalogue still supplies
+  with more than 500 vulnerabilities. The code-bound C02 handler adds
+  deterministic start-after cursor continuation and one wrap-around to the caller-owned
+  reconciliation service. The current ACTIVE Prefect deployment contains that
+  reviewed handler; neither manual command is connected to startup, an API
+  route, or the frontend.
+- **Code-bound C02 enrichment filtering:** The complete catalogue still supplies
   validation, SHA-256 checkpoint, and listed/not-listed reconciliation input.
   Before enrichment, catalogue CVEs are matched to existing global local CVE
   identifiers in deterministic chunks of at most 100. Expected KEV-only entries
@@ -405,7 +413,9 @@ Feed `content`, article bodies, attachments, media links, reports, PDFs, and
 downloads are ignored. The workflow does not scrape Google Cloud HTML, use
 search results, call Google Threat Intelligence or VirusTotal APIs, use
 credentials, submit or retrieve files or malware samples, extract or validate
-IOCs, schedule work, run at startup, or expose a public ingestion endpoint.
+IOCs, independently create or activate a schedule, run at startup, or expose a
+public ingestion endpoint. Its two approved logical handlers are part of the
+current ACTIVE recurring Prefect deployment.
 
 ### `anomali-cyber-watch` — Anomali Cyber Watch
 
@@ -613,8 +623,10 @@ approved.
 
 ## Known limitations
 
-- Refresh timing is operator-controlled; no automatic freshness guarantee or
-  standard refresh interval exists.
+- The six approved scheduled handlers are ACTIVE on the two-hour cron contract.
+  Other workflows remain manual or approval-gated. Local scheduling stops when
+  the PC, Docker, Prefect server, or worker stops, and no comprehensive upstream
+  freshness guarantee is claimed.
 - Registry metadata does not verify that upstream terms, page structure, or
   availability remain unchanged. Those facts require review before each future
   integration change.

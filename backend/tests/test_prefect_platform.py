@@ -277,7 +277,9 @@ def test_worker_has_application_database_access_only() -> None:
     )
 
     assert "POSTGRES_USER" not in local_server.get("environment", {})
-    assert local_worker["environment"]["POSTGRES_USER"] == "${POSTGRES_USER:-alpha_data_user}"
+    assert local_worker["environment"]["POSTGRES_USER"] == (
+        "${POSTGRES_APP_USER:-alpha_data_runtime}"
+    )
     assert "POSTGRES_MIGRATION_USER" not in local_worker["environment"]
     assert "POSTGRES_BOOTSTRAP_USER" not in local_worker["environment"]
 

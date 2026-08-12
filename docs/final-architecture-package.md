@@ -4,6 +4,11 @@
 
 This document is the C11 architecture index for the Alpha Data / Cyber OSINT Dashboard local release candidate. Parent checkpoint: `beeba6522eeac8c9a361c52d17624f02d92da5f5`. The final C11 release-candidate commit is to be recorded after independent review and approved Git closure.
 
+This is a checkpoint-scoped architecture record, not current final activation
+or Git evidence. The [operator guide](operator-guide.md) is authoritative for
+the current local startup path, and later evidence must not be backfilled into
+this historical C11 record.
+
 It reconciles the implemented component/trust/data flows without duplicating the detailed source documents. It does not claim mentor staging, public TLS, external alert delivery, off-host backup activation, scheduled-cycle observation, UAT, or measured production recovery.
 
 Post-C11 PF-01/PF-02 local correction: development Compose now stores Prefect

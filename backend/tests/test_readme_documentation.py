@@ -4,7 +4,8 @@ import re
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 README = REPO_ROOT / "README.md"
-RUN_SCRIPT = REPO_ROOT / "run.ps1"
+OPERATOR_GUIDE = REPO_ROOT / "docs" / "operator-guide.md"
+DEPLOYMENT_NOTES = REPO_ROOT / "docs" / "deployment-notes.md"
 
 
 def readme_text() -> str:
@@ -15,216 +16,433 @@ def normalized_readme() -> str:
     return re.sub(r"\s+", " ", readme_text()).lower()
 
 
-def test_readme_exists_and_identifies_the_project_and_handover_audience() -> None:
+def assert_in_order(document: str, phrases: tuple[str, ...]) -> None:
+    cursor = -1
+    for phrase in phrases:
+        next_cursor = document.find(phrase, cursor + 1)
+        assert next_cursor > cursor, f"Missing or out-of-order README phrase: {phrase}"
+        cursor = next_cursor
+
+
+def test_readme_leads_with_project_overview_and_fresh_laptop_setup() -> None:
+    readme = normalized_readme()
+
     assert README.is_file()
-    readme = normalized_readme()
-
     assert "# alpha data / cyber osint dashboard" in readme
-    assert "full-stack defensive cybersecurity osint dashboard" in readme
-    assert "mentor and senior-reviewer handover" in readme
-    assert "not a claim of a complete, public-internet-ready production platform" in readme
-
-
-def test_readme_preserves_defensive_and_untrusted_content_boundaries() -> None:
-    readme = normalized_readme()
-
-    for required_phrase in (
-        "defensive, ethical, authorized, educational, or lab-safe",
-        "must not be used for exploit execution",
-        "unauthorized scanning or probing",
-        "malware retrieval",
-        "external osint content is untrusted data",
-        "fixed, developer-controlled sources",
-        "source-registry entry does not grant collection authorization",
-        "licensing",
-        "storage rights",
-        "redistribution rights",
-    ):
-        assert required_phrase in readme
-
-
-def test_readme_states_inactive_scheduled_ingestion_without_live_claims() -> None:
-    raw_readme = readme_text()
-    readme = normalized_readme()
-
-    for required_phrase in (
-        "scheduled ingestion remains inactive",
-        "startup ingestion",
-        "public ingestion api",
-        "exactly six reviewed scheduled handlers are code-bound",
-        "single deployment definition is paused by default",
-        "binding does not equal activation",
-        "prefect remains paused",
-        "authorized, audited operator controls",
-        "do not bypass source policy",
-        "no command below runs on fastapi startup",
-        "c05 and every other non-approved source remain unbound",
-        "separate controlled activation-precondition task follows",
-        "parent-cycle run still requires separate approval",
-        "recurring prefect unpause remains a later, separately approved step",
-        "six-bind-01 executed no parent ingestion cycle",
-    ):
-        assert required_phrase in readme
-
-    for stale_claim in (
-        "Automated open-source intelligence ingestion",
-        "Background scheduling: APScheduler for MVP",
-        "in the MVP ingestion and backend foundation stage",
-    ):
-        assert stale_claim not in raw_readme
-
-    for c01_phrase in (
-        "prefect is pinned exactly to 3.8.1",
-        "`17 */2 * * *` in `asia/dubai` with parent concurrency one",
-        "registration is explicit and paused by default",
-        "c01 did not activate a schedule or execute a source workflow",
-        "production binding registry is intentionally empty",
-        "activation fails closed while scheduled-eligible handlers are missing",
-        "compose does not register or execute the deployment",
-    ):
-        assert c01_phrase in readme
-
-
-def test_readme_documents_curated_nvd_as_bounded_manual_sample() -> None:
-    readme = normalized_readme()
-
-    for required_phrase in (
-        "manual curated multi-year nvd dataset",
-        "representative sample rather than a complete nvd mirror",
-        "10 critical, 5 high, 3 medium, and 2 low",
-        "app.ingestion.nvd_curated_cli --plan",
-        "capped or incomplete",
-        "unrelated cves are never deleted",
-        "first epss and cisa kev commands separately",
-        "stops its decoded streaming read immediately above 20 mib",
-        "retains at most 10 critical, 5 high, 3 medium, and 2 low",
-        "valid unselected observations as skipped",
-        "does not prove a not-listed kev result for every local cve",
-        "app.ingestion.cisa_kev_reconcile_cli",
-        "validates every declared catalog entry",
-        "controlled `partial` result",
-        "`unknown_remaining` count includes only selected rows",
-        "formal `ingestionrun` counters describe local rows",
-        "catalog raw-record and unique-cve counts remain separate",
-        "checked time after complete validation immediately before local reconciliation",
-        "lowest local vulnerability ids",
-        "future cursor/resume enhancement",
-        "exactly one outcome per unique vulnerability row",
-        "ambiguous identity never selects a cve based on identifier query order",
-        "catalog-version evidence is restricted to a non-empty, bounded ascii token",
-        "this product uses data from the nvd api but is not endorsed or certified by the nvd",
-    ):
-        assert required_phrase in readme
-
-
-def test_documented_runner_commands_match_the_runner_switch() -> None:
-    readme = readme_text()
-    runner = RUN_SCRIPT.read_text(encoding="utf-8")
-    runner_section = readme.split("### Runner commands", 1)[1].split("## ", 1)[0]
-
-    documented_commands = set(
-        re.findall(r"\| `\.\\run\.cmd ([a-z]+)` \|", runner_section)
+    assert "full-stack defensive cybersecurity osint platform" in readme
+    assert "mentor-accessible external staging host" in readme
+    assert_in_order(
+        readme,
+        (
+            "# alpha data / cyber osint dashboard",
+            "## start here — fresh laptop setup",
+            "### 1. install the required tools",
+            "### 2. clone the authoritative repository and select `main`",
+            "### 3. create the local environment files safely",
+            "### 4. start and initialize the complete application",
+            "### 5. verify successful startup",
+            "### 6. create the first application administrator",
+            "### 7. sign in and make the first review",
+            "### 8. verify prefect without starting ingestion",
+            "### 9. stop and restart safely",
+        ),
     )
-    implemented_commands = set(re.findall(r'(?m)^\s*"([a-z]+)"\s*\{', runner))
-
-    assert documented_commands == implemented_commands == {
-        "setup",
-        "install",
-        "test",
-        "docker",
-        "dev",
-        "full",
-        "help",
-    }
 
 
-def test_local_development_and_production_instructions_are_separate() -> None:
-    raw_readme = readme_text()
+def test_readme_fresh_setup_is_executable_and_complete() -> None:
+    raw = readme_text()
     readme = normalized_readme()
 
-    assert raw_readme.index("## Local development") < raw_readme.index(
-        "## Production-oriented deployment"
-    )
-    for required_phrase in (
-        "development and local validation commands, not production deployment commands",
-        "do not use `.\\run.cmd dev`",
-        "do not use `.\\run.cmd dev`, `.\\run.cmd docker`, `docker-compose.yml`",
-        "standalone [`compose.prod.yml`](compose.prod.yml)",
-        "hardened production-oriented baseline",
-        "not a complete or validated public-internet production platform",
+    for command in (
+        'git clone "https://github.com/midhun00071/cyber-osint-dashboard.git"',
+        "git switch main",
+        "git pull --ff-only origin main",
+        ".\\run.cmd setup",
+        ".\\run.cmd",
+        "docker compose ps",
+        "http://localhost:8000/api/health",
+        "http://localhost:3000/",
+        "docker compose exec backend python -m app.security.bootstrap_admin_cli",
+        "docker compose exec -t prefect-worker python -m app.orchestration.deployments --verify-registration",
+        "docker compose down",
     ):
-        assert required_phrase in readme
+        assert command in readme
+
+    for phrase in (
+        "docker compose v2",
+        "does **not** require python or node.js on the host",
+        "creates only missing files and never overwrites",
+        "no user",
+        "there is no default password",
+        "public self-registration does not exist",
+        "a newly created deployment is deliberately **paused**",
+        "does **not** launch a manual flow",
+        "does not contact an external intelligence source",
+        "data-destruction warning",
+    ):
+        assert phrase in readme
+
+    assert "prefect deployment schedule resume" in raw
+    assert "APPROVED_REPOSITORY_URL" not in raw
+    assert "`git branch --show-current` must print `main`" in raw
 
 
-def test_readme_links_the_canonical_handover_documents() -> None:
-    raw_readme = readme_text()
+def test_readme_enforces_future_proof_main_handover_policy() -> None:
+    raw = readme_text()
+    readme = normalized_readme()
+
+    for phrase in (
+        "## final release and handover state",
+        "**12 august 2026**",
+        "`main` the authoritative mentor, operator, and future-development branch",
+        "authoritative handover branch | `main`",
+        "mentor/developer working branch | `main`",
+        "historical release-preparation branch | `dev`",
+        "preparation and validation context only, not a mentor checkout instruction",
+        "this document does not invent or predeclare it",
+        "mentor-accessible external staging | not claimed",
+        "8e584852-6ffc-4806-9cc9-22b758767bf3",
+        "`paused=false`, `ready`, one active schedule",
+    ):
+        assert phrase in readme
+
+    for stale_phrase in (
+        "current implementation branch",
+        "main_promotion=pending",
+        "promotion to `main` | **pending**",
+        "git switch dev",
+        "checkout dev",
+        "authoritative handover branch | `dev`",
+    ):
+        assert stale_phrase not in readme
+
+    assert raw.count("https://github.com/midhun00071/cyber-osint-dashboard.git") >= 1
+
+
+def test_readme_explains_environment_and_secret_boundaries() -> None:
+    raw = readme_text()
+    readme = normalized_readme()
+
+    for path in (
+        ".env.example",
+        "backend/.env.example",
+        "frontend/.env.example",
+        ".env.production.example",
+        "scripts/setup-dev.ps1",
+        "backend/app/core/config.py",
+        "backend/app/db/session.py",
+        "frontend/src/config/publicEnvironment.ts",
+        "docker-compose.yml",
+        "compose.prod.yml",
+    ):
+        assert path in raw
+
+    for phrase in (
+        "source code / example templates",
+        "real environment values / credentials",
+        "never committed",
+        "process environment variables before `backend/.env`",
+        "secretstr",
+        "must never be placed in `next_public_*`",
+        "staging and production add stricter rules",
+        "database password must come from a readable protected secret file",
+        "never print resolved compose configuration",
+    ):
+        assert phrase in readme
+
+
+def test_readme_explains_architecture_and_major_modules() -> None:
+    raw = readme_text()
+    readme = normalized_readme()
+
+    assert_in_order(
+        readme,
+        (
+            "approved public source or reviewed local catalogue",
+            "fixed source collector/client",
+            "source-specific adapter or normalizer",
+            "ingestion/publication service",
+            "sqlalchemy transaction and postgresql",
+            "query service",
+            "allow-listed fastapi schema",
+            "validated frontend api client",
+            "authenticated dashboard page",
+        ),
+    )
+
+    for path in (
+        "backend/app/main.py",
+        "backend/app/api/v1/routes/",
+        "backend/app/api/v1/schemas/",
+        "backend/app/services/",
+        "backend/app/security/",
+        "backend/app/ingestion/source_registry.py",
+        "backend/app/ingestion/collectors/",
+        "backend/app/ingestion/normalizers/",
+        "backend/app/ingestion/adapters/",
+        "backend/app/orchestration/flows.py",
+        "backend/app/orchestration/deployments.py",
+        "backend/app/runtime_bootstrap.py",
+        "backend/app/models/",
+        "backend/alembic/versions/",
+        "frontend/src/app/",
+        "frontend/src/services/",
+    ):
+        assert path in raw
+
+
+def test_readme_explains_ingestion_integrity_and_safety() -> None:
+    readme = normalized_readme()
+
+    for heading in (
+        "### 1. source registry and policy",
+        "### 2. collection/client layer",
+        "### 3. adapter and normalizer layer",
+        "### 4. persistence, identity, and deduplication",
+        "### 5. operational state and progress",
+        "### 6. failure, retry, and source isolation",
+        "### 7. example scheduled lifecycle",
+    ):
+        assert heading in readme
+
+    for slug in (
+        "nvd",
+        "first-epss",
+        "cisa-kev",
+        "cert-eu-security-advisories",
+        "google-threat-intelligence-public-research",
+        "mandiant-public-threat-research",
+    ):
+        assert f"`{slug}`" in readme
+
+    for manual_slug in (
+        "anomali-cyber-watch",
+        "censys-arc-research",
+        "censys-rapid-response-advisories",
+        "ibm-x-force-public-osint-advisories",
+        "ibm-x-force-public-research",
+    ):
+        assert f"`{manual_slug}`" in readme
+
+    for phrase in (
+        "checkpoint/watermark progress advances safely",
+        "progress never advances merely because a request returned",
+        "one source failure does not stop unrelated sources",
+        "not an arbitrary url",
+        "do not scan targets",
+        "download malware",
+        "execute exploits",
+        "fake success",
+        "registered does not mean scheduled",
+    ):
+        assert phrase in readme
+
+
+def test_readme_records_final_runtime_and_bootstrap_proof() -> None:
+    readme = normalized_readme()
+
+    for phrase in (
+        "expected sources = **6**",
+        "started = **6**",
+        "completed = **6**",
+        "successful = **6**",
+        "non-successful = **0**",
+        "manual-only recurring rows = **0**",
+        "parent status = `success`",
+        "100 nvd vulnerabilities",
+        "4 cert-eu advisories",
+        "4 google threat intelligence publications",
+        "4 mandiant publications",
+        "a second startup imports 0 duplicates",
+    ):
+        assert phrase in readme
+
+
+def test_readme_explains_fresh_bootstrap_without_fabricating_history() -> None:
+    readme = normalized_readme()
+
+    for phrase in (
+        "exactly **112** records",
+        "**100** nvd vulnerabilities",
+        "**4** cert-eu security advisories",
+        "**4** google threat intelligence",
+        "**4** mandiant",
+        "runs only when all core intelligence tables are genuinely empty",
+        "creates no default user",
+        "no `ingestioncycle`",
+        "no `ingestionrun`",
+        "no checkpoint",
+        "no watermark",
+        "no fabricated collection history",
+        "application initialization",
+        "live/scheduled ingestion",
+    ):
+        assert phrase in readme
+
+
+def test_readme_explains_prefect_database_authentication_and_ui() -> None:
+    readme = normalized_readme()
+
+    for phrase in (
+        "a **flow** is python code",
+        "a **deployment** is the registered runnable configuration",
+        "a **work pool** is the queueing boundary",
+        "a **worker** polls that pool",
+        "every two hours at minute 17 in dubai time",
+        "`cancel_new`",
+        "postgresql is alpha data's system of record",
+        "alembic migrations are the ordered, committed history",
+        "create a **new** alembic migration; never edit a committed migration",
+        "exactly one linear head",
+        "least privilege",
+        "argon2id",
+        "opaque session",
+        "backend is authoritative",
+        "**overview**",
+        "**threat feed**",
+        "**vulnerabilities**",
+        "**uae intelligence**",
+        "**ioc search**",
+        "**sources**",
+        "**ingestion operations**",
+        "**run history**",
+        "**reports**",
+        "**system health**",
+        "**audit log**",
+        "**methodology**",
+        "**user access**",
+    ):
+        assert phrase in readme
+
+
+def test_readme_contains_complete_new_source_extension_runbook() -> None:
+    raw = readme_text()
+    readme = normalized_readme()
+
+    assert_in_order(
+        readme,
+        (
+            "## adding a new ingestion source",
+            "### 1. approve and freeze the source policy",
+            "### 2. register identity without implying scheduling",
+            "### 3. configure credentials and limits safely",
+            "### 4. implement the fixed-policy client",
+            "### 5. normalize into canonical data",
+            "### 6. reuse the canonical database model",
+            "### 7. persist idempotently through the service layer",
+            "### 8. define incremental progress safely",
+            "### 9. bind the handler and prefect flow",
+            "### 10. decide scheduled versus manual explicitly",
+            "### 11. preserve the deployment model",
+            "### 12. validate offline before any live request",
+            "### 13. gate and record live validation",
+            "### 14. update the operator and product documentation",
+            "### 15. source completion checklist",
+        ),
+    )
+
+    for phrase in (
+        "never accept a runtime-supplied api root",
+        "registered does not mean scheduled",
+        "a new source does **not** automatically justify a new table",
+        "never advance progress",
+        "one source exception must remain isolated",
+        "never auto-enable a commercial source",
+        "do not add a second scheduler",
+        "an http 200 alone is never evidence",
+        "manual-only sources stayed outside the recurring cycle",
+    ):
+        assert phrase in readme
+
+    assert raw.count("- [ ]") >= 25
+
+
+def test_readme_includes_validation_troubleshooting_limitations_and_references() -> None:
+    raw = readme_text()
+    readme = normalized_readme()
+
+    for phrase in (
+        "## testing and validation",
+        ".\\run.cmd test",
+        "**5,225 passed, 258 skipped, 56 failed, 12 warnings**",
+        "54 failures",
+        "powershell 7",
+        "test_reviewed_sql_hashes_match_final_files",
+        "test_previous_migration_files_are_byte_for_byte_unchanged",
+        "38 files and 237 tests",
+        "exactly one linear head",
+        "not a newly demonstrated release regression",
+        "## troubleshooting",
+        "docker or compose is unavailable",
+        "missing or invalid environment values",
+        "a port is occupied",
+        "database or migration validation fails",
+        "first administrator or login fails",
+        "prefect is unavailable, paused, or not scheduling",
+        "tests stop at the powershell/checkout boundary",
+        "## known limitations",
+        "no mentor-accessible external staging environment",
+        "off-cron parent run is not the normal validation method",
+    ):
+        assert phrase in readme
 
     for relative_path in (
-        "docs/architecture.md",
+        "docs/operator-guide.md",
+        "docs/environment-and-secrets.md",
         "docs/data-sources.md",
-        "docs/source-assessment-matrix.md",
-        "docs/source-integration-policy.md",
+        "docs/architecture.md",
         "docs/security-notes.md",
         "docs/testing-plan.md",
         "docs/manual-test-cases.md",
-        "docs/environment-and-secrets.md",
         "docs/production-docker-deployment.md",
-        "docs/b2-01-prefect-platform.md",
-        "docs/c01-prefect-orchestration-core.md",
-        "docs/deployment-build-validation.md",
+        "docs/c09-recovery-runbook.md",
+        "docs/deployment-notes.md",
+        "docs/final-mentor-report.md",
+        "docs/final-architecture-package.md",
+        "backend/README.md",
+        "frontend/README.md",
     ):
-        assert f"({relative_path})" in raw_readme
+        assert f"({relative_path})" in raw
 
 
-def test_readme_records_current_database_and_persistence_limitations() -> None:
+def test_documentation_hierarchy_keeps_readme_primary() -> None:
+    readme = normalized_readme()
+    operator = re.sub(
+        r"\s+", " ", OPERATOR_GUIDE.read_text(encoding="utf-8")
+    ).lower()
+    deployment = re.sub(
+        r"\s+", " ", DEPLOYMENT_NOTES.read_text(encoding="utf-8")
+    ).lower()
+
+    assert "primary, self-contained entry point" in readme
+    assert "readme.md" in operator
+    assert "primary self-contained" in operator
+    assert "detailed specialist operational runbook" in operator
+    assert "work from a verified `main` checkout" in operator
+    assert "primary self-contained" in deployment
+    assert "specialist operational detail" in deployment
+    assert "single canonical operational runbook" not in operator
+    assert "single canonical operational runbook" not in deployment
+    assert "work from a verified `dev` checkout" not in operator
+
+
+def test_readme_preserves_defensive_boundary_and_contains_no_obvious_secret() -> None:
+    raw = readme_text()
     readme = normalized_readme()
 
-    for required_phrase in (
-        "operator-selected bootstrap identity for initialization and administration",
-        "normal runtime does not reuse it",
-        "separate non-superuser migration identity",
-        "separate least-privilege runtime application identity",
-        "three login passwords through separate secret files",
-        "publishes no postgresql host port",
-        "named `postgres_data` volume is persistent storage, not a backup",
-        "c09 implements encrypted postgresql and prefect backup/restore tooling",
-        "off-host storage, production activation, and measured staging rpo/rto remain manual gates",
-        "destructive retention requires the explicit reviewed confirmation",
-        "`docker compose down -v` deletes the persistent postgresql volume",
-        "it is not routine cleanup",
-        "explicit authorization",
+    for phrase in (
+        "defensive, ethical, authorized, educational, or lab-safe",
+        "must not be used for exploit execution",
+        "unauthorized scanning or probing",
+        "malware retrieval/delivery",
+        "external osint is untrusted data",
+        "registry inclusion does not grant collection authorization",
+        "licensing permission",
+        "storage rights",
+        "redistribution rights",
     ):
-        assert required_phrase in readme
+        assert phrase in readme
 
-    assert "reuses that privileged role for backend and migration access" not in readme
-    assert "no separate restricted application role is provisioned" not in readme
-
-
-def test_readme_represents_production_limitations_honestly() -> None:
-    readme = normalized_readme()
-
-    for required_phrase in (
-        "caddy tls edge and hsts policy",
-        "public dns",
-        "public certificate issuance",
-        "mentor-accessible staging remain manual evidence",
-        "encrypted postgresql and prefect backup/restore tooling",
-        "approved off-host storage",
-        "measured staging rpo/rto remain manual gates",
-        "centralized off-host logging",
-        "external alert ownership",
-        "ci/cd deployment",
-        "kubernetes or another orchestration platform",
-        "zero-downtime deployment",
-        "automated secret rotation",
-        "production load",
-        "public-internet deployment have not been validated",
-    ):
-        assert required_phrase in readme
-
-
-def test_readme_contains_no_developer_path_or_obvious_secret_assignment() -> None:
-    readme = readme_text()
     private_key_marker = "-----BEGIN " + "PRIVATE KEY-----"
     prohibited_patterns = (
         re.escape(private_key_marker),
@@ -235,54 +453,4 @@ def test_readme_contains_no_developer_path_or_obvious_secret_assignment() -> Non
         r"(?im)^\s*(?:api[_-]?key|password|secret|token)\s*[:=]\s*\S+",
     )
 
-    assert not any(re.search(pattern, readme) for pattern in prohibited_patterns)
-
-
-def test_readme_does_not_describe_unfinished_p8_tasks_as_complete() -> None:
-    readme = readme_text()
-
-    assert not re.search(
-        r"(?is)\bP8-0[2-6]\b.{0,80}\b(?:complete|completed|implemented|passed)\b",
-        readme,
-    )
-
-
-def test_readme_documents_c05_disabled_fixture_only_contract() -> None:
-    document = readme_text()
-    assert "C05 official public sources" in document
-    assert "MITRE ATT&CK Enterprise TAXII/STIX 2.1" in document
-    assert "CERT-FR alerts" in document
-    assert "UK NCSC Threat Reports" in document
-    assert "implemented but disabled" in document
-    assert "made no live request" in document
-    assert "No database migration was added" in document
-    assert "c05-official-public-sources.md" in document
-
-
-def test_readme_documents_current_authentication_and_c07_frontend() -> None:
-    readme = normalized_readme()
-    for phrase in (
-        "opaque database-backed browser sessions",
-        "sha-256 session-token and csrf-token hashes",
-        "passwords use argon2id",
-        "content routes require `content.read`",
-        "user-management and audit-search routes are administrator-only",
-        "hiding a frontend button is not authorization",
-        "c07 integrates frontend login",
-        "authenticated bootstrap",
-        "protected navigation",
-        "permission-aware controls",
-        "does not provision a real staging account",
-        "manual bootstrap cli",
-        "sso is absent and remains approval-gated",
-        "`get`, `post`, `patch`, and `options`",
-        "`content-type` and `x-csrf-token`",
-        "`authorization`",
-    ):
-        assert phrase in readme
-    for obsolete in (
-        "credentials are disabled",
-        "method policy allows only `get`",
-        "current application does not use browser cookies",
-    ):
-        assert obsolete not in readme
+    assert not any(re.search(pattern, raw) for pattern in prohibited_patterns)

@@ -189,10 +189,15 @@ class CisaKevSourceHandler:
             progress_storage=ProgressStorage.CHECKPOINT,
             progress_kind=ProgressKind.CONTENT_HASH,
         )
-        return reconstruct_progress_from_evidence(
+        proposal = reconstruct_progress_from_evidence(
             self._session_factory,
             context,
             committed_counters,
+        )
+        return _normalize_legacy_wrapped_progress(
+            context,
+            committed_counters,
+            proposal,
         )
 
 
@@ -244,17 +249,88 @@ def _progress_token(catalog_hash: str, cursor: int) -> str:
     return f"sha256={catalog_hash};cursor={cursor}"
 
 
-def _start_cursor(context: SourceExecutionContext, catalog_hash: str) -> int:
-    if context.progress is None:
-        return 0
-    value = context.progress.value
+def _parse_progress_token(value: object) -> tuple[str, int]:
     if not isinstance(value, str):
         raise ValueError("The CISA KEV progress token is invalid.")
     match = _TOKEN_PATTERN.fullmatch(value)
     if match is None:
         raise ValueError("The CISA KEV progress token is invalid.")
-    previous_hash, cursor_text = match.groups()
-    return int(cursor_text) if previous_hash == catalog_hash else 0
+    catalog_hash, cursor_text = match.groups()
+    return catalog_hash, int(cursor_text)
+
+
+def _start_cursor(context: SourceExecutionContext, catalog_hash: str) -> int:
+    if context.progress is None:
+        return 0
+    previous_hash, cursor = _parse_progress_token(context.progress.value)
+    return cursor if previous_hash == catalog_hash else 0
+
+
+def _normalize_legacy_wrapped_progress(
+    context: SourceExecutionContext,
+    committed_counters: ReconciledCounters,
+    proposal: ProgressProposal,
+) -> ProgressProposal:
+    if (
+        proposal.storage is not ProgressStorage.CHECKPOINT
+        or proposal.kind is not ProgressKind.CONTENT_HASH
+        or proposal.name != ProgressKind.CONTENT_HASH.value
+    ):
+        raise _legacy_progress_contract_failure()
+
+    try:
+        proposal_hash, proposal_cursor = _parse_progress_token(proposal.value)
+    except ValueError:
+        raise _legacy_progress_contract_failure() from None
+
+    current = context.progress
+    expected_version = 0 if current is None else current.version
+    if proposal.expected_previous_version != expected_version:
+        raise _legacy_progress_contract_failure()
+    if current is None:
+        return proposal
+
+    try:
+        _parse_progress_token(current.value)
+    except ValueError:
+        raise _legacy_progress_contract_failure() from None
+    if proposal.value != current.value:
+        return proposal
+
+    successful_change = (
+        committed_counters.created > 0 or committed_counters.updated > 0
+    )
+    genuine_no_change = (
+        not successful_change
+        and committed_counters.skipped == 0
+        and committed_counters.failed == 0
+        and committed_counters.error_count == 0
+    )
+    if genuine_no_change:
+        return proposal
+    if (
+        not successful_change
+        or committed_counters.skipped > 0
+        or committed_counters.failed > 0
+        or committed_counters.error_count > 0
+        or proposal_cursor == 0
+    ):
+        raise _legacy_progress_contract_failure()
+
+    return ProgressProposal(
+        storage=proposal.storage,
+        kind=proposal.kind,
+        name=proposal.name,
+        value=_progress_token(proposal_hash, 0),
+        expected_previous_version=proposal.expected_previous_version,
+    )
+
+
+def _legacy_progress_contract_failure() -> ClassifiedFailure:
+    return ClassifiedFailure(
+        FailureCategory.CONTRACT_VIOLATION,
+        "Committed CISA KEV progress evidence is unavailable or conflicting.",
+    )
 
 
 __all__ = [

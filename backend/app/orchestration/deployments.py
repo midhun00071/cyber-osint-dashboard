@@ -38,6 +38,16 @@ PROCESS_WORKING_DIR = "/opt/alpha-data/backend"
 CRON = "17 */2 * * *"
 TIMEZONE = "Asia/Dubai"
 DEPLOYMENT_CONCURRENCY = 1
+EXPECTED_SCHEDULED_SOURCE_SLUGS = frozenset(
+    {
+        "cert-eu-security-advisories",
+        "cisa-kev",
+        "first-epss",
+        "google-threat-intelligence-public-research",
+        "mandiant-public-threat-research",
+        "nvd",
+    }
+)
 
 
 def deployment_specification(*, paused: bool = True) -> DeploymentSpecification:
@@ -125,6 +135,21 @@ def validate_activation(
         raise ContractValidationError("A scheduled source binding is invalid.")
 
 
+def resolve_registration_paused(*, activate: bool, existing: Any | None) -> bool:
+    """Resolve registration state without changing an existing activation choice."""
+
+    if activate:
+        return False
+    if existing is None:
+        return True
+    existing_paused = getattr(existing, "paused", None)
+    if not isinstance(existing_paused, bool):
+        raise ContractValidationError(
+            "The existing deployment activation state is unavailable."
+        )
+    return existing_paused
+
+
 async def _read_existing_and_pool_valid(activate: bool) -> tuple[Any | None, bool]:
     async with get_client() as client:
         try:
@@ -176,10 +201,101 @@ def register_deployment(
         handlers=handlers,
         work_pool_valid=pool_valid,
     )
-    deployment = build_runner_deployment(paused=not activate)
+    deployment = build_runner_deployment(
+        paused=resolve_registration_paused(activate=activate, existing=existing)
+    )
     if apply_deployment is not None:
         return apply_deployment(deployment)
     return deployment.apply()
+
+
+def validate_registered_runtime(
+    *,
+    deployment: Any,
+    work_pool: Any,
+    workers: Iterable[Any],
+    handlers: Mapping[str, SourceHandler] = DEFAULT_SOURCE_HANDLERS,
+    expected_paused: bool | None = None,
+) -> None:
+    """Validate durable deployment, pool, worker, and source bindings."""
+
+    if getattr(work_pool, "name", None) != WORK_POOL_NAME:
+        raise ContractValidationError("The fixed process work pool is unavailable.")
+    if getattr(work_pool, "type", None) != "process" or getattr(
+        work_pool, "is_paused", True
+    ):
+        raise ContractValidationError("The fixed process work pool is unavailable.")
+    if getattr(work_pool, "default_queue_id", None) is None:
+        raise ContractValidationError("The fixed work queue is unavailable.")
+
+    online_workers = tuple(
+        worker
+        for worker in workers
+        if str(getattr(getattr(worker, "status", None), "value", "")).casefold()
+        == "online"
+    )
+    if not online_workers:
+        raise ContractValidationError("No online worker is polling the fixed work pool.")
+
+    if getattr(deployment, "name", None) != DEPLOYMENT_NAME:
+        raise ContractValidationError("The registered deployment identity conflicts.")
+    if getattr(deployment, "work_pool_name", None) != WORK_POOL_NAME:
+        raise ContractValidationError("The registered deployment work pool conflicts.")
+    if getattr(deployment, "work_queue_name", None) in {None, ""}:
+        raise ContractValidationError("The registered deployment queue is unavailable.")
+    paused = getattr(deployment, "paused", None)
+    if not isinstance(paused, bool):
+        raise ContractValidationError(
+            "The registered deployment activation state is unavailable."
+        )
+    if expected_paused is not None and paused is not expected_paused:
+        raise ContractValidationError(
+            "The registered deployment activation state conflicts."
+        )
+    validate_existing_schedules(getattr(deployment, "schedules", ()))
+    if getattr(deployment, "job_variables", None) != {
+        "working_dir": PROCESS_WORKING_DIR
+    }:
+        raise ContractValidationError("The registered process working directory conflicts.")
+    entrypoint = str(getattr(deployment, "entrypoint", "")).replace("\\", "/")
+    if entrypoint != "app/orchestration/flows.py:parent_ingestion_cycle":
+        raise ContractValidationError("The registered deployment entrypoint conflicts.")
+
+    if frozenset(handlers) != EXPECTED_SCHEDULED_SOURCE_SLUGS:
+        raise ContractValidationError("The scheduled source bindings conflict.")
+    if any(not isinstance(handler, SourceHandler) for handler in handlers.values()):
+        raise ContractValidationError("A scheduled source binding is invalid.")
+
+
+async def _read_registered_runtime() -> tuple[Any, Any, tuple[Any, ...]]:
+    async with get_client() as client:
+        deployment = await client.read_deployment_by_name(
+            f"{PARENT_FLOW_NAME}/{DEPLOYMENT_NAME}"
+        )
+        work_pool = await client.read_work_pool(WORK_POOL_NAME)
+        workers = tuple(
+            await client.read_workers_for_work_pool(WORK_POOL_NAME, limit=100)
+        )
+        return deployment, work_pool, workers
+
+
+def verify_registered_runtime(
+    *,
+    inspect_runtime: Callable[[], tuple[Any, Any, tuple[Any, ...]]] | None = None,
+    expected_paused: bool | None = None,
+) -> None:
+    """Read and validate the registered runtime without executing a flow."""
+
+    if inspect_runtime is None:
+        deployment, work_pool, workers = asyncio.run(_read_registered_runtime())
+    else:
+        deployment, work_pool, workers = inspect_runtime()
+    validate_registered_runtime(
+        deployment=deployment,
+        work_pool=work_pool,
+        workers=workers,
+        expected_paused=expected_paused,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -191,13 +307,51 @@ def main(argv: list[str] | None = None) -> int:
         "--confirm-controlled-staging-evidence",
         action="store_true",
     )
-    arguments = parser.parse_args(argv)
-    register_deployment(
-        activate=arguments.activate,
-        controlled_staging_evidence_confirmed=(
-            arguments.confirm_controlled_staging_evidence
-        ),
+    parser.add_argument(
+        "--verify-registration",
+        action="store_true",
+        help="Verify the registered deployment without changing activation state.",
     )
+    parser.add_argument(
+        "--verify-paused",
+        action="store_true",
+        help="Verify the registered paused deployment without running it.",
+    )
+    arguments = parser.parse_args(argv)
+    if arguments.verify_registration and arguments.verify_paused:
+        parser.error("Choose only one deployment verification mode.")
+    if (arguments.verify_registration or arguments.verify_paused) and (
+        arguments.activate or arguments.confirm_controlled_staging_evidence
+    ):
+        parser.error("Verification cannot be combined with activation options.")
+    try:
+        if arguments.verify_registration or arguments.verify_paused:
+            verify_registered_runtime(
+                expected_paused=True if arguments.verify_paused else None
+            )
+            state_description = (
+                "paused deployment"
+                if arguments.verify_paused
+                else "deployment activation state"
+            )
+            print(
+                f"PASS Prefect pool, worker, queue, {state_description}, schedule, "
+                "working directory, and six bindings are valid."
+            )
+        else:
+            register_deployment(
+                activate=arguments.activate,
+                controlled_staging_evidence_confirmed=(
+                    arguments.confirm_controlled_staging_evidence
+                ),
+            )
+            print("PASS Prefect deployment registration completed.")
+    except (ContractValidationError, ObjectNotFound):
+        print("BLOCKED Prefect deployment integrity validation failed.")
+        return 1
+    except Exception:
+        print("BLOCKED Prefect deployment registration could not complete safely.")
+        return 1
     return 0
 
 
@@ -209,6 +363,7 @@ __all__ = [
     "CRON",
     "DEPLOYMENT_CONCURRENCY",
     "DEPLOYMENT_NAME",
+    "EXPECTED_SCHEDULED_SOURCE_SLUGS",
     "PROCESS_WORKING_DIR",
     "TIMEZONE",
     "WORK_POOL_NAME",
@@ -216,6 +371,9 @@ __all__ = [
     "deployment_specification",
     "main",
     "register_deployment",
+    "resolve_registration_paused",
     "validate_activation",
     "validate_existing_schedules",
+    "validate_registered_runtime",
+    "verify_registered_runtime",
 ]

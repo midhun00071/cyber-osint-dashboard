@@ -78,6 +78,78 @@ function Copy-ExampleEnvFile {
     Write-Success "Created local environment file from example: $TargetPath"
 }
 
+function New-CryptographicLocalSecret {
+    $secretBytes = New-Object byte[] 32
+    $generator = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $generator.GetBytes($secretBytes)
+    }
+    finally {
+        $generator.Dispose()
+    }
+
+    return [Convert]::ToBase64String($secretBytes).TrimEnd("=").Replace("+", "-").Replace("/", "_")
+}
+
+function New-LocalRootEnvironmentFile {
+    param(
+        [Parameter(Mandatory)][string]$ExamplePath,
+        [Parameter(Mandatory)][string]$TargetPath
+    )
+
+    if (-not (Test-Path -LiteralPath $ExamplePath -PathType Leaf)) {
+        Write-WarningMessage "Example file not found: $ExamplePath"
+        return
+    }
+    if (Test-Path -LiteralPath $TargetPath) {
+        Write-Success "Environment file already exists and was not overwritten: $TargetPath"
+        return
+    }
+
+    $secretNames = @(
+        "POSTGRES_PASSWORD",
+        "POSTGRES_BOOTSTRAP_PASSWORD",
+        "POSTGRES_MIGRATION_PASSWORD"
+    )
+    $generatedSecrets = @{}
+    foreach ($secretName in $secretNames) {
+        do {
+            $generatedSecret = New-CryptographicLocalSecret
+        } while ($generatedSecrets.Values -contains $generatedSecret)
+        $generatedSecrets[$secretName] = $generatedSecret
+    }
+
+    $environmentContent = [System.IO.File]::ReadAllText($ExamplePath)
+    foreach ($secretName in $secretNames) {
+        $fieldPattern = "(?m)^$([regex]::Escape($secretName))=.*$"
+        if ([regex]::Matches($environmentContent, $fieldPattern).Count -ne 1) {
+            throw "Local environment template field is missing or duplicated: $secretName."
+        }
+        $environmentContent = [regex]::Replace(
+            $environmentContent,
+            $fieldPattern,
+            "$secretName=$($generatedSecrets[$secretName])"
+        )
+    }
+
+    $encoding = New-Object System.Text.UTF8Encoding($false)
+    $contentBytes = $encoding.GetBytes($environmentContent)
+    $targetStream = [System.IO.File]::Open(
+        $TargetPath,
+        [System.IO.FileMode]::CreateNew,
+        [System.IO.FileAccess]::Write,
+        [System.IO.FileShare]::None
+    )
+    try {
+        $targetStream.Write($contentBytes, 0, $contentBytes.Length)
+    }
+    finally {
+        $targetStream.Dispose()
+    }
+
+    Write-Success "Created local environment file with generated database credentials: $TargetPath"
+}
+
 Write-Section "Cyber OSINT Dashboard / Alpha Data setup"
 
 $ProjectRoot = Resolve-Path "$PSScriptRoot\.."
@@ -162,7 +234,7 @@ if ($InstallVSCodeExtensions) {
 
 Write-Section "Creating local environment files if missing"
 
-Copy-ExampleEnvFile ".env.example" ".env"
+New-LocalRootEnvironmentFile ".env.example" ".env"
 Copy-ExampleEnvFile "backend\.env.example" "backend\.env"
 Copy-ExampleEnvFile "frontend\.env.example" "frontend\.env.local"
 
@@ -221,7 +293,7 @@ Write-Host "git status"
 
 Write-Host ""
 Write-Host "Validate Docker Compose configuration:"
-Write-Host "docker compose config"
+Write-Host "docker compose config --quiet"
 
 Write-Host ""
 Write-Host "Install VS Code extensions with:"

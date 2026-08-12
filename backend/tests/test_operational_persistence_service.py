@@ -3,9 +3,11 @@ from __future__ import annotations
 import ast
 from datetime import UTC, datetime, timedelta, timezone
 import inspect
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Session
 
 from app.ingestion.services.operational_persistence_service import (
@@ -20,6 +22,8 @@ from app.ingestion.services.operational_persistence_service import (
     _required_utc_timestamp,
 )
 from app.models.ingestion_run import IngestionRun
+from app.models.source_checkpoint import SourceCheckpoint
+from app.models.source_watermark import SourceWatermark
 
 
 def test_run_counters_are_immutable_bounded_and_reconciled() -> None:
@@ -70,6 +74,85 @@ def test_scheduled_cycle_acquisition_uses_deterministic_lock_order() -> None:
 
     assert identity_lock < exact_return < scheduled_lock < ordered_overlap < cycle_insert
     assert source.count("_SCHEDULED_CYCLE_LOCK_IDENTITY") == 1
+
+
+@pytest.mark.parametrize(
+    ("method_name", "retry_name", "current_name"),
+    (
+        ("advance_checkpoint", "_existing_checkpoint_retry", "_current_checkpoint"),
+        ("advance_watermark", "_existing_watermark_retry", "_current_watermark"),
+    ),
+)
+def test_progress_identity_advisory_lock_precedes_every_history_read(
+    method_name: str,
+    retry_name: str,
+    current_name: str,
+) -> None:
+    source = inspect.getsource(getattr(OperationalPersistenceService, method_name))
+
+    advisory_lock = source.index('self._advisory_lock("progress-identity", identity)')
+    retry_read = source.index(retry_name)
+    current_read = source.index(current_name)
+
+    assert advisory_lock < retry_read < current_read
+
+
+def test_append_only_progress_reads_compile_without_postgresql_row_locks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class EmptyScalarResult:
+        @staticmethod
+        def first():
+            return None
+
+        @staticmethod
+        def all():
+            return []
+
+    statements = []
+
+    def capture(statement):
+        statements.append(statement)
+        return EmptyScalarResult()
+
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    try:
+        with Session(engine) as session:
+            monkeypatch.setattr(session, "scalars", capture)
+            service = OperationalPersistenceService(session)
+            assert service._current_checkpoint(1, "source", None, "catalog") is None
+            assert service._current_watermark(1, "source", None, "modified") is None
+            terminal_run = SimpleNamespace(id=1, source_id=1, status="success")
+            with pytest.raises(OperationalConflictError):
+                service._existing_checkpoint_retry(
+                    terminal_run, 2, "source", None, "catalog", "v1", 0
+                )
+            with pytest.raises(OperationalConflictError):
+                service._existing_watermark_retry(
+                    terminal_run,
+                    2,
+                    "source",
+                    None,
+                    "modified",
+                    datetime(2026, 8, 1, tzinfo=UTC),
+                    0,
+                )
+    finally:
+        engine.dispose()
+
+    compiled = [
+        str(
+            statement.compile(
+                dialect=postgresql.dialect(),
+                compile_kwargs={"literal_binds": True},
+            )
+        ).upper()
+        for statement in statements
+    ]
+    assert len(compiled) == 4
+    assert sum(SourceCheckpoint.__tablename__.upper() in sql for sql in compiled) == 2
+    assert sum(SourceWatermark.__tablename__.upper() in sql for sql in compiled) == 2
+    assert all("FOR UPDATE" not in sql for sql in compiled)
 
 
 def test_every_mutation_requires_an_active_caller_transaction() -> None:

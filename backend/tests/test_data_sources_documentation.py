@@ -48,13 +48,16 @@ def test_registry_status_and_manual_only_boundaries_are_explicit() -> None:
         "registry inclusion",
         "does not grant collection authorization",
         "licensing permission",
-        "all ingestion and enrichment is manual-only",
-        "no active scheduler",
+        "prefect supplies the scheduler and process worker",
+        "cron `17 */2 * * *` in `asia/dubai`",
+        "exactly six approved handlers",
+        "fresh deployment starts **paused**",
+        "current verified release deployment is active",
+        "explicit approval on 11 august 2026",
         "startup ingestion",
-        "recurring background ingestion",
         "frontend ingestion trigger",
         "public ingestion api",
-        "no standard refresh interval is implemented",
+        "manual commands remain separate explicit operator paths",
     ):
         assert phrase in document
 
@@ -243,13 +246,15 @@ def test_document_has_no_private_path_or_obvious_secret_and_links_resolve() -> N
         assert (DATA_SOURCES_PATH.parent / path_text).resolve().is_file()
 
 
-def test_c02_flow_ready_sources_are_documented_without_activation_claims() -> None:
+def test_c02_flow_ready_sources_document_current_activation_boundary() -> None:
     document = normalized_document()
 
     for phrase in (
         "six reviewed, flow-ready handler implementations",
-        "not bound to the immutable production `DEFAULT_SOURCE_HANDLERS` mapping",
-        "Operational collection therefore remains manual-only",
+        "final production mapping code-binds exactly",
+        "Binding alone did not activate them",
+        "final activation was approved and completed on 11 August 2026",
+        "without launching a manual Prefect flow",
         "Anomali, both Censys identities, and both IBM identities remain manual-only",
         "unavailable as scheduled success paths",
         "start-after cursor continuation and one wrap-around",

@@ -68,7 +68,9 @@ class LocalIdentityProvider:
             .where(AuthIdentity.provider_key == self.provider_key, AuthIdentity.subject_key == canonical_subject)
         )
         if for_update:
-            statement = statement.with_for_update()
+            statement = statement.with_for_update(
+                of=(AuthLocalCredential, AuthUser, AuthUserRole)
+            )
         try:
             row = self._session.execute(statement).one_or_none()
         except SQLAlchemyError:

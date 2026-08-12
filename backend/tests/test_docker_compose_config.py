@@ -4,6 +4,7 @@ import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+ROLE_RECONCILIATION = REPO_ROOT / "database" / "reconcile-local-database-roles.sh"
 
 
 def load_compose_config() -> dict:
@@ -32,7 +33,9 @@ def test_backend_compose_uses_component_database_settings() -> None:
     assert backend_environment["POSTGRES_HOST"] == "db"
     assert backend_environment["POSTGRES_PORT"] == 5432
     assert backend_environment["POSTGRES_DB"] == "${POSTGRES_DB:-alpha_data_db}"
-    assert backend_environment["POSTGRES_USER"] == "${POSTGRES_USER:-alpha_data_user}"
+    assert backend_environment["POSTGRES_USER"] == (
+        "${POSTGRES_APP_USER:-alpha_data_runtime}"
+    )
     assert (
         backend_environment["POSTGRES_PASSWORD"]
         == "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set for local Compose}"
@@ -49,17 +52,41 @@ def test_local_compose_separates_database_identities_and_pool_controls() -> None
         "${POSTGRES_BOOTSTRAP_USER:-alpha_data_bootstrap}"
     )
     assert backend["environment"]["POSTGRES_USER"] == (
-        "${POSTGRES_USER:-alpha_data_user}"
+        "${POSTGRES_APP_USER:-alpha_data_runtime}"
+    )
+    assert database["environment"]["POSTGRES_APP_USER"] == (
+        "${POSTGRES_APP_USER:-alpha_data_runtime}"
+    )
+    assert database["environment"]["POSTGRES_LEGACY_USER"] == (
+        "${POSTGRES_LEGACY_USER:-}"
     )
     assert migration["environment"]["POSTGRES_USER"] == (
         "${POSTGRES_MIGRATION_USER:-alpha_data_migration}"
     )
+    assert database["environment"]["POSTGRES_PASSWORD"] == (
+        "${POSTGRES_BOOTSTRAP_PASSWORD:?POSTGRES_BOOTSTRAP_PASSWORD must be set "
+        "for local Compose}"
+    )
+    assert database["environment"]["POSTGRES_MIGRATION_PASSWORD"] == (
+        "${POSTGRES_MIGRATION_PASSWORD:?POSTGRES_MIGRATION_PASSWORD must be set "
+        "for local Compose}"
+    )
+    assert migration["environment"]["POSTGRES_PASSWORD"] == (
+        "${POSTGRES_MIGRATION_PASSWORD:?POSTGRES_MIGRATION_PASSWORD must be set "
+        "for local Compose}"
+    )
     assert migration["profiles"] == ["migration"]
     assert database["volumes"][1:] == [
-        "./database/init/10-provision-database-roles.sh:"
+        "./database/init/10-provision-database-roles-entrypoint.sh:"
         "/docker-entrypoint-initdb.d/10-provision-database-roles.sh:ro",
+        "./database/init/10-provision-database-roles.sh:"
+        "/opt/alpha-data/database/10-provision-database-roles.sh:ro",
         "./database/init/11-apply-database-grants.sql:"
         "/opt/alpha-data/database/11-apply-database-grants.sql:ro",
+        "./database/apply-runtime-grants.sh:"
+        "/opt/alpha-data/database/apply-runtime-grants.sh:ro",
+        "./database/reconcile-local-database-roles.sh:"
+        "/opt/alpha-data/database/reconcile-local-database-roles.sh:ro",
     ]
     for name, expected in (
         ("DATABASE_POOL_SIZE", "${DATABASE_POOL_SIZE:-5}"),
@@ -71,6 +98,34 @@ def test_local_compose_separates_database_identities_and_pool_controls() -> None
         assert backend["environment"][name] == expected
 
 
+def test_local_published_ports_are_fixed_to_ipv4_loopback() -> None:
+    services = load_compose_config()["services"]
+
+    assert services["db"]["ports"] == ["127.0.0.1:${POSTGRES_PORT:-5432}:5432"]
+    assert services["backend"]["ports"] == [
+        "127.0.0.1:${BACKEND_PORT:-8000}:8000"
+    ]
+    assert services["frontend"]["ports"] == [
+        "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
+    ]
+    assert services["prefect-server"]["ports"] == [
+        "127.0.0.1:${PREFECT_PORT:-4200}:4200"
+    ]
+    assert "ports" not in services["prefect-db"]
+    assert "ports" not in services["prefect-worker"]
+
+
+def test_preserved_local_bootstrap_role_receives_configured_secret_safely() -> None:
+    script = ROLE_RECONCILIATION.read_text(encoding="utf-8")
+
+    assert (
+        'set_role_password "$POSTGRES_USER" "$POSTGRES_USER" "$POSTGRES_PASSWORD"'
+        in script
+    )
+    assert 'printf \'%s\\n\' "$role_secret"' in script
+    assert '--command "\\\\password $target_role" >/dev/null 2>&1' in script
+
+
 def test_local_database_has_one_automatic_init_script_and_separate_sql() -> None:
     volumes = load_compose_config()["services"]["db"]["volumes"]
     automatic_targets = [
@@ -78,12 +133,24 @@ def test_local_database_has_one_automatic_init_script_and_separate_sql() -> None
     ]
 
     assert automatic_targets == [
-        "./database/init/10-provision-database-roles.sh:"
+        "./database/init/10-provision-database-roles-entrypoint.sh:"
         "/docker-entrypoint-initdb.d/10-provision-database-roles.sh:ro"
     ]
     assert volumes.count(
+        "./database/init/10-provision-database-roles.sh:"
+        "/opt/alpha-data/database/10-provision-database-roles.sh:ro"
+    ) == 1
+    assert volumes.count(
         "./database/init/11-apply-database-grants.sql:"
         "/opt/alpha-data/database/11-apply-database-grants.sql:ro"
+    ) == 1
+    assert volumes.count(
+        "./database/apply-runtime-grants.sh:"
+        "/opt/alpha-data/database/apply-runtime-grants.sh:ro"
+    ) == 1
+    assert volumes.count(
+        "./database/reconcile-local-database-roles.sh:"
+        "/opt/alpha-data/database/reconcile-local-database-roles.sh:ro"
     ) == 1
 
 

@@ -24,8 +24,8 @@ def normalized_document(path: Path) -> str:
     return " ".join(path.read_text(encoding="utf-8").split())
 
 
-def test_readme_documents_supported_manual_live_commands_and_bounds() -> None:
-    readme = normalized_document(README_PATH)
+def test_data_source_guide_documents_supported_manual_live_commands_and_bounds() -> None:
+    readme = normalized_document(DATA_SOURCES_PATH)
     plain_readme = readme.replace("`", "")
 
     assert "app.ingestion.censys_publications_live_cli" in readme
@@ -57,18 +57,22 @@ def test_documented_censys_commands_match_supported_parser_options() -> None:
     assert local.file_path == "reviewed-local-json-file"
 
 
-def test_readme_documents_local_fallback_and_security_boundaries() -> None:
-    readme = normalized_document(README_PATH)
+def test_data_source_guide_documents_local_fallback_and_security_boundaries() -> None:
+    readme = normalized_document(DATA_SOURCES_PATH)
 
     assert "app.ingestion.censys_publications_cli" in readme
     assert "--file <reviewed-local-json-file>" in readme
     assert "reviewed local-file fallback" in readme
-    assert "strict Censys catalogue schema" in readme
-    assert "No arbitrary URL is accepted" in readme
-    assert "Raw HTML or JSON-LD is not stored" in readme
-    assert "No scheduler, recurring background job, startup ingestion" in readme
-    assert "automatic frontend invocation" in readme
+    assert "strict reviewed JSON fallback" in readme
+    assert "no arbitrary URL input is available" in readme
+    assert "Raw HTML and JSON-LD are not stored" in readme
+    assert "There is no scheduler, startup hook, background worker" in readme
+    assert "frontend invocation" in readme
     assert "must not be used to scan, probe, search, or rescan internet assets" in readme
+
+    root_readme = normalized_document(README_PATH)
+    assert "[Data sources](docs/data-sources.md)" in root_readme
+    assert "app.ingestion.censys_publications_live_cli" not in root_readme
 
 
 def test_censys_source_document_matches_live_and_fallback_architecture() -> None:

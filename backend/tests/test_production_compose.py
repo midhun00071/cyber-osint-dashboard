@@ -390,9 +390,14 @@ def test_development_compose_and_dev_runner_contract_remain_present() -> None:
     run_script = (REPO_ROOT / "run.ps1").read_text(encoding="utf-8")
 
     assert compose["services"]["db"]["container_name"] == "alpha-data-db"
-    assert compose["services"]["db"]["ports"] == ["${POSTGRES_PORT:-5432}:5432"]
+    assert compose["services"]["db"]["ports"] == [
+        "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    ]
     assert '"dev" {' in run_script
-    assert 'ArgumentList @("run", "dev", "--", "--port", "3000")' in run_script
+    assert (
+        'ArgumentList @("run", "dev", "--", "--hostname", "127.0.0.1", '
+        '"--port", "3000")'
+    ) in run_script
 
 
 def test_runner_build_path_uses_the_explicit_local_build_default() -> None:

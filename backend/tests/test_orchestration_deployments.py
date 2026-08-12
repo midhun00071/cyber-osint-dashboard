@@ -16,14 +16,17 @@ from app.orchestration.deployments import (
     CRON,
     DEPLOYMENT_CONCURRENCY,
     DEPLOYMENT_NAME,
+    EXPECTED_SCHEDULED_SOURCE_SLUGS,
     PROCESS_WORKING_DIR,
     TIMEZONE,
     WORK_POOL_NAME,
     build_runner_deployment,
     deployment_specification,
     register_deployment,
+    resolve_registration_paused,
     validate_activation,
     validate_existing_schedules,
+    validate_registered_runtime,
 )
 from app.orchestration.flows import DEFAULT_SOURCE_HANDLERS, PARENT_FLOW_NAME
 from app.orchestration.source_handlers import C02_BOUND_SOURCE_SLUGS
@@ -130,6 +133,7 @@ def test_paused_registration_is_idempotent_and_does_not_run_sources() -> None:
     existing = SimpleNamespace(
         name=DEPLOYMENT_NAME,
         work_pool_name=WORK_POOL_NAME,
+        paused=True,
         schedules=[
             SimpleNamespace(
                 schedule=CronSchedule(cron=CRON, timezone=TIMEZONE)
@@ -149,6 +153,87 @@ def test_paused_registration_is_idempotent_and_does_not_run_sources() -> None:
         "working_dir": "/opt/alpha-data/backend"
     }
     assert len(applied[0].schedules) == 1
+
+
+def existing_deployment(*, paused):
+    return SimpleNamespace(
+        name=DEPLOYMENT_NAME,
+        work_pool_name=WORK_POOL_NAME,
+        paused=paused,
+        schedules=[
+            SimpleNamespace(schedule=CronSchedule(cron=CRON, timezone=TIMEZONE))
+        ],
+    )
+
+
+@pytest.mark.parametrize(
+    "existing,expected_paused",
+    (
+        (None, True),
+        (existing_deployment(paused=True), True),
+        (existing_deployment(paused=False), False),
+    ),
+)
+def test_ordinary_registration_preserves_activation_state(
+    existing, expected_paused
+) -> None:
+    applied = []
+
+    register_deployment(
+        inspect_existing=lambda activate: (existing, not activate),
+        apply_deployment=lambda deployment: applied.append(deployment),
+    )
+
+    assert len(applied) == 1
+    assert applied[0].paused is expected_paused
+
+
+def test_unavailable_existing_activation_state_fails_before_apply() -> None:
+    applied = []
+
+    with pytest.raises(ContractValidationError, match="state is unavailable"):
+        register_deployment(
+            inspect_existing=lambda activate: (
+                existing_deployment(paused=None),
+                not activate,
+            ),
+            apply_deployment=lambda deployment: applied.append(deployment),
+        )
+
+    assert applied == []
+
+
+def test_existing_state_read_failure_fails_before_apply() -> None:
+    applied = []
+
+    def fail_inspection(_activate):
+        raise RuntimeError("synthetic state read failure")
+
+    with pytest.raises(RuntimeError, match="synthetic state read failure"):
+        register_deployment(
+            inspect_existing=fail_inspection,
+            apply_deployment=lambda deployment: applied.append(deployment),
+        )
+
+    assert applied == []
+
+
+def test_explicit_activation_resolution_is_not_used_by_ordinary_registration() -> None:
+    assert resolve_registration_paused(activate=False, existing=None) is True
+    assert (
+        resolve_registration_paused(
+            activate=False,
+            existing=existing_deployment(paused=True),
+        )
+        is True
+    )
+    assert (
+        resolve_registration_paused(
+            activate=False,
+            existing=existing_deployment(paused=False),
+        )
+        is False
+    )
 
 
 def test_activation_contract_can_pass_only_with_all_explicit_staging_gates() -> None:
@@ -225,4 +310,73 @@ def test_invalid_required_handler_fails_activation_closed() -> None:
             controlled_staging_evidence_confirmed=True,
             handlers=handlers,  # type: ignore[arg-type]
             work_pool_valid=True,
+        )
+
+
+def registered_runtime(*, paused=True, working_dir=PROCESS_WORKING_DIR, online=True):
+    deployment = SimpleNamespace(
+        name=DEPLOYMENT_NAME,
+        work_pool_name=WORK_POOL_NAME,
+        work_queue_name="default",
+        paused=paused,
+        schedules=[SimpleNamespace(schedule=CronSchedule(cron=CRON, timezone=TIMEZONE))],
+        job_variables={"working_dir": working_dir},
+        entrypoint="app/orchestration/flows.py:parent_ingestion_cycle",
+    )
+    work_pool = SimpleNamespace(
+        name=WORK_POOL_NAME,
+        type="process",
+        is_paused=False,
+        default_queue_id=object(),
+    )
+    workers = (SimpleNamespace(status=SimpleNamespace(value="ONLINE" if online else "OFFLINE")),)
+    return deployment, work_pool, workers
+
+
+def test_registered_runtime_requires_exact_durable_contract() -> None:
+    deployment, work_pool, workers = registered_runtime()
+
+    validate_registered_runtime(
+        deployment=deployment,
+        work_pool=work_pool,
+        workers=workers,
+    )
+
+    assert frozenset(DEFAULT_SOURCE_HANDLERS) == EXPECTED_SCHEDULED_SOURCE_SLUGS
+
+    active_deployment, work_pool, workers = registered_runtime(paused=False)
+    validate_registered_runtime(
+        deployment=active_deployment,
+        work_pool=work_pool,
+        workers=workers,
+    )
+
+
+@pytest.mark.parametrize(
+    "runtime,match",
+    (
+        (registered_runtime(paused=None), "activation state is unavailable"),
+        (registered_runtime(working_dir="/tmp/conflict"), "working directory"),
+        (registered_runtime(online=False), "No online worker"),
+    ),
+)
+def test_registered_runtime_blocks_unready_or_conflicting_state(runtime, match) -> None:
+    deployment, work_pool, workers = runtime
+    with pytest.raises(ContractValidationError, match=match):
+        validate_registered_runtime(
+            deployment=deployment,
+            work_pool=work_pool,
+            workers=workers,
+        )
+
+
+def test_explicit_paused_runtime_verification_rejects_active_state() -> None:
+    deployment, work_pool, workers = registered_runtime(paused=False)
+
+    with pytest.raises(ContractValidationError, match="activation state conflicts"):
+        validate_registered_runtime(
+            deployment=deployment,
+            work_pool=work_pool,
+            workers=workers,
+            expected_paused=True,
         )

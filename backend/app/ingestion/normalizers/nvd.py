@@ -11,7 +11,7 @@ import re
 from typing import Any
 
 
-MAX_PAYLOAD_BYTES = 512 * 1024
+MAX_PAYLOAD_BYTES = 2 * 1024 * 1024
 MAX_TITLE_LENGTH = 500
 MAX_SUMMARY_LENGTH = 10_000
 MAX_CVSS_VECTOR_LENGTH = 300
@@ -136,7 +136,7 @@ def _canonical_payload(
     canonical_bytes = canonical_json.encode("utf-8")
     if len(canonical_bytes) > MAX_PAYLOAD_BYTES:
         raise NvdPayloadTooLargeError(
-            "The NVD record exceeds the 512 KiB payload limit."
+            "The NVD record exceeds the 2 MiB payload limit."
         )
 
     return canonical_bytes, json.loads(canonical_json)

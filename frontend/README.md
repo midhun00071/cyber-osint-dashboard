@@ -26,9 +26,12 @@ The frontend provides the analyst-facing dashboard interface for viewing vulnera
 
 ## Environment Variables
 
-Use frontend/.env.example as the template.
-
-For local development, copy it to frontend/.env.local.
+`frontend/.env.example` defines the host-side frontend development structure.
+See the authoritative
+[environment and secrets guide](../docs/environment-and-secrets.md) for public
+configuration classification. Complete application setup, startup, URLs, and
+troubleshooting belong in the single canonical
+[operator guide](../docs/operator-guide.md).
 
 Only NEXT_PUBLIC_ variables are exposed to the browser. Do not place secrets in frontend environment variables.
 
@@ -68,7 +71,10 @@ The repository currently has no CI workflow.
 
 The dashboard UI, backend-connected read-only data views, safe-rendering
 controls, and automated component/page tests are implemented for the current
-MVP scope.
+MVP scope. The frontend presents the safe operational state returned by the
+backend rather than inferring it from handler bindings. Current deployment and
+activation procedures belong in the
+[operator guide](../docs/operator-guide.md).
 
 ## C07 authenticated frontend
 
@@ -96,6 +102,6 @@ work; visibility return queues exactly one replacement while cancellation
 settles; and a successful mutation requests one immediate refresh. Requests
 include browser credentials, opaque session tokens are never stored by
 JavaScript, mutations are not automatically replayed, and role-aware navigation
-does not replace backend authorization. Production execution remains
-unavailable while the configured handler count is zero. See
+does not replace backend authorization. Scheduled execution follows the actual
+deployment state; handler binding alone does not equal activation. See
 [C07 authenticated operations experience](../docs/c07-authenticated-operations-experience.md).
