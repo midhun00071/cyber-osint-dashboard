@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import re
+import subprocess
 from urllib.parse import urlparse
 
 import yaml
@@ -10,6 +11,7 @@ from app.main import app
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+GIT_ATTRIBUTES_PATH = PROJECT_ROOT / ".gitattributes"
 ARCHITECTURE_PATH = PROJECT_ROOT / "docs" / "architecture.md"
 PRODUCTION_COMPOSE_PATH = PROJECT_ROOT / "compose.prod.yml"
 DEVELOPMENT_COMPOSE_PATH = PROJECT_ROOT / "docker-compose.yml"
@@ -34,6 +36,52 @@ def architecture_text() -> str:
 
 def normalized_architecture() -> str:
     return " ".join(architecture_text().split())
+
+
+def test_repository_requires_lf_checkout_for_all_shell_scripts() -> None:
+    attribute_rules = {
+        tuple(line.split())
+        for line in GIT_ATTRIBUTES_PATH.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+
+    assert ("*.sh", "text", "eol=lf") in attribute_rules
+
+    git_command = (
+        "git",
+        "-c",
+        f"safe.directory={PROJECT_ROOT.as_posix()}",
+    )
+    tracked_shell_scripts = subprocess.run(
+        (*git_command, "ls-files", "--", "*.sh"),
+        cwd=PROJECT_ROOT,
+        check=True,
+        capture_output=True,
+        encoding="utf-8",
+    ).stdout.splitlines()
+    assert tracked_shell_scripts, "Expected at least one tracked shell script"
+
+    for shell_script in tracked_shell_scripts:
+        resolved_attributes = subprocess.run(
+            (*git_command, "check-attr", "text", "eol", "--", shell_script),
+            cwd=PROJECT_ROOT,
+            check=True,
+            capture_output=True,
+            encoding="utf-8",
+        ).stdout.splitlines()
+        attribute_values: dict[str, str] = {}
+        for output_line in resolved_attributes:
+            _, attribute, value = output_line.rsplit(": ", 2)
+            attribute_values[attribute] = value
+
+        assert attribute_values.get("text") == "set", (
+            f"{shell_script}: expected effective Git attribute text=set, "
+            f"got {attribute_values.get('text')!r}"
+        )
+        assert attribute_values.get("eol") == "lf", (
+            f"{shell_script}: expected effective Git attribute eol=lf, "
+            f"got {attribute_values.get('eol')!r}"
+        )
 
 
 def test_architecture_exists_and_identifies_current_defensive_system() -> None:
