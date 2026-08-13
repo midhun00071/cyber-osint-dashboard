@@ -243,19 +243,59 @@ verified ACTIVE/READY on 11 August 2026; a fresh Prefect metadata database has
 its own deployment ID and does not inherit that approval automatically.
 
 Only an authorized operator recreating the approved fixed recurring deployment
-may resume its schedule, after all verification above succeeds and the six
-source approvals remain current:
+may resume the deployment itself, after all verification above succeeds and
+the six source approvals remain current. A new deployment is deliberately
+paused even when its existing cron schedule already reports `active=True`;
+schedule activity does not override `paused=True` at the deployment level.
+
+Use Prefect's Python client from the existing `prefect-worker` container. The
+script resolves the fixed deployment name to its current ID because a fresh
+Prefect metadata database creates a new deployment ID. It is idempotent: an
+already-active deployment is reported without changing state or creating a
+flow run.
 
 ```powershell
-docker compose exec -T prefect-worker prefect deployment schedule resume alpha-data-parent-ingestion-cycle/alpha-data-ingestion-cycle --all
+@'
+import asyncio
+
+from prefect.client.orchestration import get_client
+
+DEPLOYMENT_NAME = (
+    "alpha-data-parent-ingestion-cycle/"
+    "alpha-data-ingestion-cycle"
+)
+
+
+async def main() -> None:
+    async with get_client() as client:
+        deployment = await client.read_deployment_by_name(DEPLOYMENT_NAME)
+        if deployment.paused is False:
+            print("Deployment is already active (paused: False); no change made.")
+            return
+
+        await client.resume_deployment(deployment.id)
+        updated = await client.read_deployment(deployment.id)
+        if updated.paused:
+            raise SystemExit(
+                "ERROR: deployment remains paused after resume request."
+            )
+        print("Deployment resumed successfully (paused: False).")
+
+
+asyncio.run(main())
+'@ | docker compose exec -T prefect-worker python -
+
 docker compose exec -T prefect-worker prefect deployment inspect alpha-data-parent-ingestion-cycle/alpha-data-ingestion-cycle
 docker compose exec -T prefect-worker prefect deployment schedule ls alpha-data-parent-ingestion-cycle/alpha-data-ingestion-cycle
 ```
 
-After an authorized resume, inspection should show `paused: False`, deployment
-status `READY`, and one active schedule. Do not use `prefect deployment run` to
-test activation; resuming a schedule authorizes future scheduled runs and does
-not require a manual run.
+Resuming the deployment permits future cron-created runs; it does not manually
+create or launch a flow run. After an authorized resume, inspection should show
+`paused: False`, deployment status `READY`, and one existing active schedule
+with cron `17 */2 * * *` in timezone `Asia/Dubai`. Do not use
+`prefect deployment run` merely to test activation. The next run occurs only at
+the normal eligible cron slot while the Prefect server and worker remain
+online.
 
 ### 9. Stop and restart safely
 

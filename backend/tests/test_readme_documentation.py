@@ -82,7 +82,32 @@ def test_readme_fresh_setup_is_executable_and_complete() -> None:
     ):
         assert phrase in readme
 
-    assert "prefect deployment schedule resume" in raw
+    prefect_section = raw.partition(
+        "### 8. Verify Prefect without starting ingestion"
+    )[2].partition("### 9. Stop and restart safely")[0]
+    activation_script = prefect_section.partition("@'")[2].partition(
+        "'@ | docker compose exec -T prefect-worker python -"
+    )[0]
+    normalized_prefect_section = re.sub(r"\s+", " ", prefect_section).lower()
+
+    assert prefect_section
+    assert activation_script
+    assert "prefect deployment schedule resume" not in raw
+    assert '"alpha-data-parent-ingestion-cycle/"' in activation_script
+    assert '"alpha-data-ingestion-cycle"' in activation_script
+    assert "client.read_deployment_by_name(DEPLOYMENT_NAME)" in activation_script
+    assert "if deployment.paused is False:" in activation_script
+    assert "client.resume_deployment(deployment.id)" in activation_script
+    assert "client.read_deployment(deployment.id)" in activation_script
+    assert "if updated.paused:" in activation_script
+    assert re.search(
+        r"(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b",
+        activation_script,
+    ) is None
+    assert (
+        "`prefect deployment run` merely to test activation"
+        in normalized_prefect_section
+    )
     assert "APPROVED_REPOSITORY_URL" not in raw
     assert "`git branch --show-current` must print `main`" in raw
 
