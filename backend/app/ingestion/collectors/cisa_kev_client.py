@@ -18,7 +18,7 @@ CISA_KEV_CATALOG_URL = get_required_source_base_url(CISA_KEV_SOURCE_SLUG)
 CISA_KEV_ALLOWED_HOST = get_source_definition(CISA_KEV_SOURCE_SLUG).allowed_hosts[0]
 DEFAULT_TIMEOUT = httpx.Timeout(20.0, connect=5.0, read=10.0, write=5.0, pool=5.0)
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
-USER_AGENT = "AlphaDataCyberOSINT/1.0 (+defensive-cisa-kev-ingestion)"
+USER_AGENT = "CyberSentinelOSINT/1.0 (+defensive-cisa-kev-ingestion)"
 ACCEPT_HEADER = "application/json, */*;q=0.1"
 ALLOWED_CONTENT_TYPES = {
     "application/json",

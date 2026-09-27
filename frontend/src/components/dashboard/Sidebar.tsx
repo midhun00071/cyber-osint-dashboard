@@ -65,10 +65,10 @@ export function Sidebar({
       <div className="sidebarHeader">
         <Link className="sidebarBrand" href="/" onClick={onClose}>
           <span className="brandMark" aria-hidden="true">
-            AD
+            CS
           </span>
           <span>
-            <strong>Alpha Data</strong>
+            <strong>Cyber Sentinel</strong>
             <small>Cyber OSINT Dashboard</small>
           </span>
         </Link>

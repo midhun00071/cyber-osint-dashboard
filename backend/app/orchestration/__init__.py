@@ -1,4 +1,4 @@
-"""Production orchestration contracts and Prefect flows for Alpha Data."""
+"""Production orchestration contracts and Prefect flows for Cyber Sentinel."""
 
 from app.orchestration.contracts import SOURCE_POLICIES, ResultStatus
 from app.orchestration.source_handlers import (

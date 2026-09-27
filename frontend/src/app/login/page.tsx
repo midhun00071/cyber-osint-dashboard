@@ -31,8 +31,8 @@ export default function LoginPage() {
   return (
     <main className="loginPage">
       <form className="loginCard" onSubmit={(event) => void submit(event)}>
-        <span className="brandMark" aria-hidden="true">AD</span>
-        <p className="panelEyebrow">Alpha Data</p>
+        <span className="brandMark" aria-hidden="true">CS</span>
+        <p className="panelEyebrow">Cyber Sentinel</p>
         <h1>Secure sign in</h1>
         <p>Use your approved local dashboard account.</p>
         <label>Username<input id="login-username" name="username" autoComplete="username" minLength={3} maxLength={64} onChange={(event) => setUsername(event.target.value)} required value={username} /></label>

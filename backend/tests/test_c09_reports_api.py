@@ -37,7 +37,7 @@ def authorized(monkeypatch) -> Iterator[Session]:
     monkeypatch.setattr(
         ReportService,
         "generate",
-        lambda *_args, **_kwargs: GeneratedReport(b"safe\n", "text/csv; charset=utf-8", "alpha-data-safe.csv"),
+        lambda *_args, **_kwargs: GeneratedReport(b"safe\n", "text/csv; charset=utf-8", "cyber-sentinel-safe.csv"),
     )
     monkeypatch.setattr(SecurityAuditService, "append", lambda *_args, **_kwargs: object())
     yield session
@@ -63,7 +63,7 @@ def test_export_has_safe_headers_and_commits_audit(authorized) -> None:
     with TestClient(app) as client:
         response = client.post("/api/v1/reports/export", json={"report_type": "uae_intelligence", "format": "csv", "limit": 25})
     assert response.status_code == 200
-    assert response.headers["Content-Disposition"] == 'attachment; filename="alpha-data-safe.csv"'
+    assert response.headers["Content-Disposition"] == 'attachment; filename="cyber-sentinel-safe.csv"'
     assert response.headers["Cache-Control"] == "no-store"
     assert response.headers["X-Content-Type-Options"] == "nosniff"
     assert authorized.commits == 1
@@ -87,7 +87,7 @@ def test_export_exposes_content_disposition_only_to_approved_origin(authorized) 
     assert approved.headers["Access-Control-Allow-Origin"] == "http://localhost:3000"
     assert approved.headers["Access-Control-Expose-Headers"] == "Content-Disposition"
     assert approved.headers["Content-Disposition"] == (
-        'attachment; filename="alpha-data-safe.csv"'
+        'attachment; filename="cyber-sentinel-safe.csv"'
     )
     assert unapproved.status_code == 200
     assert "Access-Control-Allow-Origin" not in unapproved.headers

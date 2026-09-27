@@ -55,7 +55,7 @@ services:
     mem_limit: 1g
     cpus: 1.0
     environment:
-      APP_NAME: "${APP_NAME:-Cyber OSINT Dashboard}"
+      APP_NAME: "${APP_NAME:-Cyber Sentinel}"
       APP_VERSION: "${APP_VERSION:-0.1.0}"
       APP_COMMIT_SHA: "${APP_COMMIT_SHA:?APP_COMMIT_SHA must be set}"
       APP_ENV: production

@@ -31,7 +31,7 @@ MAX_DOM_NODES = 25_000
 MAX_DOM_TEXT_CHARS = MAX_RESPONSE_BYTES
 MAX_REJECTED_RECORDS = MAX_DOM_NODES
 DEFAULT_TIMEOUT = httpx.Timeout(20.0, connect=5.0, read=10.0, write=5.0, pool=5.0)
-USER_AGENT = "AlphaDataCyberOSINT/1.0 (+defensive-desc-publications)"
+USER_AGENT = "CyberSentinelOSINT/1.0 (+defensive-desc-publications)"
 ACCEPT_HEADER = "text/html, application/xhtml+xml;q=0.9"
 ALLOWED_CONTENT_TYPES = frozenset({"text/html", "application/xhtml+xml"})
 RESEARCH_HOSTS = (

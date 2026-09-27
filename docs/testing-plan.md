@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document tracks the planned testing approach for the Cyber OSINT Dashboard / Alpha Data project.
+This document tracks the planned testing approach for Cyber Sentinel, a Cybersecurity OSINT Dashboard.
 
 ## Backend Testing
 

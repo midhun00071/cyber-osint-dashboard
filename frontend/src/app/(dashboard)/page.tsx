@@ -13,7 +13,7 @@ export default function DashboardOverviewPage() {
           <p className="pageKicker">
             Backend-connected summary, trends, CVEs, and articles
           </p>
-          <h1 id="dashboard-title">Cyber OSINT Dashboard</h1>
+          <h1 id="dashboard-title">Cyber Sentinel Dashboard</h1>
           <p className="pageSubtitle">
             KPI cards, trends, vulnerabilities, articles, health, and the
             analyst navigation load from authenticated backend endpoints and

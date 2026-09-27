@@ -108,7 +108,7 @@ class Settings(BaseSettings):
     environment variables. Do not hardcode secrets in source code.
     """
 
-    app_name: str = Field(default="Cyber OSINT Dashboard", alias="APP_NAME")
+    app_name: str = Field(default="Cyber Sentinel", alias="APP_NAME")
     app_version: str = Field(
         default="0.1.0",
         alias="APP_VERSION",

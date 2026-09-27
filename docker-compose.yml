@@ -37,7 +37,7 @@ services:
     container_name: alpha-data-backend
     restart: unless-stopped
     environment:
-      APP_NAME: ${APP_NAME:-Cyber OSINT Dashboard}
+      APP_NAME: ${APP_NAME:-Cyber Sentinel}
       APP_ENV: ${APP_ENV:-local}
       DEBUG: ${DEBUG:-false}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}

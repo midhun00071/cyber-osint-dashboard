@@ -5,12 +5,12 @@ groups:
         expr: alpha_data_component_health{component="backend",state="unhealthy"} == 1 or absent(alpha_data_component_health{component="backend",state="healthy"})
         for: 2m
         labels: { severity: critical, owner: pending }
-        annotations: { summary: "Alpha Data backend health is unavailable" }
+        annotations: { summary: "Cyber Sentinel backend health is unavailable" }
       - alert: AlphaDataDatabaseUnhealthy
         expr: alpha_data_component_health{component="database",state="unhealthy"} == 1
         for: 2m
         labels: { severity: critical, owner: pending }
-        annotations: { summary: "Alpha Data database health is unhealthy" }
+        annotations: { summary: "Cyber Sentinel database health is unhealthy" }
       - alert: AlphaDataPrefectServerUnhealthy
         expr: alpha_data_component_health{component="prefect_server",state="unhealthy"} == 1
         for: 5m

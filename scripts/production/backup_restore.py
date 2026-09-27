@@ -932,7 +932,7 @@ def retention_plan(directory: Path, *, apply: bool = False) -> dict[str, dict[st
 
 
 def parser() -> argparse.ArgumentParser:
-    result = argparse.ArgumentParser(description="Alpha Data encrypted backup and isolated restore tooling.")
+    result = argparse.ArgumentParser(description="Cyber Sentinel encrypted backup and isolated restore tooling.")
     commands = result.add_subparsers(dest="command", required=True)
     for name in ("postgres-backup", "prefect-backup"):
         command = commands.add_parser(name)

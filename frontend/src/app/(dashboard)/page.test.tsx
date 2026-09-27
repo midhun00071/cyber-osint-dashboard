@@ -24,7 +24,7 @@ describe("DashboardOverviewPage", () => {
     render(<DashboardOverviewPage />);
 
     expect(
-      screen.getByRole("heading", { name: "Cyber OSINT Dashboard", level: 1 }),
+      screen.getByRole("heading", { name: "Cyber Sentinel Dashboard", level: 1 }),
     ).toBeVisible();
     expect(screen.getByRole("region", { name: "Mock dashboard summary" })).toBeVisible();
     expect(screen.getByText("Mock recent trends")).toBeVisible();

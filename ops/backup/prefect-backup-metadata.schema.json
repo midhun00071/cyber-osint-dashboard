@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://alpha-data.invalid/schemas/prefect-backup-metadata-v1.schema.json",
-  "title": "Alpha Data encrypted Prefect state backup metadata",
+  "title": "Cyber Sentinel encrypted Prefect state backup metadata",
   "type": "object",
   "additionalProperties": false,
   "required": ["metadata_format_version", "backup_identifier", "state_system", "state_format", "started_utc", "completed_utc", "outcome_state", "encryption_state", "checksum_algorithm", "checksum_value", "artifact_size_bytes", "artifact_reference", "safe_summary"],

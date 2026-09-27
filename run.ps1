@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-One-command local setup, verification, and startup for Alpha Data.
+One-command local setup, verification, and startup for Cyber Sentinel.
 
 .DESCRIPTION
 Safely prepares local configuration, builds the Docker runtime, migrates and
@@ -42,7 +42,7 @@ function Write-WarningMessage {
 
 function Show-Usage {
     Write-Host @"
-Alpha Data / Cyber OSINT Dashboard local runner
+Cyber Sentinel / Cybersecurity OSINT Dashboard local runner
 
 Usage:
   .\run.cmd             Bootstrap, start, and validate the local Docker runtime

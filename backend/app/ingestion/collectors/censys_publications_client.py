@@ -31,7 +31,7 @@ MAX_REDIRECTS = 3
 MIN_RECORDS = 1
 MAX_RECORDS = 20
 REQUEST_DELAY_SECONDS = 10.0
-USER_AGENT = "AlphaDataCyberOSINT/1.0 (+defensive-censys-publications)"
+USER_AGENT = "CyberSentinelOSINT/1.0 (+defensive-censys-publications)"
 ACCEPT_HEADER = "text/html, application/xhtml+xml;q=0.9"
 ALLOWED_CONTENT_TYPES = frozenset({"text/html", "application/xhtml+xml"})
 REDIRECT_STATUS_CODES = frozenset({301, 302, 303, 307, 308})

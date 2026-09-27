@@ -17,7 +17,7 @@ CERT_EU_FEED_URL = get_required_source_base_url(CERT_EU_SOURCE_SLUG)
 CERT_EU_ALLOWED_HOST = get_source_definition(CERT_EU_SOURCE_SLUG).allowed_hosts[0]
 DEFAULT_TIMEOUT = httpx.Timeout(20.0, connect=5.0, read=10.0, write=5.0, pool=5.0)
 MAX_RESPONSE_BYTES = 1024 * 1024
-USER_AGENT = "AlphaDataCyberOSINT/1.0 (+defensive-rss-ingestion)"
+USER_AGENT = "CyberSentinelOSINT/1.0 (+defensive-rss-ingestion)"
 ACCEPT_HEADER = "application/rss+xml, application/atom+xml, application/xml, text/xml, */*;q=0.1"
 ALLOWED_CONTENT_TYPES = {
     "application/rss+xml",

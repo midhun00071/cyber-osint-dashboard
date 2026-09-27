@@ -44,7 +44,7 @@ export async function exportReport(request: ReportRequest): Promise<ReportResult
     });
     if (!response.ok) return { status: "error" };
     const disposition = response.headers.get("Content-Disposition") ?? "";
-    const match = /^attachment; filename="(alpha-data-[a-z-]+-[0-9]{8}T[0-9]{6}Z\.(?:csv|pdf))"$/.exec(disposition);
+    const match = /^attachment; filename="(cyber-sentinel-[a-z-]+-[0-9]{8}T[0-9]{6}Z\.(?:csv|pdf))"$/.exec(disposition);
     const contentType = response.headers.get("Content-Type") ?? "";
     if (!match || (request.format === "pdf" ? !contentType.startsWith("application/pdf") : !contentType.startsWith("text/csv"))) return { status: "error" };
     const blob = await response.blob();

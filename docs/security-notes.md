@@ -15,7 +15,7 @@ manual bootstrap CLI. SSO remains absent and approval-gated.
 
 ## Purpose
 
-This document tracks security decisions and safeguards for the Cyber OSINT Dashboard / Alpha Data project.
+This document tracks security decisions and safeguards for Cyber Sentinel, a Cybersecurity OSINT Dashboard.
 
 ## Core Security Principles
 

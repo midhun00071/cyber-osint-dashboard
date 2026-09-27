@@ -5,7 +5,7 @@ import "../styles/globals.css";
 import { AuthProvider } from "@/components/auth/AuthProvider";
 
 export const metadata: Metadata = {
-  title: "Alpha Data | Cyber OSINT Dashboard",
+  title: "Cyber Sentinel | Cybersecurity OSINT Dashboard",
   description:
     "Defensive cybersecurity OSINT dashboard for public threat intelligence.",
 };

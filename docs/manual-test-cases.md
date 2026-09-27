@@ -1,10 +1,10 @@
-# Alpha Data / Cyber OSINT Dashboard Manual Test Cases
+# Cyber Sentinel Manual Test Cases
 
 ## 1. Document control
 
 | Field | Value |
 | --- | --- |
-| Project name | Alpha Data / Cyber OSINT Dashboard |
+| Project name | Cyber Sentinel / Cybersecurity OSINT Dashboard |
 | Task ID | P6-04 |
 | Document title | Manual Test Cases |
 | Version | 1.0 |
@@ -283,7 +283,7 @@ within the dashboard shell. No section is blank because of a rendering failure.<
 **Preconditions:** Dashboard is open at desktop width.<br>
 **Test data:** None.<br>
 **Steps:**
-1. Locate `Alpha Data`, `Overview`, `Threat Feed`, `Vulnerabilities`, `UAE Intelligence`, `IOC Search`, `Sources`, `Ingestion Operations`, and `Run History` as allowed by the signed-in role.
+1. Locate `Cyber Sentinel`, `Overview`, `Threat Feed`, `Vulnerabilities`, `UAE Intelligence`, `IOC Search`, `Sources`, `Ingestion Operations`, and `Run History` as allowed by the signed-in role.
 2. Locate `Dashboard command center` and `Defensive OSINT only`.
 3. Activate each visible navigation item and use browser Back to return.
 

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-Developer setup helper for the Cyber OSINT Dashboard / Alpha Data project.
+Developer setup helper for the Cyber Sentinel project.
 
 .DESCRIPTION
 This script helps a developer prepare their local environment safely.
@@ -150,7 +150,7 @@ function New-LocalRootEnvironmentFile {
     Write-Success "Created local environment file with generated database credentials: $TargetPath"
 }
 
-Write-Section "Cyber OSINT Dashboard / Alpha Data setup"
+Write-Section "Cyber Sentinel setup"
 
 $ProjectRoot = Resolve-Path "$PSScriptRoot\.."
 Set-Location $ProjectRoot

@@ -311,7 +311,7 @@ def _print_bootstrap_result(result: BootstrapResult) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Validate and bootstrap the Alpha Data local runtime safely."
+        description="Validate and bootstrap the Cyber Sentinel local runtime safely."
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
     migration_parser = subparsers.add_parser("migration-state")

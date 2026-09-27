@@ -259,7 +259,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(
     title=settings.app_name,
-    description="Backend API for the Alpha Data Cyber OSINT Dashboard.",
+    description="Backend API for Cyber Sentinel, a cybersecurity OSINT dashboard.",
     version=settings.app_version,
     debug=settings.debug,
     lifespan=lifespan,

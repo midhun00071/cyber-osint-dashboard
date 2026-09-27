@@ -21,7 +21,7 @@ describe("reportsApi", () => {
   });
 
   test("requests an allow-listed server export and preserves its filename", async () => {
-    apiFetchMock.mockResolvedValue(new Response(new Blob(["safe"]), { status: 200, headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": 'attachment; filename="alpha-data-uae-intelligence-20260809T000000Z.csv"' } }));
+    apiFetchMock.mockResolvedValue(new Response(new Blob(["safe"]), { status: 200, headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": 'attachment; filename="cyber-sentinel-uae-intelligence-20260809T000000Z.csv"' } }));
     const result = await exportReport({ report_type: "uae_intelligence", format: "csv", limit: 25 });
     expect(result.status).toBe("success");
     expect(apiFetchMock).toHaveBeenCalledWith("/api/v1/reports/export", expect.objectContaining({ method: "POST", headers: { Accept: "text/csv" } }));

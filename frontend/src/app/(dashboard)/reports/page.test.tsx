@@ -10,7 +10,7 @@ vi.mock("@/services/reportsApi", () => ({ fetchReportCatalog: vi.fn(), exportRep
 
 test("loads selectors and performs a bounded download with Blob cleanup", async () => {
   vi.mocked(fetchReportCatalog).mockResolvedValue({ status: "success", data: { reports: [{ report_type: "uae_intelligence", label: "UAE Intelligence", formats: ["csv", "pdf"] }], maximum_rows: 100, maximum_bytes: 2097152, maximum_cell_characters: 500 } });
-  vi.mocked(exportReport).mockResolvedValue({ status: "success", data: { blob: new Blob(["safe"]), filename: "alpha-data-uae-intelligence-20260809T000000Z.csv" } });
+  vi.mocked(exportReport).mockResolvedValue({ status: "success", data: { blob: new Blob(["safe"]), filename: "cyber-sentinel-uae-intelligence-20260809T000000Z.csv" } });
   const create = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:report");
   const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
   vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);

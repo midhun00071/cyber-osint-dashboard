@@ -89,7 +89,7 @@ def test_architecture_exists_and_identifies_current_defensive_system() -> None:
     document = normalized_architecture().lower()
 
     for phrase in (
-        "alpha data / cyber osint dashboard",
+        "cyber sentinel, a cybersecurity osint dashboard",
         "implemented technical design",
         "defensive public cybersecurity intelligence",
         "external osint is untrusted data",

@@ -50,7 +50,7 @@ def test_production_scripts_use_argv_subprocesses_without_shell_execution() -> N
 
 
 def test_report_filename_grammar_cannot_carry_header_controls() -> None:
-    pattern = re.compile(r"^alpha-data-[a-z-]+-[0-9]{8}T[0-9]{6}Z\.(?:csv|pdf)$")
-    assert pattern.fullmatch("alpha-data-uae-intelligence-20260809T000000Z.csv")
-    assert pattern.fullmatch("alpha-data-source-operations-20260809T000000Z.pdf")
-    assert pattern.fullmatch("alpha-data-report\r\nX-Test-injected.csv") is None
+    pattern = re.compile(r"^cyber-sentinel-[a-z-]+-[0-9]{8}T[0-9]{6}Z\.(?:csv|pdf)$")
+    assert pattern.fullmatch("cyber-sentinel-uae-intelligence-20260809T000000Z.csv")
+    assert pattern.fullmatch("cyber-sentinel-source-operations-20260809T000000Z.pdf")
+    assert pattern.fullmatch("cyber-sentinel-report\r\nX-Test-injected.csv") is None

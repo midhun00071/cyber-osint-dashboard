@@ -28,13 +28,13 @@ def test_readme_leads_with_project_overview_and_fresh_laptop_setup() -> None:
     readme = normalized_readme()
 
     assert README.is_file()
-    assert "# alpha data / cyber osint dashboard" in readme
+    assert "# cyber sentinel" in readme
     assert "full-stack defensive cybersecurity osint platform" in readme
     assert "mentor-accessible external staging host" in readme
     assert_in_order(
         readme,
         (
-            "# alpha data / cyber osint dashboard",
+            "# cyber sentinel",
             "## start here — fresh laptop setup",
             "### 1. install the required tools",
             "### 2. clone the authoritative repository and select `main`",
@@ -315,7 +315,7 @@ def test_readme_explains_prefect_database_authentication_and_ui() -> None:
         "a **worker** polls that pool",
         "every two hours at minute 17 in dubai time",
         "`cancel_new`",
-        "postgresql is alpha data's system of record",
+        "postgresql is cyber sentinel's system of record",
         "alembic migrations are the ordered, committed history",
         "create a **new** alembic migration; never edit a committed migration",
         "exactly one linear head",

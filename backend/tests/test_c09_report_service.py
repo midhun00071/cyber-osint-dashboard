@@ -41,7 +41,7 @@ def test_pdf_is_generated_in_memory_without_remote_resources(monkeypatch) -> Non
         permissions=frozenset(),
     )
     assert generated.content.startswith(b"%PDF-")
-    assert generated.filename == "alpha-data-uae-intelligence-20260809T000000Z.pdf"
+    assert generated.filename == "cyber-sentinel-uae-intelligence-20260809T000000Z.pdf"
     assert generated.content_type == "application/pdf"
 
 

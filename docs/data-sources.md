@@ -15,7 +15,7 @@ performed. See
 ## Purpose and audience
 
 This guide is the source-traceability record for mentors, reviewers, operators,
-and future developers of the Alpha Data / Cyber OSINT Dashboard. It maps every
+and future developers of Cyber Sentinel, a Cybersecurity OSINT Dashboard. It maps every
 enabled implemented source identity to its approved endpoint or reviewed input,
 manual invocation path, normalization and persistence behavior, identity
 controls, and exclusions. The current backend source registry and ingestion code

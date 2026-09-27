@@ -2,7 +2,7 @@
   "name": "cyber-osint-dashboard-frontend",
   "version": "0.1.0",
   "private": true,
-  "description": "Frontend dashboard for the Alpha Data Cyber OSINT Dashboard project.",
+  "description": "Frontend dashboard for Cyber Sentinel, a cybersecurity OSINT dashboard.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

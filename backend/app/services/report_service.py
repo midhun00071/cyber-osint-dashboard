@@ -84,7 +84,7 @@ class ReportService:
                 if report_format is ReportFormat.CSV
                 else "application/pdf"
             ),
-            filename=f"alpha-data-{slug}-{stamp}.{report_format.value}",
+            filename=f"cyber-sentinel-{slug}-{stamp}.{report_format.value}",
         )
 
     def _load_rows(
@@ -149,8 +149,8 @@ class ReportService:
         output = BytesIO()
         page_width, page_height = landscape(letter)
         document = canvas.Canvas(output, pagesize=(page_width, page_height), pageCompression=1)
-        document.setTitle(f"Alpha Data {report_type.value.replace('_', ' ')}")
-        document.setAuthor("Alpha Data")
+        document.setTitle(f"Cyber Sentinel {report_type.value.replace('_', ' ')}")
+        document.setAuthor("Cyber Sentinel")
         margin = 28
         line_height = 11
         y = page_height - margin
@@ -164,7 +164,7 @@ class ReportService:
             document.drawString(margin, y, value)
             y -= line_height
 
-        line(f"Alpha Data - {report_type.value.replace('_', ' ').title()}", bold=True)
+        line(f"Cyber Sentinel - {report_type.value.replace('_', ' ').title()}", bold=True)
         for value, bold in pdf_record_lines(headers, rows):
             line(value, bold=bold)
         document.save()

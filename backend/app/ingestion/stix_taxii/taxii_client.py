@@ -41,7 +41,7 @@ from app.ingestion.stix_taxii.stix_validation import (
 )
 
 
-USER_AGENT = "Alpha-Data-Cyber-OSINT-Dashboard/0.1 TAXII-2.1-Client"
+USER_AGENT = "Cyber-Sentinel-OSINT/0.1 TAXII-2.1-Client"
 ACCEPT_HEADER = "application/taxii+json;version=2.1"
 ACCEPT_ENCODING_HEADER = "identity"
 _REDIRECT_STATUS_CODES = frozenset({300, 301, 302, 303, 304, 305, 306, 307, 308})

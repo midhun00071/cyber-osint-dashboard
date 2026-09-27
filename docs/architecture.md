@@ -40,8 +40,8 @@ later, separately approved step.
 
 ## Purpose and audience
 
-This document describes the implemented technical design of the Alpha Data /
-Cyber OSINT Dashboard for mentors, senior cybersecurity reviewers, developers,
+This document describes the implemented technical design of Cyber Sentinel, a
+Cybersecurity OSINT Dashboard, for mentors, senior cybersecurity reviewers, developers,
 and deployment reviewers. It explains component ownership, data and trust
 boundaries, development and production-oriented runtimes, security controls,
 test architecture, and known limitations. It is a review guide for the current

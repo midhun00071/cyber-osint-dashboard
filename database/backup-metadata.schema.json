@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://alpha-data.invalid/schemas/backup-metadata-v2.schema.json",
-  "title": "Alpha Data logical backup metadata",
+  "title": "Cyber Sentinel logical backup metadata",
   "description": "Non-secret metadata contract for C09 encrypted PostgreSQL logical backup evidence. Conformance alone does not prove recoverability.",
   "type": "object",
   "additionalProperties": false,

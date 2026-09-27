@@ -1,6 +1,6 @@
-# Alpha Data / Cyber OSINT Dashboard
+# Cyber Sentinel
 
-Alpha Data is a full-stack defensive cybersecurity OSINT platform. It collects
+Cyber Sentinel is a full-stack defensive cybersecurity OSINT platform. It collects
 approved public intelligence, validates and normalizes it, stores it in
 PostgreSQL, schedules approved recurring work with Prefect, exposes bounded
 FastAPI query services, and presents the results in an authenticated Next.js
@@ -17,7 +17,7 @@ runbook for routine and exceptional operations.
 
 ## Start Here — Fresh Laptop Setup
 
-This is the complete supported local path for a reader with no prior Alpha Data
+This is the complete supported local path for a reader with no prior Cyber Sentinel
 knowledge. Follow the steps in order. The primary verified environment is
 Windows with Windows PowerShell.
 
@@ -104,7 +104,7 @@ print or share its values. Keep these safety settings unchanged:
 - `NEXT_PUBLIC_API_BASE_URL` remains the browser-reachable local backend URL.
 
 `NVD_API_KEY` may remain blank. It is used only for an explicitly approved NVD
-workflow and is not required to start Alpha Data. The optional local Prefect
+workflow and is not required to start Cyber Sentinel. The optional local Prefect
 metadata database passwords should be set to unique values **before the first
 Prefect start** if the operator chooses to manage them explicitly. Changing
 only `.env` after the Prefect metadata volume exists does not rotate database
@@ -170,7 +170,7 @@ Expected local URLs are:
 
 | URL | Expected use |
 | --- | --- |
-| `http://localhost:3000/` | Alpha Data sign-in and dashboard |
+| `http://localhost:3000/` | Cyber Sentinel sign-in and dashboard |
 | `http://localhost:8000/api/health` | Sanitized backend health; expect HTTP 200 |
 | `http://localhost:4200/` | Loopback-only Prefect operations UI |
 
@@ -223,7 +223,7 @@ hidden.
 
 ### 8. Verify Prefect without starting ingestion
 
-Prefect is Alpha Data's scheduler and workflow coordinator. These checks do not
+Prefect is Cyber Sentinel's scheduler and workflow coordinator. These checks do not
 start a source flow:
 
 ```powershell
@@ -359,7 +359,7 @@ duplicates.
 
 ## Environment Configuration and Secret Handling
 
-Alpha Data has no module literally named `secrets`. Configuration and secret
+Cyber Sentinel has no module literally named `secrets`. Configuration and secret
 boundaries are implemented by the actual components below:
 
 - `scripts/setup-dev.ps1` creates missing local files and generates three local
@@ -488,7 +488,7 @@ configuration when real values are loaded.
 | `frontend` | Next.js authenticated analyst and operator interface | No database or source access; browser calls FastAPI |
 | `prefect-db` | Dedicated local PostgreSQL store for Prefect metadata | Internal-only network; no host port |
 | `prefect-server` | Self-hosted Prefect API and UI | Local administration is loopback-only |
-| `prefect-worker` | Polls the fixed process pool and runs registered Alpha Data flows | Uses the application database role and fixed orchestration package |
+| `prefect-worker` | Polls the fixed process pool and runs registered Cyber Sentinel flows | Uses the application database role and fixed orchestration package |
 | `migrate` | One-shot Alembic migration job used by the runner | Uses the migration identity; not a normal long-running service |
 
 ### Intelligence data path
@@ -820,7 +820,7 @@ minute 17 of an eligible two-hour slot arrives
 ## Fresh Database Bootstrap
 
 A completely empty database would otherwise show an empty dashboard and make a
-first-time mentor unable to evaluate the product. Alpha Data therefore bundles a
+first-time mentor unable to evaluate the product. Cyber Sentinel therefore bundles a
 bounded offline snapshot of real public intelligence:
 
 - **100** NVD vulnerabilities;
@@ -854,7 +854,7 @@ This distinction is essential:
 Prefect is the orchestration system that schedules and observes ingestion work.
 It is separate from the FastAPI web server.
 
-- A **flow** is Python code describing a unit of work. Alpha Data has one parent
+- A **flow** is Python code describing a unit of work. Cyber Sentinel has one parent
   ingestion flow and source-specific child flows.
 - A **deployment** is the registered runnable configuration for a flow: its
   name, schedule, parameters, pool, working directory, and concurrency.
@@ -894,7 +894,7 @@ this local setup.
 
 ## Database for First-Time Operators
 
-PostgreSQL is Alpha Data's system of record. It stores normalized intelligence,
+PostgreSQL is Cyber Sentinel's system of record. It stores normalized intelligence,
 source provenance, identifiers, vulnerabilities, indicators, threat metadata,
 users, credentials hashes, sessions, roles, audit events, source state,
 ingestion cycles/runs/events/errors, checkpoints, watermarks, quota state, and
@@ -932,7 +932,7 @@ history, and Prefect metadata and is not routine troubleshooting.
 
 ## Authentication and Authorization
 
-Alpha Data currently uses local single-factor identities. Passwords are
+Cyber Sentinel currently uses local single-factor identities. Passwords are
 Argon2id hashes; submitted passwords are never stored. Browser sessions use
 random opaque values with only token/CSRF hashes persisted. The session cookie
 is HttpOnly, both cookies are `SameSite=Strict`, staging/production requires
@@ -1036,7 +1036,7 @@ database.
 Treat a new source as a bounded security and data-integrity change, not as an
 extra URL. Freeze its approval, source identity, collection mode, persistence
 contract, operational evidence, tests, and documentation before implementation.
-The steps below describe the existing Alpha Data pattern.
+The steps below describe the existing Cyber Sentinel pattern.
 
 ### 1. Approve and freeze the source policy
 
@@ -1148,7 +1148,7 @@ document the exact approval gate. Never auto-enable a commercial source.
 
 ### 11. Preserve the deployment model
 
-Alpha Data uses one self-hosted Prefect parent deployment; do not add a second
+Cyber Sentinel uses one self-hosted Prefect parent deployment; do not add a second
 scheduler. Source registration normally does not require another deployment.
 Unless an approved task changes them, preserve the fixed work pool, working
 directory, Dubai cron, deployment concurrency `1`, and `CANCEL_NEW`. A new
@@ -1362,7 +1362,7 @@ assertion merely to obtain a green total.
 
 ## Defensive, Ethical, and Security Boundary
 
-Use Alpha Data only for defensive, ethical, authorized, educational, or
+Use Cyber Sentinel only for defensive, ethical, authorized, educational, or
 lab-safe work. It must not be used for exploit execution, unauthorized scanning
 or probing, credential theft, phishing, malware retrieval/delivery,
 persistence, stealth/evasion, control bypass, or attacks against real systems.
